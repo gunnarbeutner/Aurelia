@@ -253,14 +253,16 @@ struct NowPlayingView: View {
 
     // MARK: - Track Info Section (with inline favorite — matches PWA)
     private var trackInfoSection: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+        ZStack(alignment: .topTrailing) {
+            // Centered track info
+            VStack(alignment: .center, spacing: 6) {
                 if let track = playerManager.currentTrack {
                     Text(track.name)
                         .font(.title3.weight(.bold))
                         .foregroundColor(Color.jellyAmpText)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.7)
+                        .minimumScaleFactor(0.75)
+                        .multilineTextAlignment(.center)
 
                     Button {
                         navigateToArtist(track: track)
@@ -268,6 +270,7 @@ struct NowPlayingView: View {
                         Text(track.artistName)
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.6))
+                            .multilineTextAlignment(.center)
                     }
 
                     Button {
@@ -276,6 +279,8 @@ struct NowPlayingView: View {
                         Text(track.albumName)
                             .font(.caption)
                             .foregroundColor(.white.opacity(0.35))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
                     }
                 } else {
                     Text("No Track Playing")
@@ -283,10 +288,9 @@ struct NowPlayingView: View {
                         .foregroundColor(.jellyAmpTextSecondary)
                 }
             }
+            .frame(maxWidth: .infinity)
 
-            Spacer()
-
-            // Inline favorite button (PWA style)
+            // Favorite button anchored top-right
             Button {
                 toggleFavorite()
             } label: {

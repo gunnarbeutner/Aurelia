@@ -349,14 +349,18 @@ class PlayerManager: NSObject, ObservableObject {
         let tolerance = CMTime(seconds: 0.5, preferredTimescale: 600)
         player.seek(to: cmTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] completed in
             guard let self = self else { return }
-            self.isSeeking = false
             if completed {
                 self.logger.info("✅ Seek completed to \(clampedTime)s")
                 self.currentTime = clampedTime
+                // Update lastValidPlaybackTime so the restart detector doesn't
+                // misread the backward jump as a stream restart
+                self.lastValidPlaybackTime = clampedTime
                 self.updateNowPlayingInfo()
             } else {
                 self.logger.error("❌ Seek failed to \(clampedTime)s")
             }
+            // Clear seeking flag AFTER updating lastValidPlaybackTime
+            self.isSeeking = false
         }
     }
 
@@ -811,6 +815,12 @@ class PlayerManager: NSObject, ObservableObject {
                 lastTrackedTrackId = currentTrackId
             }
 
+            // Sync local tracker with any external seek (e.g. user seeking backward)
+            // so the restart detector doesn't misread a legitimate seek as a stream restart
+            if self.lastValidPlaybackTime > 0 && abs(lastValidTime - self.lastValidPlaybackTime) > 5.0 {
+                lastValidTime = self.lastValidPlaybackTime
+            }
+
             // Detect unexpected restarts WITHIN THE SAME TRACK
             // If time jumps backward by more than 10 seconds AND we've been playing for a while,
             // this is likely a stream restart (not a user seek, which sets isSeeking=true)
@@ -829,6 +839,7 @@ class PlayerManager: NSObject, ObservableObject {
             // Update current time from player
             self.currentTime = newTime
             lastValidTime = newTime
+            self.lastValidPlaybackTime = newTime
 
             // Ensure duration matches current track (safeguard against race conditions)
             if let currentTrack = self.currentTrack, self.duration != currentTrack.duration {
