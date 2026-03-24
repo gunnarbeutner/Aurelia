@@ -2,7 +2,7 @@
 //  MiniPlayerView.swift
 //  JellyAmp
 //
-//  Polished mini player with ticker-style text and glass effects
+//  Mini player — aligned with PWA mobile player bar
 //
 
 import SwiftUI
@@ -26,7 +26,7 @@ struct MiniPlayerView: View {
         }
     }
 
-    // MARK: - Collapsed strip (mini-mini mode — thin bar like PWA)
+    // MARK: - Collapsed strip (thin bar — swipe down to reach)
     private func collapsedStrip(for currentTrack: Track) -> some View {
         Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -37,60 +37,124 @@ struct MiniPlayerView: View {
                 // Thin progress bar
                 GeometryReader { geo in
                     Rectangle()
-                        .fill(Color.jellyAmpAccent)
+                        .fill(
+                            LinearGradient(
+                                colors: [.jellyAmpAccent, .jellyAmpSecondary],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .frame(width: geo.size.width * miniPlayerProgress)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 2)
-
-                HStack(spacing: 12) {
-                    // Track name — scrolling single line
-                    Text("\(currentTrack.name) • \(currentTrack.artistName)")
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(.white.opacity(0.8))
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    // Play/pause
-                    Button {
-                        playerManager.togglePlayPause()
-                    } label: {
-                        Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.white.opacity(0.15)))
-                    }
+                .frame(height: 12)
+                .background(Color.white.opacity(0.05))
+                .overlay(alignment: .center) {
+                    Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
             }
-            .background(.ultraThinMaterial)
         }
         .buttonStyle(.plain)
         .transition(.asymmetric(
             insertion: .move(edge: .bottom).combined(with: .opacity),
-            removal: .move(edge: .bottom).combined(with: .opacity)
+            removal: .opacity
         ))
     }
 
+    // MARK: - Full mini player
     private func miniPlayerButton(for currentTrack: Track) -> some View {
-        Button {
-            showNowPlaying = true
-        } label: {
-            miniPlayerContent(for: currentTrack)
+        VStack(spacing: 0) {
+            // Progress bar — 2px at top, cyan→pink gradient
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.jellyAmpAccent, .jellyAmpSecondary],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: geo.size.width * miniPlayerProgress)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.1))
+            }
+            .frame(height: 2)
+            .animation(.linear(duration: 0.3), value: miniPlayerProgress)
+
+            // Main row
+            HStack(spacing: 12) {
+                // Artwork
+                miniPlayerArtwork(for: currentTrack)
+
+                // Track info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(currentTrack.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.jellyAmpText)
+                        .lineLimit(1)
+
+                    Text(currentTrack.artistName)
+                        .font(.system(size: 13))
+                        .foregroundColor(.jellyAmpTextSecondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Sleep timer indicator
+                if sleepTimer.isActive {
+                    Image(systemName: "moon.zzz.fill")
+                        .font(.caption2)
+                        .foregroundColor(.jellyAmpAccent)
+                }
+
+                // Play/pause — solid gradient circle like PWA
+                Button {
+                    playerManager.togglePlayPause()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.jellyAmpAccent, .jellyAmpSecondary],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+                            .offset(x: playerManager.isPlaying ? 0 : 1)
+                    }
+                }
+                .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                showNowPlaying = true
+            }
         }
-        .buttonStyle(.plain)
+        .background(
+            Color(hex: "0C0C12").opacity(0.88)
+                .background(.ultraThinMaterial)
+        )
+        .matchedGeometryEffect(id: "playerBg", in: namespace)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Now playing: \(currentTrack.name) by \(currentTrack.artistName)")
-        .accessibilityHint("Double tap for full player. Swipe down to minimize.")
+        .accessibilityHint("Tap for full player. Swipe down to minimize.")
         .offset(x: max(0, dragOffset))
         .gesture(
             DragGesture(minimumDistance: 15)
                 .onChanged { value in
                     if value.translation.width > 0 {
-                        dragOffset = value.translation.width * 0.6
+                        dragOffset = value.translation.width * 0.5
                     }
                 }
                 .onEnded { value in
@@ -110,59 +174,7 @@ struct MiniPlayerView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.currentTrack?.id)
     }
 
-    private func miniPlayerContent(for currentTrack: Track) -> some View {
-        VStack(spacing: 0) {
-            // Progress bar
-            GeometryReader { geo in
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.jellyAmpAccent, .jellyAmpSecondary],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: geo.size.width * miniPlayerProgress)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(height: 2)
-            .animation(.linear(duration: 0.5), value: miniPlayerProgress)
-
-        HStack(spacing: 0) {
-            miniPlayerArtwork(for: currentTrack)
-
-            // Track info
-            VStack(spacing: 3) {
-                Text("\(currentTrack.name) • \(currentTrack.artistName)")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-
-                Text(currentTrack.albumName)
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(.white.opacity(0.65))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 12)
-
-            if sleepTimer.isActive {
-                Image(systemName: "moon.zzz.fill")
-                    .font(.caption2)
-                    .foregroundColor(.jellyAmpAccent)
-                    .padding(.trailing, 4)
-            }
-
-            miniPlayerPlayButton
-        }
-        .frame(height: 64)
-        }
-        .background(Color.jellyAmpMidBackground.opacity(0.95))
-        .background(.ultraThinMaterial)
-        .matchedGeometryEffect(id: "playerBg", in: namespace)
-    }
+    // MARK: - Helpers
 
     private var miniPlayerProgress: Double {
         guard playerManager.duration > 0 else { return 0 }
@@ -174,110 +186,20 @@ struct MiniPlayerView: View {
             switch phase {
             case .success(let image):
                 image.resizable().aspectRatio(contentMode: .fill)
-            case .empty, .failure, _:
+            default:
                 ZStack {
-                    Rectangle().fill(Color.jellyAmpMidBackground)
+                    Color.jellyAmpElevated
                     Image(systemName: "music.note")
                         .font(.body.weight(.medium))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-            }
-        }
-        .frame(width: 48, height: 48)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-        .padding(.leading, 12)
-        .matchedGeometryEffect(id: "albumArt", in: namespace)
-    }
-
-    private var miniPlayerPlayButton: some View {
-        Button {
-            playerManager.togglePlayPause()
-        } label: {
-            Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
-                .font(.body.weight(.semibold))
-                .foregroundColor(.white)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Color.white.opacity(0.12)))
-                .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-        }
-        .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
-        .padding(.trailing, 12)
-    }
-}
-
-// MARK: - Ticker Text Component
-struct TickerText: View {
-    let text: String
-    let isPlaying: Bool
-    let geometry: GeometryProxy
-
-    @State private var offset: CGFloat = 0
-    @State private var textWidth: CGFloat = 0
-    @State private var needsScrolling: Bool = false
-
-    var body: some View {
-        VStack {
-            Spacer()
-            HStack(spacing: 0) {
-                // First copy of text
-                Text(text)
-                    .font(.body.weight(.semibold))
-                    .foregroundColor(.white)
-                    .fixedSize()
-                    .background(
-                        GeometryReader { textGeometry in
-                            Color.clear.onAppear {
-                                textWidth = textGeometry.size.width
-                            }
-                        }
-                    )
-
-                // Only show separator and second copy if text needs scrolling
-                if needsScrolling {
-                    // Separator
-                    Text("  •  ")
-                        .font(.body.weight(.bold))
                         .foregroundColor(.white.opacity(0.5))
-
-                    // Second copy of text for seamless loop
-                    Text(text)
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.white)
-                        .fixedSize()
                 }
             }
-            .offset(x: offset)
-            Spacer()
         }
-        .onAppear {
-            startScrolling()
-        }
-        .onChange(of: text) { _, _ in
-            // Reset and restart when text changes
-            offset = 0
-            needsScrolling = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                startScrolling()
-            }
-        }
-    }
-
-    private func startScrolling() {
-        guard textWidth > 0 else { return }
-
-        let totalWidth = textWidth + 30 // Text width + separator width
-
-        // Only scroll if text is wider than available space
-        if textWidth > geometry.size.width {
-            needsScrolling = true
-            withAnimation(.linear(duration: Double(totalWidth) / 40).repeatForever(autoreverses: false)) {
-                offset = -totalWidth
-            }
-        } else {
-            needsScrolling = false
-            offset = 0
-        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+        .shadow(color: .jellyAmpAccent.opacity(0.08), radius: 10, y: 0)
+        .matchedGeometryEffect(id: "albumArt", in: namespace)
     }
 }
 
@@ -285,7 +207,7 @@ struct TickerText: View {
 #Preview {
     struct PreviewWrapper: View {
         @Namespace private var namespace
-        
+
         var body: some View {
             VStack {
                 Spacer()
@@ -294,6 +216,5 @@ struct TickerText: View {
             .background(Color.jellyAmpBackground)
         }
     }
-    
     return PreviewWrapper()
 }
