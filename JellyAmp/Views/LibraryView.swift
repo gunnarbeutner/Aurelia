@@ -69,6 +69,12 @@ struct LibraryView: View {
     @State private var artistsHasMore = true
     @State private var isLoadingMore = false
     
+    // Genres state
+    @State private var genres: [Genre] = []
+    @State private var selectedGenre: Genre? = nil
+    @State private var genreAlbums: [Album] = []
+    @State private var isLoadingGenreAlbums = false
+    
     // Search debouncing
     @State private var searchDebounceTask: Task<Void, Never>?
 
@@ -372,6 +378,102 @@ struct LibraryView: View {
                                     .padding(.top, 16)
                                 }
                             }
+                        } else if selectedFilter == "Genres" {
+                            // Genres View
+                            if genres.isEmpty {
+                                ContentUnavailableView {
+                                    Label("No Genres", systemImage: "music.quarternote.3")
+                                } description: {
+                                    Text("No music genres found in your library")
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 100)
+                            } else if let genre = selectedGenre {
+                                // Genre albums drill-down
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Button {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            selectedGenre = nil
+                                            genreAlbums = []
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "chevron.left")
+                                                .font(.caption.weight(.semibold))
+                                            Text(genre.name)
+                                                .font(.system(size: 14, weight: .semibold))
+                                        }
+                                        .foregroundColor(.jellyAmpAccent)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+
+                                    if isLoadingGenreAlbums {
+                                        HStack { Spacer(); ProgressView().tint(.jellyAmpAccent); Spacer() }
+                                            .padding(.top, 40)
+                                    } else if viewMode == .grid {
+                                        LazyVGrid(columns: columns, spacing: 16) {
+                                            ForEach(genreAlbums) { album in
+                                                NavigationLink(value: album) {
+                                                    AlbumCard(album: album)
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, 20)
+                                        .padding(.top, 8)
+                                    } else {
+                                        LazyVStack(spacing: 0) {
+                                            ForEach(genreAlbums) { album in
+                                                NavigationLink(value: album) {
+                                                    AlbumListRow(album: album)
+                                                }
+                                                .padding(.horizontal, 20)
+                                                if album.id != genreAlbums.last?.id {
+                                                    Divider().background(Color.jellyAmpAccent.opacity(0.2)).padding(.horizontal, 20)
+                                                }
+                                            }
+                                        }
+                                        .padding(.top, 8)
+                                    }
+                                }
+                            } else {
+                                // Genre list
+                                LazyVStack(spacing: 0) {
+                                    ForEach(genres) { genre in
+                                        Button {
+                                            withAnimation(.spring(response: 0.3)) {
+                                                selectedGenre = genre
+                                            }
+                                            Task { await loadGenreAlbums(genreId: genre.id) }
+                                        } label: {
+                                            HStack {
+                                                Text(genre.name)
+                                                    .font(.system(size: 16, weight: .medium))
+                                                    .foregroundColor(.jellyAmpText)
+                                                Spacer()
+                                                if let count = genre.albumCount, count > 0 {
+                                                    Text("\(count)")
+                                                        .font(.jellyAmpMono)
+                                                        .foregroundColor(.jellyAmpTextMuted)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 3)
+                                                        .background(Color.jellyAmpElevated)
+                                                        .clipShape(Capsule())
+                                                }
+                                                Image(systemName: "chevron.right")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundColor(.jellyAmpTextMuted)
+                                            }
+                                            .padding(.horizontal, 20)
+                                            .padding(.vertical, 14)
+                                        }
+                                        if genre.id != genres.last?.id {
+                                            Divider().background(Color.white.opacity(0.05)).padding(.horizontal, 20)
+                                        }
+                                    }
+                                }
+                                .padding(.top, 8)
+                            }
                         } else {
                             // Albums View (and Recent for now)
                             if viewMode == .grid {
@@ -540,6 +642,23 @@ struct LibraryView: View {
                     await fetchLibrary()
                 }
             }
+        }
+    }
+
+    // MARK: - Genre Loading
+
+    private func loadGenreAlbums(genreId: String) async {
+        await MainActor.run { isLoadingGenreAlbums = true }
+        do {
+            let items = try await jellyfinService.fetchAlbumsByGenre(genreId: genreId)
+            let baseURL = jellyfinService.baseURL
+            let converted = items.map { Album(from: $0, baseURL: baseURL) }
+            await MainActor.run {
+                self.genreAlbums = converted
+                self.isLoadingGenreAlbums = false
+            }
+        } catch {
+            await MainActor.run { self.isLoadingGenreAlbums = false }
         }
     }
 
@@ -836,7 +955,7 @@ struct LibraryView: View {
             // Filter pills
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(["Artists", "Albums", "Playlists", "Favorites", "Recent"], id: \.self) { filter in
+                    ForEach(["Artists", "Albums", "Playlists", "Genres", "Recent"], id: \.self) { filter in
                         FilterPill(
                             title: filter,
                             isSelected: selectedFilter == filter

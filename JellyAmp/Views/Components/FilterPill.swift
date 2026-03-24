@@ -8,20 +8,22 @@ struct FilterPill: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.jellyAmpCaption)
-                .fontWeight(.medium)
-                .foregroundColor(isSelected ? .black : .white)
-                .padding(.horizontal, 16)
+                .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
+                .foregroundColor(isSelected ? .black : .jellyAmpTextSecondary)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 8)
+                .frame(minHeight: 36)
                 .background(
                     Capsule()
-                        .fill(isSelected ? Color.jellyAmpAccent : Color.white.opacity(0.1))
+                        .fill(isSelected ? Color.jellyAmpAccent : Color.jellyAmpElevated)
                 )
                 .overlay(
                     Capsule()
-                        .stroke(Color.jellyAmpAccent.opacity(isSelected ? 0.8 : 0.3), lineWidth: 1)
+                        .stroke(isSelected ? Color.clear : Color.white.opacity(0.08), lineWidth: 1)
                 )
+                .shadow(color: isSelected ? Color.jellyAmpAccent.opacity(0.3) : .clear, radius: 8, x: 0, y: 0)
         }
+        .animation(.easeOut(duration: 0.15), value: isSelected)
     }
 }
 

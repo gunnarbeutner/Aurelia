@@ -255,3 +255,22 @@ struct Playlist: Identifiable, Codable, Hashable {
         self.isFavorite = isFavorite
     }
 }
+
+// MARK: - Genre Model
+struct Genre: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let albumCount: Int?
+
+    init(from item: BaseItemDto) {
+        self.id = item.Id
+        self.name = item.Name
+        self.albumCount = item.ChildCount
+    }
+
+    init(id: String, name: String, albumCount: Int?) {
+        self.id = id
+        self.name = name
+        self.albumCount = albumCount
+    }
+}

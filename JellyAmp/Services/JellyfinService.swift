@@ -742,6 +742,67 @@ class JellyfinService: ObservableObject {
         return try await fetchMusicItems(includeItemTypes: "Playlist")
     }
 
+    // MARK: - Genres
+
+    func fetchGenres() async throws -> [BaseItemDto] {
+        guard let token = KeychainService.shared.getAccessToken(),
+              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        var components = URLComponents(string: "\(baseURL)/MusicGenres")!
+        components.queryItems = [
+            URLQueryItem(name: "userId", value: userId),
+            URLQueryItem(name: "sortBy", value: "SortName"),
+            URLQueryItem(name: "sortOrder", value: "Ascending"),
+            URLQueryItem(name: "includeItemTypes", value: "MusicAlbum"),
+            URLQueryItem(name: "recursive", value: "true"),
+        ]
+
+        var request = URLRequest(url: components.url!)
+        request.setValue("MediaBrowser Token=\"\(token)\", Client=\"\(clientName)\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"\(clientVersion)\"", forHTTPHeaderField: "X-Emby-Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
+        return decoded.Items ?? []
+    }
+
+    func fetchAlbumsByGenre(genreId: String) async throws -> [BaseItemDto] {
+        return try await fetchMusicItemsByGenre(genreId: genreId)
+    }
+
+    private func fetchMusicItemsByGenre(genreId: String) async throws -> [BaseItemDto] {
+        guard let token = KeychainService.shared.getAccessToken(),
+              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        var components = URLComponents(string: "\(baseURL)/Users/\(userId)/Items")!
+        components.queryItems = [
+            URLQueryItem(name: "includeItemTypes", value: "MusicAlbum"),
+            URLQueryItem(name: "recursive", value: "true"),
+            URLQueryItem(name: "sortBy", value: "SortName"),
+            URLQueryItem(name: "sortOrder", value: "Ascending"),
+            URLQueryItem(name: "genreIds", value: genreId),
+            URLQueryItem(name: "limit", value: "200"),
+        ]
+
+        var request = URLRequest(url: components.url!)
+        request.setValue("MediaBrowser Token=\"\(token)\", Client=\"\(clientName)\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"\(clientVersion)\"", forHTTPHeaderField: "X-Emby-Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
+        return decoded.Items ?? []
+    }
+
     // MARK: - Favorites Management
 
     /// Mark an item as favorite

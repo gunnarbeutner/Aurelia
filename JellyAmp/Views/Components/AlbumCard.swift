@@ -41,23 +41,38 @@ struct AlbumCard: View {
             // Album Info
             VStack(alignment: .leading, spacing: 4) {
                 Text(album.name)
-                    .font(.jellyAmpBody)
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Color.jellyAmpText)
                     .lineLimit(1)
+                    .tracking(-0.15)
 
-                Text(album.artistName)
-                    .font(.jellyAmpCaption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(album.artistName)
+                        .font(.system(size: 13))
+                        .foregroundColor(.jellyAmpTextSecondary)
+                        .lineLimit(1)
 
-                if let showDate = ShowDateParser.parse(album.name) {
-                    Text(ShowDateParser.format(showDate))
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.neonCyan.opacity(0.6))
-                } else if let year = album.year {
-                    Text(String(year))
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.neonCyan.opacity(0.6))
+                    if let showDate = ShowDateParser.parse(album.name) {
+                        Text(ShowDateParser.format(showDate))
+                            .font(.jellyAmpMono)
+                            .foregroundColor(.jellyAmpTextMuted)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.jellyAmpElevated)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.05), lineWidth: 1))
+                            .fixedSize()
+                    } else if let year = album.year {
+                        Text(String(year))
+                            .font(.jellyAmpMono)
+                            .foregroundColor(.jellyAmpTextMuted)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.jellyAmpElevated)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.05), lineWidth: 1))
+                            .fixedSize()
+                    }
                 }
             }
         }
