@@ -305,7 +305,7 @@ struct ArtistDetailView: View {
         .task {
             await loadArtistContent()
         }
-        .onChange(of: selectedTab) { _ in
+        .onChange(of: selectedTab) { _, _ in
             if selectedTab == 1 && tracks.isEmpty && !isLoadingTracks {
                 Task {
                     await loadTracks()
