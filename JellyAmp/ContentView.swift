@@ -16,6 +16,10 @@ struct ContentView: View {
             if jellyfinService.isAuthenticated {
                 // User is authenticated - show main app
                 MainTabView()
+                    .onAppear {
+                        // Restore last playback state on launch (queue, track, position)
+                        PlayerManager.shared.restorePlaybackState()
+                    }
             } else {
                 // User not authenticated - show onboarding
                 OnboardingView()

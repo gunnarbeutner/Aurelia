@@ -43,10 +43,10 @@ class PlayerManager: NSObject, ObservableObject {
     @Published var recentlyPlayedAlbumIds: [String] = []
     @Published var playbackRate: Float = 1.0
 
-    enum RepeatMode {
-        case off
-        case all
-        case one
+    enum RepeatMode: String {
+        case off = "off"
+        case all = "all"
+        case one = "one"
 
         var systemImage: String {
             switch self {
@@ -87,14 +87,97 @@ class PlayerManager: NSObject, ObservableObject {
     private var originalIndex: Int = 0
     private var lastValidPlaybackTime: Double = 0.0  // Track last known position to detect unexpected restarts
 
+    // MARK: - Playback State Persistence Keys
+    private enum StateKey {
+        static let queue = "playerState_queue"
+        static let currentIndex = "playerState_currentIndex"
+        static let currentTime = "playerState_currentTime"
+        static let shuffleEnabled = "playerState_shuffleEnabled"
+        static let repeatMode = "playerState_repeatMode"
+        static let recentTracks = "playerState_recentTracks"
+    }
+
+    /// Recently played tracks (track-level, not just album IDs)
+    @Published var recentlyPlayedTracks: [Track] = []
+
     // MARK: - Initialization
 
     override init() {
         super.init()
         recentlyPlayedAlbumIds = UserDefaults.standard.stringArray(forKey: "recentlyPlayedAlbumIds") ?? []
+        recentlyPlayedTracks = Self.loadRecentTracks()
         setupNotifications()
         // Configure audio session immediately when PlayerManager is created
         configureAudioSession()
+    }
+
+    // MARK: - State Persistence
+
+    /// Save current playback state to UserDefaults
+    func savePlaybackState() {
+        guard !queue.isEmpty else { return }
+        if let data = try? JSONEncoder().encode(queue) {
+            UserDefaults.standard.set(data, forKey: StateKey.queue)
+        }
+        UserDefaults.standard.set(currentIndex, forKey: StateKey.currentIndex)
+        UserDefaults.standard.set(currentTime, forKey: StateKey.currentTime)
+        UserDefaults.standard.set(shuffleEnabled, forKey: StateKey.shuffleEnabled)
+        UserDefaults.standard.set(repeatMode.rawValue, forKey: StateKey.repeatMode)
+        logger.info("💾 Saved playback state: \(self.currentTrack?.name ?? "none") @ \(self.currentTime)s")
+    }
+
+    /// Load saved playback state — returns true if state was restored
+    @discardableResult
+    func restorePlaybackState() -> Bool {
+        guard let queueData = UserDefaults.standard.data(forKey: StateKey.queue),
+              let savedQueue = try? JSONDecoder().decode([Track].self, from: queueData),
+              !savedQueue.isEmpty else {
+            return false
+        }
+
+        let savedIndex = UserDefaults.standard.integer(forKey: StateKey.currentIndex)
+        let savedTime = UserDefaults.standard.double(forKey: StateKey.currentTime)
+        let savedShuffle = UserDefaults.standard.bool(forKey: StateKey.shuffleEnabled)
+        let savedRepeatRaw = UserDefaults.standard.string(forKey: StateKey.repeatMode) ?? ""
+
+        guard savedIndex < savedQueue.count else { return false }
+
+        // Restore queue state (don't auto-play — just set up so user can resume)
+        queue = savedQueue
+        currentIndex = savedIndex
+        currentTrack = savedQueue[savedIndex]
+        shuffleEnabled = savedShuffle
+        if let repeat_ = RepeatMode(rawValue: savedRepeatRaw) { repeatMode = repeat_ }
+
+        // Store the saved time so we can seek when user hits play
+        pendingSeekTime = savedTime
+
+        logger.info("▶️ Restored state: \(self.currentTrack?.name ?? "none") @ \(savedTime)s (queue: \(savedQueue.count) tracks)")
+        return true
+    }
+
+    /// Pending seek time — applied when playback starts after state restore
+    private var pendingSeekTime: Double = 0
+
+    private static func loadRecentTracks() -> [Track] {
+        guard let data = UserDefaults.standard.data(forKey: StateKey.recentTracks),
+              let tracks = try? JSONDecoder().decode([Track].self, from: data) else { return [] }
+        return tracks
+    }
+
+    private func saveRecentTracks() {
+        if let data = try? JSONEncoder().encode(Array(recentlyPlayedTracks.prefix(20))) {
+            UserDefaults.standard.set(data, forKey: StateKey.recentTracks)
+        }
+    }
+
+    private func addToRecentTracks(_ track: Track) {
+        recentlyPlayedTracks.removeAll { $0.id == track.id }
+        recentlyPlayedTracks.insert(track, at: 0)
+        if recentlyPlayedTracks.count > 20 {
+            recentlyPlayedTracks = Array(recentlyPlayedTracks.prefix(20))
+        }
+        saveRecentTracks()
     }
 
     // MARK: - Audio Session Configuration
@@ -567,6 +650,8 @@ class PlayerManager: NSObject, ObservableObject {
 
         currentTrack = track
         trackRecentPlay()
+        addToRecentTracks(track)
+        savePlaybackState()
 
         // Set duration from track metadata (Jellyfin API provides this)
         // Don't rely on stream duration as HTTP transcoded streams report isIndefinite
@@ -614,6 +699,15 @@ class PlayerManager: NSObject, ObservableObject {
         // Start playback
         player?.play()
         isPlaying = true
+
+        // Apply pending seek (e.g. restoring position after app relaunch)
+        if pendingSeekTime > 1.0 {
+            let seekTo = pendingSeekTime
+            pendingSeekTime = 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.seek(to: seekTo)
+            }
+        }
 
         // Update Now Playing
         updateNowPlayingInfo()

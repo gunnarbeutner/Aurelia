@@ -56,6 +56,9 @@ struct JellyAmpApp: App {
             // App went to background - CRITICAL for background audio
             print("🔵 App entered background - Audio should continue playing")
 
+            // Save playback state so we can restore on next launch
+            PlayerManager.shared.savePlaybackState()
+
             // Ensure audio session remains active
             do {
                 let audioSession = AVAudioSession.sharedInstance()
