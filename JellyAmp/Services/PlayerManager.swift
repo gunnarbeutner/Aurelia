@@ -428,22 +428,27 @@ class PlayerManager: NSObject, ObservableObject {
         // Update currentTime immediately to prevent UI snapping back
         self.currentTime = clampedTime
 
-        // Use small tolerance for reliable backward seeking (zero tolerance fails on some codecs)
-        let tolerance = CMTime(seconds: 0.5, preferredTimescale: 600)
-        player.seek(to: cmTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] completed in
+        // Seek the current item directly (more reliable than player.seek on AVQueuePlayer)
+        let tolerance = CMTime(seconds: 0.3, preferredTimescale: 600)
+        let targetItem = player.currentItem ?? playerItems.first
+        targetItem?.seek(to: cmTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] completed in
             guard let self = self else { return }
-            if completed {
-                self.logger.info("✅ Seek completed to \(clampedTime)s")
-                self.currentTime = clampedTime
-                // Update lastValidPlaybackTime so the restart detector doesn't
-                // misread the backward jump as a stream restart
-                self.lastValidPlaybackTime = clampedTime
-                self.updateNowPlayingInfo()
-            } else {
-                self.logger.error("❌ Seek failed to \(clampedTime)s")
+            DispatchQueue.main.async {
+                if completed {
+                    self.logger.info("✅ Seek completed to \(clampedTime)s")
+                    self.currentTime = clampedTime
+                    // Update lastValidPlaybackTime so the restart detector doesn't
+                    // misread the backward jump as a stream restart
+                    self.lastValidPlaybackTime = clampedTime
+                    self.updateNowPlayingInfo()
+                } else {
+                    self.logger.error("❌ Seek failed to \(clampedTime)s")
+                }
+                // Keep isSeeking true briefly so time observer doesn't fight the new position
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.isSeeking = false
+                }
             }
-            // Clear seeking flag AFTER updating lastValidPlaybackTime
-            self.isSeeking = false
         }
     }
 
@@ -787,9 +792,11 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        // Use a wider window (10s) to account for time observer lag and metadata inaccuracies.
+        // Jellyfin duration metadata can be off by several seconds vs actual stream length.
         let timeRemaining = currentTrack.duration - self.currentTime
-        if timeRemaining > 5.0 {
-            // We're more than 5 seconds from the end - this is a false notification
+        if timeRemaining > 10.0 {
+            // More than 10s from the end — almost certainly a false notification
             logger.warning("⚠️ IGNORING false 'track finished' notification - still \(timeRemaining)s remaining in '\(currentTrack.name)'")
             logger.warning("   Current time: \(self.currentTime)s, Duration: \(currentTrack.duration)s")
             return
@@ -915,10 +922,11 @@ class PlayerManager: NSObject, ObservableObject {
                 lastValidTime = self.lastValidPlaybackTime
             }
 
-            // Detect unexpected restarts WITHIN THE SAME TRACK
-            // If time jumps backward by more than 10 seconds AND we've been playing for a while,
-            // this is likely a stream restart (not a user seek, which sets isSeeking=true)
-            if !self.isSeeking && newTime < lastValidTime - 10.0 && lastValidTime > 30.0 && lastTrackedTrackId == self.currentTrack?.id {
+            // Detect unexpected stream restarts WITHIN THE SAME TRACK.
+            // Only trigger if: not currently seeking, jumped back 30+ seconds (not a user seek),
+            // was well into the track (>60s), and it's the same track.
+            // Tightened from 10s to 30s to avoid fighting legitimate user seeks.
+            if !self.isSeeking && newTime < lastValidTime - 30.0 && lastValidTime > 60.0 && lastTrackedTrackId == self.currentTrack?.id {
                 self.logger.error("🚨 UNEXPECTED RESTART DETECTED: Time jumped from \(lastValidTime)s to \(newTime)s")
                 self.logger.error("   Track: '\(self.currentTrack?.name ?? "unknown")'")
                 self.logger.error("   This indicates the AVPlayer stream restarted on its own")
