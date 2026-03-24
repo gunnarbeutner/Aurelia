@@ -553,6 +553,13 @@ struct LibraryView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            // Reserves space for mini player (64px) when a track is playing so the
+            // last list item is never hidden behind the floating player bar.
+            if playerManager.currentTrack != nil {
+                Color.clear.frame(height: 72)
+            }
+        }
         .refreshable {
             await syncLibrary()
         }
