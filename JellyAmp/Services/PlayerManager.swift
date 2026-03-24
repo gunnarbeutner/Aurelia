@@ -605,7 +605,7 @@ class PlayerManager: NSObject, ObservableObject {
 
                 let playerItem = AVPlayerItem(url: url)
                 playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-                playerItem.preferredForwardBufferDuration = 60.0
+                playerItem.preferredForwardBufferDuration = 15.0
 
                 player?.insert(playerItem, after: nil)
                 playerItems.append(playerItem)
@@ -746,7 +746,8 @@ class PlayerManager: NSObject, ObservableObject {
             // Configure for reliable streaming playback
             if !isOffline {
                 playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-                playerItem.preferredForwardBufferDuration = 60.0
+                // Keep buffer reasonable — 60s caused preloaded items to start mid-stream
+                playerItem.preferredForwardBufferDuration = 15.0
             }
 
             playerItems.append(playerItem)
@@ -847,13 +848,21 @@ class PlayerManager: NSObject, ObservableObject {
         // Update current track and metadata
         if currentIndex < queue.count {
             let newTrack = queue[currentIndex]
-            let previousTrack = currentTrack
+            let previousTrack: Track? = currentTrack
             self.currentTrack = newTrack
+            self.currentTime = 0
+            self.lastValidPlaybackTime = 0
+
+            // Seek next item to beginning — AVQueuePlayer preloads items and they
+            // can start mid-buffer if the previous item was transcoded/streaming
+            if let nextItem = player?.currentItem {
+                let zero = CMTime(seconds: 0, preferredTimescale: 600)
+                nextItem.seek(to: zero, toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+            }
 
             // Set duration from track metadata (not from stream)
-            // The time observer will update currentTime automatically from the player
             duration = newTrack.duration
-            logger.info("📏 Track changed: '\(previousTrack.name)' → '\(newTrack.name)' (index: \(self.currentIndex), duration: \(newTrack.duration)s)")
+            logger.info("📏 Track changed: '\(previousTrack?.name ?? "nil")' → '\(newTrack.name)' (index: \(self.currentIndex), duration: \(newTrack.duration)s)")
         } else {
             logger.error("❌ currentIndex \(self.currentIndex) out of bounds for queue size \(self.queue.count)")
         }
@@ -873,7 +882,7 @@ class PlayerManager: NSObject, ObservableObject {
 
             let playerItem = AVPlayerItem(url: url)
             playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-            playerItem.preferredForwardBufferDuration = 60.0
+            playerItem.preferredForwardBufferDuration = 15.0
 
             player?.insert(playerItem, after: nil)
             playerItems.append(playerItem)
