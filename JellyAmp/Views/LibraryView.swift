@@ -54,9 +54,9 @@ struct LibraryView: View {
     @State private var artists: [Artist] = []
     @State private var playlists: [Playlist] = []
     @State private var searchText = ""
-    @State private var selectedFilter = "Artists"
-    @State private var viewMode: ViewMode = .list
+    @AppStorage("librarySelectedFilter") private var selectedFilter: String = "Artists"
     @AppStorage("librarySortOption") private var sortOption: SortOption = .nameAsc
+    @State private var viewMode: ViewMode = .list
     @State private var showSortMenu = false
     // Navigation handled by NavigationStack and NavigationLink
     @State private var isLoading = true
@@ -77,6 +77,9 @@ struct LibraryView: View {
     
     // Search debouncing
     @State private var searchDebounceTask: Task<Void, Never>?
+
+    // Scroll position restoration — persisted so it survives navigation pops
+    // Scroll restoration handled by LibraryState.shared + ScrollViewReader
 
     private var columns: [GridItem] {
         sizeClass == .regular 
@@ -171,6 +174,7 @@ struct LibraryView: View {
                         .buttonStyle(.borderedProminent)
                     }
                 } else {
+                    ScrollViewReader { proxy in
                     ScrollView {
                         if selectedFilter == "Favorites" {
                             // Favorites View - Show both artists and albums
@@ -267,11 +271,14 @@ struct LibraryView: View {
                                         NavigationLink(value: artist) {
                                             ArtistCard(artist: artist)
                                         }
+                                        .id(artist.id)
                                         .accessibilityElement(children: .combine)
                                         .accessibilityLabel("Artist: \(artist.name)")
                                         .accessibilityHint("Double tap to view artist albums")
+                                        .simultaneousGesture(TapGesture().onEnded {
+                                            LibraryState.shared.lastTappedArtistId = artist.id
+                                        })
                                         .onAppear {
-                                            // Load more when approaching the end
                                             if artist.id == filteredArtists.last?.id && searchText.isEmpty {
                                                 Task { await loadMoreArtists() }
                                             }
@@ -300,12 +307,15 @@ struct LibraryView: View {
                                         NavigationLink(value: artist) {
                                             ArtistListRow(artist: artist)
                                         }
+                                        .id(artist.id)
                                         .accessibilityElement(children: .combine)
                                         .accessibilityLabel("Artist: \(artist.name)")
                                         .accessibilityHint("Double tap to view artist albums")
+                                        .simultaneousGesture(TapGesture().onEnded {
+                                            LibraryState.shared.lastTappedArtistId = artist.id
+                                        })
                                         .padding(.horizontal, 20)
                                         .onAppear {
-                                            // Load more when approaching the end
                                             if artist.id == filteredArtists.last?.id && searchText.isEmpty {
                                                 Task { await loadMoreArtists() }
                                             }
@@ -482,11 +492,14 @@ struct LibraryView: View {
                                         NavigationLink(value: album) {
                                             AlbumCard(album: album)
                                         }
+                                        .id(album.id)
                                         .accessibilityElement(children: .combine)
                                         .accessibilityLabel("Album: \(album.name) by \(album.artistName)")
                                         .accessibilityHint("Double tap to view album")
+                                        .simultaneousGesture(TapGesture().onEnded {
+                                            LibraryState.shared.lastTappedAlbumId = album.id
+                                        })
                                         .onAppear {
-                                            // Load more when approaching the end
                                             if album.id == filteredAndSortedAlbums.last?.id && searchText.isEmpty {
                                                 Task { await loadMoreAlbums() }
                                             }
@@ -515,12 +528,15 @@ struct LibraryView: View {
                                         NavigationLink(value: album) {
                                             AlbumListRow(album: album)
                                         }
+                                        .id(album.id)
                                         .accessibilityElement(children: .combine)
                                         .accessibilityLabel("Album: \(album.name) by \(album.artistName)")
                                         .accessibilityHint("Double tap to view album")
+                                        .simultaneousGesture(TapGesture().onEnded {
+                                            LibraryState.shared.lastTappedAlbumId = album.id
+                                        })
                                         .padding(.horizontal, 20)
                                         .onAppear {
-                                            // Load more when approaching the end
                                             if album.id == filteredAndSortedAlbums.last?.id && searchText.isEmpty {
                                                 Task { await loadMoreAlbums() }
                                             }
@@ -550,7 +566,25 @@ struct LibraryView: View {
                             }
                         }
                     }
-                }
+                    .onAppear {
+                        // Restore scroll position when navigating back from detail view
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            let state = LibraryState.shared
+                            let savedId: String
+                            switch selectedFilter {
+                            case "Artists": savedId = state.lastTappedArtistId
+                            case "Albums": savedId = state.lastTappedAlbumId
+                            default: return
+                            }
+                            if !savedId.isEmpty {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    proxy.scrollTo(savedId, anchor: .center)
+                                }
+                            }
+                        }
+                    }
+                } // end ScrollView
+                } // end ScrollViewReader
             }
         }
         .safeAreaInset(edge: .bottom) {

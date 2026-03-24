@@ -10,9 +10,6 @@
 		6D1D0D042F3A7AA100995579 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D032F3A7AA100995579 /* WidgetKit.framework */; };
 		6D1D0D062F3A7AA100995579 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D052F3A7AA100995579 /* SwiftUI.framework */; };
 		6D1D0D112F3A7AA200995579 /* JellyAmpComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D1D0D012F3A7AA100995579 /* JellyAmpComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		3606C286A2EC6A9873717694 /* JellyAmp Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4BEDE7C42EA2BEC6001E8050 /* JellyAmp Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		16007407EB1072DDCD5F09E4 /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7566AC912DAADC8107078FB5 /* WaveformView.swift */; };
-		81783F63DFF8832CB429FAF4 /* ShowDateParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5DAB69B53B4AA24B769735 /* ShowDateParser.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,27 +41,6 @@
 			remoteGlobalIDString = 4BEDE7722EA2B830001E8050;
 			remoteInfo = JellyAmp;
 		};
-		4BEDE7D12EA2BECB001E8050 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
-			remoteInfo = "JellyAmp Watch Watch App";
-		};
-		4BEDE7DB2EA2BECB001E8050 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
-			remoteInfo = "JellyAmp Watch Watch App";
-		};
-		4BEDE7E22EA2BECB001E8050 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
-			remoteInfo = "JellyAmp Watch Watch App";
-		};
 		6D1D0D0F2F3A7AA200995579 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
@@ -91,7 +67,6 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				// 3606C286A2EC6A9873717694 /* JellyAmp Watch Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -110,18 +85,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AA01000000000001 /* ChakraPetch-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ChakraPetch-Regular.ttf"; sourceTree = "<group>"; };
-		AA01000000000002 /* ChakraPetch-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ChakraPetch-Medium.ttf"; sourceTree = "<group>"; };
-		AA01000000000003 /* ChakraPetch-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ChakraPetch-SemiBold.ttf"; sourceTree = "<group>"; };
-		AA01000000000004 /* ChakraPetch-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ChakraPetch-Bold.ttf"; sourceTree = "<group>"; };
-		AA01000000000005 /* Sora-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Sora-Light.ttf"; sourceTree = "<group>"; };
-		AA01000000000006 /* Sora-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Sora-Regular.ttf"; sourceTree = "<group>"; };
-		AA01000000000007 /* Sora-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Sora-Medium.ttf"; sourceTree = "<group>"; };
-		AA01000000000008 /* Sora-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Sora-SemiBold.ttf"; sourceTree = "<group>"; };
-		AA01000000000009 /* Sora-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Sora-Bold.ttf"; sourceTree = "<group>"; };
-		AA0100000000000A /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
-		AA0100000000000B /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
-		AA0100000000000C /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
 		4BEDE7732EA2B830001E8050 /* JellyAmp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JellyAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BEDE7802EA2B834001E8050 /* JellyAmpTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JellyAmpTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BEDE78A2EA2B834001E8050 /* JellyAmpUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JellyAmpUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -134,8 +97,6 @@
 		6D1D0D032F3A7AA100995579 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		6D1D0D052F3A7AA100995579 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		6D1D0D172F3A7E7D00995579 /* JellyAmpComplicationExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = JellyAmpComplicationExtension.entitlements; sourceTree = "<group>"; };
-		7566AC912DAADC8107078FB5 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WaveformView.swift"; sourceTree = "<group>"; };
-		4A5DAB69B53B4AA24B769735 /* ShowDateParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShowDateParser.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -321,25 +282,6 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		1C2CA28B71F8812E40EEE7EB /* Fonts */ = {
-			isa = PBXGroup;
-			children = (
-				AA01000000000001 /* ChakraPetch-Regular.ttf */,
-				AA01000000000002 /* ChakraPetch-Medium.ttf */,
-				AA01000000000003 /* ChakraPetch-SemiBold.ttf */,
-				AA01000000000004 /* ChakraPetch-Bold.ttf */,
-				AA01000000000005 /* Sora-Light.ttf */,
-				AA01000000000006 /* Sora-Regular.ttf */,
-				AA01000000000007 /* Sora-Medium.ttf */,
-				AA01000000000008 /* Sora-SemiBold.ttf */,
-				AA01000000000009 /* Sora-Bold.ttf */,
-				AA0100000000000A /* JetBrainsMono-Regular.ttf */,
-				AA0100000000000B /* JetBrainsMono-Medium.ttf */,
-				AA0100000000000C /* JetBrainsMono-SemiBold.ttf */,
-			);
-			path = Fonts;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -366,7 +308,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				4BEDE7E32EA2BECB001E8050 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4BEDE7752EA2B830001E8050 /* JellyAmp */,
@@ -506,7 +447,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				4BEDE7D22EA2BECB001E8050 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4BEDE7D32EA2BECB001E8050 /* JellyAmp Watch Watch AppTests */,
@@ -529,7 +469,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				4BEDE7DC2EA2BECB001E8050 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4BEDE7DD2EA2BECB001E8050 /* JellyAmp Watch Watch AppUITests */,
