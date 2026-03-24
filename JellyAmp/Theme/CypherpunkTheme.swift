@@ -43,16 +43,16 @@ class ThemeManager: ObservableObject {
 extension Color {
     // Cypherpunk Theme - Neon Accents (matched to BRAND-GUIDE.md)
     static let neonCyan = Color(hex: "00FFDD")       // Primary accent
-    static let neonPink = Color(hex: "FF2D78")       // Secondary accent
+    static let neonPink = Color(hex: "FF3D85")       // Secondary accent
     static let neonPurple = Color(hex: "8B5CF6")     // Tertiary
     static let neonGreen = Color(red: 0.0, green: 1.0, blue: 0.25)
     static let neonOrange = Color(red: 1.0, green: 0.6, blue: 0.0)
     static let neonBlue = Color(red: 0.0, green: 0.4, blue: 1.0)
 
     // Cypherpunk Theme - Dark Backgrounds (matched to BRAND-GUIDE.md)
-    static let darkBackground = Color(hex: "050508")  // Deep Black
+    static let darkBackground = Color(hex: "060609")  // Deep Black
     static let darkMid = Color(hex: "0A0A10")         // Card
-    static let darkElevated = Color(hex: "111118")     // Surface
+    static let darkElevated = Color(hex: "0E0E16")    // Surface
 
     // Bitcoin Theme - Backgrounds
     static let matteBlack = Color(hex: "181818")
@@ -101,11 +101,11 @@ extension Color {
     }
 
     static var jellyAmpText: Color {
-        return Color(hex: "F0F0F5")  // Brand primary text
+        return Color(hex: "EEEEF2")  // Brand primary text
     }
 
     static var jellyAmpTextSecondary: Color {
-        return Color(hex: "8888A0")  // Brand secondary text
+        return Color(hex: "8888AA")  // Brand secondary text
     }
 
     static var jellyAmpTextMuted: Color {
