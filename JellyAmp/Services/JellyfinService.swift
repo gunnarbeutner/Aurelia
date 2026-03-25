@@ -739,7 +739,39 @@ class JellyfinService: ObservableObject {
 
     /// Fetch playlists for the authenticated user
     func fetchPlaylists() async throws -> [BaseItemDto] {
-        return try await fetchMusicItems(includeItemTypes: "Playlist")
+        guard let token = KeychainService.shared.getAccessToken(),
+              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+            throw JellyfinError.notAuthenticated
+        }
+
+        // Playlists need their own endpoint — recursive search with IncludeItemTypes=Playlist
+        // doesn't always work on all Jellyfin versions. Use the dedicated items endpoint.
+        var components = try buildURLComponents(path: "Users/\(userId)/Items")
+        components.queryItems = [
+            URLQueryItem(name: "IncludeItemTypes", value: "Playlist"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "IsFolder,SortName"),
+            URLQueryItem(name: "SortOrder", value: "Ascending"),
+            URLQueryItem(name: "Fields", value: "BasicSyncInfo,ChildCount,UserData"),
+        ]
+
+        let url = try buildURL(from: components)
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            logger.error("❌ fetchPlaylists failed with status \(statusCode)")
+            throw JellyfinError.invalidResponse
+        }
+
+        let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
+        logger.info("✅ Fetched \(decoded.Items.count) playlists")
+        return decoded.Items
     }
 
     // MARK: - Genres

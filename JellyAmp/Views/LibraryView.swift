@@ -611,6 +611,21 @@ struct LibraryView: View {
         .refreshable {
             await syncLibrary()
         }
+        // Lazy-load playlists when switching to Playlists tab (in case initial fetch was empty)
+        .onChange(of: selectedFilter) { _, newFilter in
+            if newFilter == "Playlists" && playlists.isEmpty && !isLoading {
+                Task {
+                    do {
+                        let items = try await jellyfinService.fetchPlaylists()
+                        let baseURL = jellyfinService.baseURL
+                        let converted = items.map { Playlist(from: $0, baseURL: baseURL) }
+                        await MainActor.run { self.playlists = converted }
+                    } catch {
+                        // silently fail — empty state already handled
+                    }
+                }
+            }
+        }
         // Search moved inline to filterSection
         .onChange(of: searchText) { _, newValue in
             // Cancel previous search task
