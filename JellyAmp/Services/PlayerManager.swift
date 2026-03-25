@@ -64,6 +64,8 @@ class PlayerManager: NSObject, ObservableObject {
     private var player: AVQueuePlayer?
     private var playerItems: [AVPlayerItem] = []
     private var timeObserver: Any?
+    private var progressReportTimer: Timer?
+    private var lastReportedItemId: String?
     private var cancellables = Set<AnyCancellable>()
     private var playerItemCancellables = Set<AnyCancellable>() // Separate for player item observers
     private let jellyfinService = JellyfinService.shared
@@ -296,6 +298,10 @@ class PlayerManager: NSObject, ObservableObject {
         player.play()
         isPlaying = true
         updateNowPlayingInfo()
+        if let itemId = currentTrack?.id {
+            let ticks = positionTicks()
+            Task { await jellyfinService.reportPlaybackProgress(itemId: itemId, positionTicks: ticks, isPaused: false) }
+        }
     }
 
     /// Pause playback
@@ -303,6 +309,10 @@ class PlayerManager: NSObject, ObservableObject {
         player?.pause()
         isPlaying = false
         updateNowPlayingInfo()
+        if let itemId = currentTrack?.id {
+            let ticks = positionTicks()
+            Task { await jellyfinService.reportPlaybackProgress(itemId: itemId, positionTicks: ticks, isPaused: true) }
+        }
     }
 
     /// Skips to next track
@@ -705,6 +715,9 @@ class PlayerManager: NSObject, ObservableObject {
         player?.play()
         isPlaying = true
 
+        // Report playback start to Jellyfin
+        startProgressReporting(for: track)
+
         // Apply pending seek (e.g. restoring position after app relaunch)
         if pendingSeekTime > 1.0 {
             let seekTo = pendingSeekTime
@@ -805,6 +818,9 @@ class PlayerManager: NSObject, ObservableObject {
 
         logger.info("✅ Current track finished playing: \(currentTrack.name) (time: \(self.currentTime)s, duration: \(currentTrack.duration)s)")
 
+        // Report stopped for the track that just finished
+        stopProgressReporting(reportStopped: true)
+
         guard repeatMode != .one else {
             // Repeat current track
             seek(to: 0)
@@ -863,6 +879,9 @@ class PlayerManager: NSObject, ObservableObject {
             // Set duration from track metadata (not from stream)
             duration = newTrack.duration
             logger.info("📏 Track changed: '\(previousTrack?.name ?? "nil")' → '\(newTrack.name)' (index: \(self.currentIndex), duration: \(newTrack.duration)s)")
+
+            // Report playback start for the new track (gapless advance)
+            startProgressReporting(for: newTrack)
         } else {
             logger.error("❌ currentIndex \(self.currentIndex) out of bounds for queue size \(self.queue.count)")
         }
@@ -1040,9 +1059,40 @@ class PlayerManager: NSObject, ObservableObject {
             self.timeObserver = nil
         }
 
+        // Stop progress reporting (don't double-report if handleTrackFinished already did)
+        stopProgressReporting(reportStopped: lastReportedItemId != nil)
+
         player?.pause()
         player = nil
         playerItemCancellables.removeAll()
+    }
+
+    // MARK: - Playback Reporting
+
+    private func positionTicks() -> Int64 {
+        return Int64(currentTime * 10_000_000)
+    }
+
+    private func startProgressReporting(for track: Track) {
+        stopProgressReporting()
+        lastReportedItemId = track.id
+        Task { await jellyfinService.reportPlaybackStart(itemId: track.id, positionTicks: positionTicks()) }
+        progressReportTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            guard let self = self, let itemId = self.currentTrack?.id else { return }
+            let ticks = self.positionTicks()
+            let paused = !self.isPlaying
+            Task { await self.jellyfinService.reportPlaybackProgress(itemId: itemId, positionTicks: ticks, isPaused: paused) }
+        }
+    }
+
+    private func stopProgressReporting(reportStopped: Bool = true) {
+        progressReportTimer?.invalidate()
+        progressReportTimer = nil
+        if reportStopped, let itemId = lastReportedItemId {
+            let ticks = positionTicks()
+            Task { await jellyfinService.reportPlaybackStopped(itemId: itemId, positionTicks: ticks) }
+            lastReportedItemId = nil
+        }
     }
 
     // MARK: - Now Playing & Remote Controls

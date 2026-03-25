@@ -946,6 +946,65 @@ class JellyfinService: ObservableObject {
         }
     }
 
+    // MARK: - Playback Reporting
+
+    /// Report that playback has started for a track
+    func reportPlaybackStart(itemId: String, positionTicks: Int64 = 0) async {
+        guard let token = KeychainService.shared.getAccessToken() else { return }
+        let body: [String: Any] = [
+            "ItemId": itemId,
+            "PositionTicks": positionTicks,
+            "PlayMethod": "DirectStream",
+            "IsPaused": false,
+            "IsMuted": false,
+            "RepeatMode": "RepeatNone"
+        ]
+        await postPlaybackReport(path: "Sessions/Playing", body: body, token: token)
+    }
+
+    /// Report playback progress (called every ~10s)
+    func reportPlaybackProgress(itemId: String, positionTicks: Int64, isPaused: Bool) async {
+        guard let token = KeychainService.shared.getAccessToken() else { return }
+        let body: [String: Any] = [
+            "ItemId": itemId,
+            "PositionTicks": positionTicks,
+            "PlayMethod": "DirectStream",
+            "IsPaused": isPaused,
+            "IsMuted": false,
+            "RepeatMode": "RepeatNone"
+        ]
+        await postPlaybackReport(path: "Sessions/Playing/Progress", body: body, token: token)
+    }
+
+    /// Report that playback has stopped
+    func reportPlaybackStopped(itemId: String, positionTicks: Int64) async {
+        guard let token = KeychainService.shared.getAccessToken() else { return }
+        let body: [String: Any] = [
+            "ItemId": itemId,
+            "PositionTicks": positionTicks,
+            "PlayMethod": "DirectStream"
+        ]
+        await postPlaybackReport(path: "Sessions/Playing/Stopped", body: body, token: token)
+    }
+
+    private func postPlaybackReport(path: String, body: [String: Any], token: String) async {
+        guard let url = URL(string: "\(baseURL)/\(path)"),
+              let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                logger.warning("Playback report to \(path) returned HTTP \(http.statusCode)")
+            }
+        } catch {
+            logger.warning("Playback report to \(path) failed: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Helper Methods
 
     private func buildURLComponents(path: String) throws -> URLComponents {
