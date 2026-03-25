@@ -223,6 +223,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        pendingSeekTime = 0  // Fresh tap — always start from beginning
         queue = [track]
         currentIndex = 0
         playCurrentTrack()
@@ -251,6 +252,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        pendingSeekTime = 0  // Fresh tap — always start from beginning
         originalQueue = validTracks
         originalIndex = min(index, validTracks.count - 1)
 
@@ -666,12 +668,16 @@ class PlayerManager: NSObject, ObservableObject {
         currentTrack = track
         trackRecentPlay()
         addToRecentTracks(track)
-        savePlaybackState()
+
+        // Reset time BEFORE saving state — so we don't persist the previous track's
+        // position against this new track (which would cause mid-song starts on next restore)
+        currentTime = 0
+        lastValidPlaybackTime = 0
 
         // Set duration from track metadata (Jellyfin API provides this)
         // Don't rely on stream duration as HTTP transcoded streams report isIndefinite
         duration = track.duration
-        currentTime = 0
+        savePlaybackState()
         logger.info("📏 Set duration from track metadata: \(track.duration)s for '\(track.name)'")
 
         // Clear any previous error
@@ -718,7 +724,14 @@ class PlayerManager: NSObject, ObservableObject {
         // Report playback start to Jellyfin
         startProgressReporting(for: track)
 
-        // Apply pending seek (e.g. restoring position after app relaunch)
+        // Seek first item to zero — streaming items can start mid-buffer if previously buffered
+        if let firstItem = player?.currentItem {
+            let zero = CMTime(seconds: 0, preferredTimescale: 600)
+            firstItem.seek(to: zero, toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+        }
+
+        // Apply pending seek ONLY for state-restore resume (pendingSeekTime is set by restorePlaybackState).
+        // play(_ track:) and play(tracks:) clear this to 0 so fresh taps always start from beginning.
         if pendingSeekTime > 1.0 {
             let seekTo = pendingSeekTime
             pendingSeekTime = 0
