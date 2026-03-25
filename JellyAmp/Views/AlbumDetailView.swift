@@ -119,6 +119,11 @@ struct AlbumDetailView: View {
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
+        .alert("Photo Upload", isPresented: Binding(get: { uploadArtError != nil }, set: { if !$0 { uploadArtError = nil } })) {
+            Button("OK") { uploadArtError = nil }
+        } message: {
+            Text(uploadArtError ?? "")
+        }
     }
 
     // MARK: - Fetch Album Tracks
@@ -353,22 +358,30 @@ struct AlbumDetailView: View {
     private func uploadSelectedPhoto(_ item: PhotosPickerItem) async {
         isUploadingArt = true
         uploadArtError = nil
+        defer { isUploadingArt = false }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else { return }
-            // Compress to JPEG for upload
-            let image = UIImage(data: data)
-            guard let jpegData = image?.jpegData(compressionQuality: 0.85) else { return }
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                print("❌ Failed to load photo data from picker")
+                uploadArtError = "Could not load the selected photo"
+                return
+            }
+            guard let uiImage = UIImage(data: data),
+                  let jpegData = uiImage.jpegData(compressionQuality: 0.85) else {
+                print("❌ Failed to convert photo to JPEG")
+                uploadArtError = "Could not process the photo"
+                return
+            }
+            print("📸 Uploading album artwork (\(jpegData.count / 1024)KB) for \(album.name)")
             try await jellyfinService.uploadImage(itemId: album.id, imageData: jpegData)
+            print("✅ Album artwork uploaded successfully")
             await MainActor.run {
                 localArtworkData = jpegData
-                isUploadingArt = false
             }
         } catch {
-            await MainActor.run {
-                uploadArtError = "Upload failed: \(error.localizedDescription)"
-                isUploadingArt = false
-            }
+            print("❌ Album artwork upload failed: \(error)")
+            uploadArtError = "Upload failed — make sure you're logged in as admin"
         }
+        selectedPhotoItem = nil
     }
 
     // MARK: - Placeholder Artwork (#77 — hash-to-color like PWA)
