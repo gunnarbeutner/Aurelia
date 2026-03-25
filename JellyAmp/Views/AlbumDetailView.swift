@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct AlbumDetailView: View {
     let album: Album
@@ -19,6 +20,12 @@ struct AlbumDetailView: View {
     @State private var isLoadingTracks = true
     @State private var showAddToPlaylist = false
     @State private var selectedTrackIds: [String] = []
+
+    // Artwork upload
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isUploadingArt = false
+    @State private var uploadArtError: String?
+    @State private var localArtworkData: Data?
 
     init(album: Album) {
         self.album = album
@@ -259,33 +266,35 @@ struct AlbumDetailView: View {
     // MARK: - Album Hero Section
     private var albumHeroSection: some View {
         VStack(spacing: 0) {
-            // Album Artwork — clean, no gradient behind it
-            if let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
-                CachedAsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        placeholderArtwork
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 260, height: 260)
-                            .clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
-                    case .failure:
-                        placeholderArtwork
-                    @unknown default:
-                        placeholderArtwork
+            // Album Artwork with upload overlay
+            ZStack(alignment: .bottomTrailing) {
+                artworkView
+                    .frame(width: 260, height: 260)
+
+                // Upload button overlay
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.jellyAmpBackground.opacity(0.85))
+                            .frame(width: 36, height: 36)
+                            .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        if isUploadingArt {
+                            ProgressView()
+                                .tint(.jellyAmpAccent)
+                                .scaleEffect(0.7)
+                        } else {
+                            Image(systemName: album.artworkURL == nil ? "camera.fill" : "camera")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(album.artworkURL == nil ? .jellyAmpAccent : .white.opacity(0.6))
+                        }
                     }
                 }
-                .frame(width: 260, height: 260)
-            } else {
-                placeholderArtwork
+                .offset(x: -8, y: -8)
+                .disabled(isUploadingArt)
+            }
+            .onChange(of: selectedPhotoItem) { _, item in
+                guard let item else { return }
+                Task { await uploadSelectedPhoto(item) }
             }
 
             // Album Title & Artist
@@ -304,6 +313,62 @@ struct AlbumDetailView: View {
             .padding(.bottom, 20)
         }
         .padding(.top, 40)
+    }
+
+    // MARK: - Artwork View (existing or uploaded)
+    @ViewBuilder
+    private var artworkView: some View {
+        if let data = localArtworkData, let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 260, height: 260)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
+        } else if let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
+            CachedAsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 260, height: 260)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
+                default:
+                    placeholderArtwork
+                }
+            }
+            .frame(width: 260, height: 260)
+        } else {
+            placeholderArtwork
+        }
+    }
+
+    // MARK: - Upload Photo
+    private func uploadSelectedPhoto(_ item: PhotosPickerItem) async {
+        isUploadingArt = true
+        uploadArtError = nil
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            // Compress to JPEG for upload
+            let image = UIImage(data: data)
+            guard let jpegData = image?.jpegData(compressionQuality: 0.85) else { return }
+            try await jellyfinService.uploadImage(itemId: album.id, imageData: jpegData)
+            await MainActor.run {
+                localArtworkData = jpegData
+                isUploadingArt = false
+            }
+        } catch {
+            await MainActor.run {
+                uploadArtError = "Upload failed: \(error.localizedDescription)"
+                isUploadingArt = false
+            }
+        }
     }
 
     // MARK: - Placeholder Artwork (#77 — hash-to-color like PWA)
