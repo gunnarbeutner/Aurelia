@@ -56,7 +56,21 @@ struct LibraryView: View {
     @State private var searchText = ""
     @AppStorage("librarySelectedFilter") private var selectedFilter: String = "Artists"
     @AppStorage("librarySortOption") private var sortOption: SortOption = .nameAsc
-    @State private var viewMode: ViewMode = .list
+    @AppStorage("libraryViewModeArtists") private var viewModeArtists: String = ViewMode.list.rawValue
+    @AppStorage("libraryViewModeAlbums") private var viewModeAlbums: String = ViewMode.grid.rawValue
+
+    private var viewMode: ViewMode {
+        switch selectedFilter {
+        case "Albums", "Recent", "Genres": return ViewMode(rawValue: viewModeAlbums) ?? .grid
+        default: return ViewMode(rawValue: viewModeArtists) ?? .list
+        }
+    }
+    private func setViewMode(_ mode: ViewMode) {
+        switch selectedFilter {
+        case "Albums", "Recent", "Genres": viewModeAlbums = mode.rawValue
+        default: viewModeArtists = mode.rawValue
+        }
+    }
     @State private var showSortMenu = false
     // Navigation handled by NavigationStack and NavigationLink
     @State private var isLoading = true
@@ -1059,7 +1073,7 @@ struct LibraryView: View {
                 ForEach(ViewMode.allCases, id: \.self) { mode in
                     Button {
                         withAnimation(.spring(response: 0.3)) {
-                            viewMode = mode
+                            setViewMode(mode)
                         }
                     } label: {
                         Image(systemName: mode.icon)
