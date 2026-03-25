@@ -10,8 +10,9 @@ import PhotosUI
 
 // MARK: - View Mode Enum
 enum ArtistViewMode {
-    case allAlbums
-    case byYear
+    case allAlbums   // list
+    case grid        // square grid
+    case byYear      // grouped by year
 }
 
 struct ArtistDetailView: View {
@@ -441,45 +442,31 @@ struct ArtistDetailView: View {
 
                 // View Mode Toggle
                 if !albums.isEmpty {
-                    HStack(spacing: 8) {
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                viewMode = .allAlbums
+                    HStack(spacing: 0) {
+                        ForEach([
+                            (ArtistViewMode.allAlbums, "list.bullet", "List"),
+                            (ArtistViewMode.grid, "square.grid.2x2", "Grid"),
+                            (ArtistViewMode.byYear, "calendar", "By Year")
+                        ], id: \.2) { mode, icon, label in
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    viewMode = mode
+                                }
+                            } label: {
+                                Image(systemName: icon)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(viewMode == mode ? .black : .white)
+                                    .frame(width: 36, height: 30)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: viewMode == mode ? 8 : 0)
+                                            .fill(viewMode == mode ? Color.jellyAmpAccent : Color.clear)
+                                    )
                             }
-                        } label: {
-                            Image(systemName: "list.bullet")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(viewMode == .allAlbums ? .black : .neonCyan)
-                                .frame(width: 36, height: 36)
-                                .background(
-                                    Circle()
-                                        .fill(viewMode == .allAlbums ? Color.jellyAmpAccent : Color.white.opacity(0.1))
-                                )
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.jellyAmpAccent.opacity(0.5), lineWidth: 1)
-                                )
-                        }
-
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                viewMode = .byYear
-                            }
-                        } label: {
-                            Image(systemName: "calendar")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(viewMode == .byYear ? .black : .neonPink)
-                                .frame(width: 36, height: 36)
-                                .background(
-                                    Circle()
-                                        .fill(viewMode == .byYear ? Color.jellyAmpSecondary : Color.white.opacity(0.1))
-                                )
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.jellyAmpSecondary.opacity(0.5), lineWidth: 1)
-                                )
+                            .accessibilityLabel(label)
                         }
                     }
+                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .overlay(Capsule().stroke(Color.jellyAmpAccent.opacity(0.4), lineWidth: 1))
                 }
             }
             .padding(.horizontal, 20)
@@ -514,10 +501,10 @@ struct ArtistDetailView: View {
                 .padding(.vertical, 40)
             } else {
                 // Switch between view modes
-                if viewMode == .allAlbums {
-                    allAlbumsView
-                } else {
-                    byYearView
+                switch viewMode {
+                case .allAlbums: allAlbumsView
+                case .grid: gridAlbumsView
+                case .byYear: byYearView
                 }
             }
         }
@@ -534,6 +521,21 @@ struct ArtistDetailView: View {
                 .background(Color.jellyAmpMidBackground.opacity(0.3))
             }
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
+    // MARK: - Grid Albums View
+    private var gridAlbumsView: some View {
+        let columns = [GridItem(.adaptive(minimum: 130), spacing: 12)]
+        return LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(albums.sorted(by: { ($0.year ?? 0) > ($1.year ?? 0) })) { album in
+                NavigationLink(value: album) {
+                    AlbumCard(album: album)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
