@@ -151,7 +151,7 @@ struct ArtistDetailView: View {
                     wikiImageURL = serverImageURL
                 } catch {
                     print("❌ Artist image upload failed: \(error)")
-                    uploadError = "Upload failed — make sure you're logged in as admin"
+                    uploadError = "Upload failed: \(error.localizedDescription)"
                 }
                 selectedPhotoItem = nil
             }

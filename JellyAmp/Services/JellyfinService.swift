@@ -942,7 +942,11 @@ class JellyfinService: ObservableObject {
         guard (200...299).contains(httpResponse.statusCode) else {
             let body = String(data: responseData, encoding: .utf8) ?? "no body"
             logger.error("Image upload failed: HTTP \(httpResponse.statusCode) - \(body)")
-            throw JellyfinError.invalidResponse
+            switch httpResponse.statusCode {
+            case 401: throw JellyfinError.unauthorized
+            case 403: throw JellyfinError.forbidden
+            default: throw JellyfinError.invalidResponse
+            }
         }
     }
 

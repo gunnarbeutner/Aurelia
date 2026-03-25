@@ -379,7 +379,7 @@ struct AlbumDetailView: View {
             }
         } catch {
             print("❌ Album artwork upload failed: \(error)")
-            uploadArtError = "Upload failed — make sure you're logged in as admin"
+            uploadArtError = "Upload failed: \(error.localizedDescription)"
         }
         selectedPhotoItem = nil
     }
