@@ -42,12 +42,24 @@ struct JellyAmpTests {
         #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
     }
 
+    @Test @MainActor func discoveryFallsBackWhenFavoriteSeedsFail() async {
+        let api = FakeDiscoveryAPI()
+        api.shouldFailFavorites = true
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] })
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.map(\.seed.id) == ["random-d"])
+        #expect(viewModel.errorMessage == nil)
+    }
+
 }
 
 @MainActor
 private final class FakeDiscoveryAPI: DiscoveryAPI {
     let baseURL = "https://jellyfin.test"
     var requestedMixes: [String] = []
+    var shouldFailFavorites = false
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
         requestedMixes.append(itemId)
@@ -55,7 +67,8 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     }
 
     func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] {
-        [audio(id: "favorite-c", artist: "Artist C")]
+        if shouldFailFavorites { throw FakeError.unavailable }
+        return [audio(id: "favorite-c", artist: "Artist C")]
     }
 
     func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] {
@@ -80,4 +93,8 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
             ArtistItems: [NameIdPair(Name: artist, Id: artist.lowercased())]
         )
     }
+}
+
+private enum FakeError: Error {
+    case unavailable
 }

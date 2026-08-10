@@ -80,12 +80,10 @@ final class DiscoveryViewModel: ObservableObject {
 
         do {
             let recent = recentSeedCandidates()
-            async let favoriteItems = api.fetchFavoriteTracks(limit: 12)
-            async let randomItems = api.fetchRandomTracks(limit: 12)
-
-            let favoriteTracks = try await favoriteItems.map { Track(from: $0, baseURL: api.baseURL) }
-            let randomTracks = try await randomItems.map { Track(from: $0, baseURL: api.baseURL) }
-            let candidates = uniqueSeeds(recent + favoriteTracks + randomTracks)
+            async let favoriteTracks = fetchFavoriteSeedTracks()
+            async let randomTracks = fetchRandomSeedTracks()
+            let fetchedSeeds = await (favoriteTracks, randomTracks)
+            let candidates = uniqueSeeds(recent + fetchedSeeds.0 + fetchedSeeds.1)
 
             var newShelves: [DiscoveryShelf] = []
             var usedRecommendationIds = Set<String>()
@@ -152,6 +150,24 @@ final class DiscoveryViewModel: ObservableObject {
 
     private func recentSeedCandidates() -> [Track] {
         uniqueSeeds(recentTracksProvider())
+    }
+
+    private func fetchFavoriteSeedTracks() async -> [Track] {
+        do {
+            return try await api.fetchFavoriteTracks(limit: 12)
+                .map { Track(from: $0, baseURL: api.baseURL) }
+        } catch {
+            return []
+        }
+    }
+
+    private func fetchRandomSeedTracks() async -> [Track] {
+        do {
+            return try await api.fetchRandomTracks(limit: 12)
+                .map { Track(from: $0, baseURL: api.baseURL) }
+        } catch {
+            return []
+        }
     }
 
     private func uniqueSeeds(_ tracks: [Track]) -> [Track] {
