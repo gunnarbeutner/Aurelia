@@ -19,13 +19,21 @@ struct MainTabView: View {
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
+                NavigationStack {
+                    DiscoveryView()
+                }
+                .tabItem {
+                    Label("Discover", systemImage: "sparkles")
+                }
+                .tag(0)
+
                 NavigationStack(path: $libraryPath) {
                     LibraryView()
                 }
                 .tabItem {
                     Label("Library", systemImage: "music.note.list")
                 }
-                .tag(0)
+                .tag(1)
                 
                 NavigationStack {
                     SearchView()
@@ -33,21 +41,13 @@ struct MainTabView: View {
                 .tabItem {
                     Label("Search", systemImage: "magnifyingglass")
                 }
-                .tag(1)
+                .tag(2)
                 
                 NavigationStack {
                     FavoritesView()
                 }
                 .tabItem {
                     Label("Favorites", systemImage: "heart.fill")
-                }
-                .tag(2)
-                
-                NavigationStack {
-                    DownloadsView()
-                }
-                .tabItem {
-                    Label("Downloads", systemImage: "arrow.down.circle.fill")
                 }
                 .tag(3)
                 
@@ -96,7 +96,7 @@ struct MainTabView: View {
         .onChange(of: navCoordinator.pendingArtistNavigation) { _, artist in
             guard let artist = artist else { return }
             navCoordinator.pendingArtistNavigation = nil
-            selectedTab = 0
+            selectedTab = 1
             libraryPath = NavigationPath()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 libraryPath.append(artist)
@@ -105,7 +105,7 @@ struct MainTabView: View {
         .onChange(of: navCoordinator.pendingAlbumNavigation) { _, album in
             guard let album = album else { return }
             navCoordinator.pendingAlbumNavigation = nil
-            selectedTab = 0
+            selectedTab = 1
             libraryPath = NavigationPath()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 libraryPath.append(album)

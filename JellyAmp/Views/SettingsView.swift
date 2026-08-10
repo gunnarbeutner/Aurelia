@@ -46,6 +46,7 @@ enum StreamingQuality: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var themeManager = ThemeManager.shared
+    @ObservedObject var downloadManager = DownloadManager.shared
     @State private var showSignOutConfirmation = false
     @AppStorage("preferredAppearance") private var preferredAppearance = "always_dark"
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
@@ -58,36 +59,37 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Dark background
-                Color.jellyAmpBackground.ignoresSafeArea()
+        ZStack {
+            // Dark background
+            Color.jellyAmpBackground.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Header with app icon/logo
-                        headerSection
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header with app icon/logo
+                    headerSection
 
-                        // Theme Selector
-                        themeSection
+                    // Theme Selector
+                    themeSection
 
-                        // Streaming Quality
-                        streamingQualitySection
+                    // Streaming Quality
+                    streamingQualitySection
 
-                        // Server Info Section
-                        serverInfoSection
+                    // Offline storage
+                    storageSection
 
-                        // Danger Zone
-                        signOutSection
+                    // Server Info Section
+                    serverInfoSection
 
-                        Spacer(minLength: 40)
-                    }
-                    .padding()
+                    // Danger Zone
+                    signOutSection
+
+                    Spacer(minLength: 40)
                 }
+                .padding()
             }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
         }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.large)
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
             Button("Sign Out", role: .destructive) {
                 jellyfinService.signOut()
@@ -96,6 +98,58 @@ struct SettingsView: View {
         } message: {
             Text("Are you sure you want to sign out? You'll need to reconnect to your Jellyfin server.")
         }
+    }
+
+    // MARK: - Offline Storage Section
+
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Offline Storage")
+                .font(.jellyAmpHeadline)
+                .foregroundColor(.jellyAmpAccent)
+
+            NavigationLink {
+                DownloadsView()
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.neonCyan)
+                        .frame(width: 34)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Downloads")
+                            .font(.jellyAmpBody)
+                            .foregroundColor(.jellyAmpText)
+                        Text(downloadSummary)
+                            .font(.jellyAmpCaption)
+                            .foregroundColor(.jellyAmpTextSecondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.jellyAmpTextMuted)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.jellyAmpMidBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var downloadSummary: String {
+        let tracks = downloadManager.downloadedTracks.count
+        let storage = downloadManager.formatBytes(downloadManager.totalStorageUsed)
+        return "\(tracks) \(tracks == 1 ? "track" : "tracks") · \(storage)"
     }
 
     // MARK: - Header Section
@@ -464,5 +518,7 @@ struct SettingsView: View {
 // MARK: - Preview
 
 #Preview {
-    SettingsView()
+    NavigationStack {
+        SettingsView()
+    }
 }

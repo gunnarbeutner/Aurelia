@@ -14,42 +14,40 @@ struct DownloadsView: View {
     @State private var showDeleteAllConfirmation = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background
-                Color.jellyAmpBackground.ignoresSafeArea()
+        ZStack {
+            // Background
+            Color.jellyAmpBackground.ignoresSafeArea()
 
-                if downloadManager.downloadedTracks.isEmpty {
-                    emptyStateView
-                } else {
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            // Storage Usage Card
-                            storageUsageCard
+            if downloadManager.downloadedTracks.isEmpty {
+                emptyStateView
+            } else {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Storage Usage Card
+                        storageUsageCard
 
-                            // Downloaded Albums List
-                            downloadedAlbumsList
+                        // Downloaded Albums List
+                        downloadedAlbumsList
 
-                            // Delete All Button
-                            deleteAllButton
+                        // Delete All Button
+                        deleteAllButton
 
-                            // Bottom padding
-                            Color.clear.frame(height: 100)
-                        }
-                        .padding()
+                        // Bottom padding
+                        Color.clear.frame(height: 100)
                     }
+                    .padding()
                 }
             }
-            .navigationTitle("Downloads")
-            .navigationBarTitleDisplayMode(.large)
-            .confirmationDialog("Delete All Downloads", isPresented: $showDeleteAllConfirmation) {
-                Button("Delete All", role: .destructive) {
-                    downloadManager.deleteAllDownloads()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Are you sure you want to delete all \(downloadManager.downloadedTracks.count) tracks from \(downloadManager.downloadedAlbumCount) albums? This will free up \(downloadManager.formatBytes(downloadManager.totalStorageUsed)).")
+        }
+        .navigationTitle("Downloads")
+        .navigationBarTitleDisplayMode(.large)
+        .confirmationDialog("Delete All Downloads", isPresented: $showDeleteAllConfirmation) {
+            Button("Delete All", role: .destructive) {
+                downloadManager.deleteAllDownloads()
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete all \(downloadManager.downloadedTracks.count) tracks from \(downloadManager.downloadedAlbumCount) albums? This will free up \(downloadManager.formatBytes(downloadManager.totalStorageUsed)).")
         }
     }
 
@@ -626,5 +624,7 @@ struct DownloadedTrackRowInAlbum: View {
 
 // MARK: - Preview
 #Preview {
-    DownloadsView()
+    NavigationStack {
+        DownloadsView()
+    }
 }
