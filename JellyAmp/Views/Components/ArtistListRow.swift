@@ -3,6 +3,7 @@ import SwiftUI
 struct ArtistListRow: View {
     let artist: Artist
     @State private var wikiImageURL: String?
+    @State private var showArtistActions = false
 
     private var effectiveArtworkURL: String? {
         artist.artworkURL ?? wikiImageURL
@@ -56,6 +57,17 @@ struct ArtistListRow: View {
             if artist.artworkURL == nil {
                 wikiImageURL = await ArtistImageService.shared.getImageURL(for: artist.name)
             }
+        }
+        .contentShape(Rectangle())
+        .onLongPressGesture {
+            showArtistActions = true
+        }
+        .confirmationDialog(
+            artist.name,
+            isPresented: $showArtistActions,
+            titleVisibility: .visible
+        ) {
+            ArtistContextMenu(artist: artist)
         }
     }
 
