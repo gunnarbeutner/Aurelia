@@ -390,10 +390,36 @@ class PlayerManager: NSObject, ObservableObject {
         }
     }
 
+    /// Adds multiple tracks to the end of the queue, preserving their order.
+    func addToQueue(tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+
+        if currentTrack == nil {
+            play(tracks: tracks)
+        } else {
+            queue.append(contentsOf: tracks)
+        }
+    }
+
     /// Insert track to play after current track
     func playNext(track: Track) {
         let insertIndex = min(currentIndex + 1, queue.count)
         queue.insert(track, at: insertIndex)
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+
+    /// Inserts multiple tracks after the current track, preserving their order.
+    func playNext(tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+
+        if currentTrack == nil {
+            play(tracks: tracks)
+            return
+        }
+
+        let insertIndex = min(currentIndex + 1, queue.count)
+        queue.insert(contentsOf: tracks, at: insertIndex)
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
     }
