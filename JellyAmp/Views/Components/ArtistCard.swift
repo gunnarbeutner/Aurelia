@@ -3,7 +3,6 @@ import SwiftUI
 struct ArtistCard: View {
     let artist: Artist
     @State private var wikiImageURL: String?
-    @State private var showArtistActions = false
 
     private var effectiveArtworkURL: String? {
         artist.artworkURL ?? wikiImageURL
@@ -56,14 +55,7 @@ struct ArtistCard: View {
             }
         }
         .contentShape(Rectangle())
-        .onLongPressGesture {
-            showArtistActions = true
-        }
-        .confirmationDialog(
-            artist.name,
-            isPresented: $showArtistActions,
-            titleVisibility: .visible
-        ) {
+        .contextMenu {
             ArtistContextMenu(artist: artist)
         }
     }

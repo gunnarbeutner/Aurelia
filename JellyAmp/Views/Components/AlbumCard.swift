@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AlbumCard: View {
     let album: Album
-    @State private var showAlbumActions = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -78,14 +77,7 @@ struct AlbumCard: View {
             }
         }
         .contentShape(Rectangle())
-        .onLongPressGesture {
-            showAlbumActions = true
-        }
-        .confirmationDialog(
-            album.name,
-            isPresented: $showAlbumActions,
-            titleVisibility: .visible
-        ) {
+        .contextMenu {
             AlbumContextMenu(album: album)
         }
     }
