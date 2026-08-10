@@ -63,6 +63,9 @@ struct PlaylistListRow: View {
                     .foregroundColor(.neonPink.opacity(0.6))
             }
             .padding(.vertical, 14)
+            .contextMenu {
+                PlaylistContextMenu(playlist: playlist)
+            }
     }
 
     private var placeholderArtwork: some View {
@@ -86,4 +89,3 @@ struct PlaylistListRow: View {
         }
     }
 }
-

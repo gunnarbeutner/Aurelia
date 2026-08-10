@@ -172,6 +172,8 @@ struct DiscoveryView: View {
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
+                        InstantMixButton(itemId: track.id, itemName: track.name)
+
                         Button {
                             playerManager.playNext(track: track)
                         } label: {

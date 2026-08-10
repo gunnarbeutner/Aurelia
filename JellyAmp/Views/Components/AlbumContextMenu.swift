@@ -19,6 +19,8 @@ struct AlbumContextMenu: View {
             Label("Shuffle", systemImage: "shuffle")
         }
 
+        InstantMixButton(itemId: album.id, itemName: album.name)
+
         Divider()
 
         Button {

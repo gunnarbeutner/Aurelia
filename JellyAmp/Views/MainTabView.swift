@@ -14,6 +14,7 @@ struct MainTabView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var navCoordinator = NavigationCoordinator.shared
+    @ObservedObject var instantMixCoordinator = InstantMixCoordinator.shared
     @Namespace private var playerAnimation
 
     var body: some View {
@@ -91,8 +92,29 @@ struct MainTabView: View {
                 .transition(.move(edge: .bottom))
                 .zIndex(1)
             }
+
+            if instantMixCoordinator.isLoading {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(.neonCyan)
+                    Text("Creating Instant Mix…")
+                        .font(.jellyAmpCaption)
+                        .foregroundColor(.jellyAmpText)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.neonCyan.opacity(0.35)))
+                .allowsHitTesting(false)
+                .zIndex(2)
+            }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showNowPlaying)
+        .alert("Instant Mix", isPresented: instantMixErrorBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(instantMixCoordinator.errorMessage ?? "Unable to create an Instant Mix.")
+        }
         .onChange(of: navCoordinator.pendingArtistNavigation) { _, artist in
             guard let artist = artist else { return }
             navCoordinator.pendingArtistNavigation = nil
@@ -111,6 +133,17 @@ struct MainTabView: View {
                 libraryPath.append(album)
             }
         }
+    }
+
+    private var instantMixErrorBinding: Binding<Bool> {
+        Binding(
+            get: { instantMixCoordinator.errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    instantMixCoordinator.errorMessage = nil
+                }
+            }
+        )
     }
 }
 

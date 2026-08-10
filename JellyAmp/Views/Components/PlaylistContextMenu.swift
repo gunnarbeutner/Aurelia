@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct ArtistContextMenu: View {
-    let artist: Artist
+struct PlaylistContextMenu: View {
+    let playlist: Playlist
 
     private let jellyfinService = JellyfinService.shared
     private let playerManager = PlayerManager.shared
@@ -19,7 +19,7 @@ struct ArtistContextMenu: View {
             Label("Shuffle", systemImage: "shuffle")
         }
 
-        InstantMixButton(itemId: artist.id, itemName: artist.name)
+        InstantMixButton(itemId: playlist.id, itemName: playlist.name)
 
         Divider()
 
@@ -39,17 +39,13 @@ struct ArtistContextMenu: View {
     private func perform(_ action: Action) {
         Task {
             do {
-                let items = try await jellyfinService.fetchMusicItems(
-                    includeItemTypes: "Audio",
-                    artistIds: artist.id,
-                    limit: 200
-                )
+                let items = try await jellyfinService.fetchTracks(parentId: playlist.id)
                 let tracks = items
                     .map { Track(from: $0, baseURL: jellyfinService.baseURL) }
-                    .sorted(by: trackOrder)
+                    .sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
 
                 guard !tracks.isEmpty else {
-                    playerManager.errorMessage = "This artist has no playable tracks."
+                    playerManager.errorMessage = "This playlist contains no playable tracks."
                     return
                 }
 
@@ -64,29 +60,9 @@ struct ArtistContextMenu: View {
                     playerManager.addToQueue(tracks: tracks)
                 }
             } catch {
-                playerManager.errorMessage = "Unable to load \(artist.name): \(error.localizedDescription)"
+                playerManager.errorMessage = "Unable to load \(playlist.name): \(error.localizedDescription)"
             }
         }
-    }
-
-    private func trackOrder(_ lhs: Track, _ rhs: Track) -> Bool {
-        if lhs.albumName != rhs.albumName {
-            return lhs.albumName.localizedStandardCompare(rhs.albumName) == .orderedAscending
-        }
-
-        let lhsDisc = lhs.parentIndexNumber ?? 0
-        let rhsDisc = rhs.parentIndexNumber ?? 0
-        if lhsDisc != rhsDisc {
-            return lhsDisc < rhsDisc
-        }
-
-        let lhsIndex = lhs.indexNumber ?? 0
-        let rhsIndex = rhs.indexNumber ?? 0
-        if lhsIndex != rhsIndex {
-            return lhsIndex < rhsIndex
-        }
-
-        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
     }
 
     private enum Action {

@@ -113,16 +113,25 @@ struct SearchView: View {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            InstantMixButton(itemId: item.id, itemName: item.Name)
+                        }
                     } else if item.type == "MusicAlbum" {
                         NavigationLink(value: Album(from: item, baseURL: jellyfinService.baseURL)) {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            InstantMixButton(itemId: item.id, itemName: item.Name)
+                        }
                     } else {
                         Button { handleItemTap(item) } label: {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            InstantMixButton(itemId: item.id, itemName: item.Name)
+                        }
                     }
                 }
 

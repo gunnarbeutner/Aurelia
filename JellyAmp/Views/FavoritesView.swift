@@ -392,6 +392,8 @@ struct FavoriteTrackRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            InstantMixButton(itemId: track.id, itemName: track.name)
+
             Button { playerManager.playNext(track: track) } label: {
                 Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
             }

@@ -47,6 +47,9 @@ struct PlaylistCard: View {
                     .lineLimit(1)
             }
         }
+        .contextMenu {
+            PlaylistContextMenu(playlist: playlist)
+        }
     }
 
     private var placeholderArtwork: some View {
@@ -71,4 +74,3 @@ struct PlaylistCard: View {
             )
     }
 }
-

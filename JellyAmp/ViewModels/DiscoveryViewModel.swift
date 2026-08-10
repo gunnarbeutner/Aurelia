@@ -29,10 +29,14 @@ final class DiscoveryViewModel: ObservableObject {
     private var loadedRecentSignature: [String] = []
     private var observedActiveAnalysis = false
 
-    init(
-        api: any DiscoveryAPI = JellyfinService.shared,
-        recentTracksProvider: @escaping () -> [Track] = { PlayerManager.shared.recentlyPlayedTracks }
-    ) {
+    convenience init() {
+        self.init(
+            api: JellyfinService.shared,
+            recentTracksProvider: { PlayerManager.shared.recentlyPlayedTracks }
+        )
+    }
+
+    init(api: any DiscoveryAPI, recentTracksProvider: @escaping () -> [Track]) {
         self.api = api
         self.recentTracksProvider = recentTracksProvider
     }

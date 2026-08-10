@@ -476,6 +476,8 @@ struct PlaylistTrackRow: View {
             .contentShape(Rectangle())
         }
         .contextMenu {
+            InstantMixButton(itemId: track.id, itemName: track.name)
+
             // Play Next
             Button {
                 playerManager.playNext(track: track)
