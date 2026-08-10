@@ -60,14 +60,24 @@ struct MainTabView: View {
                 .tag(4)
             }
             .tint(.jellyAmpAccent)
-            .overlay(alignment: .bottom) {
-                // Mini Player floats above tab bar
+            #if targetEnvironment(macCatalyst)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if playerManager.currentTrack != nil && !showNowPlaying {
                     MiniPlayerView(showNowPlaying: $showNowPlaying, namespace: playerAnimation)
                         .padding(.horizontal, 8)
-                        .padding(.bottom, 56) // Tab bar height + spacing
+                        .padding(.top, 8)
                 }
             }
+            #else
+            .overlay(alignment: .bottom) {
+                // Mini Player floats above the iOS tab bar.
+                if playerManager.currentTrack != nil && !showNowPlaying {
+                    MiniPlayerView(showNowPlaying: $showNowPlaying, namespace: playerAnimation)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 56)
+                }
+            }
+            #endif
             
             // Now Playing View as overlay with swipe-to-dismiss
             if showNowPlaying {

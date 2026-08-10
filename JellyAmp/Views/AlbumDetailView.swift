@@ -83,8 +83,10 @@ struct AlbumDetailView: View {
                         // Track Listing
                         trackListingSection
 
-                        // Bottom padding for mini player
+                        #if !targetEnvironment(macCatalyst)
+                        // The iOS mini player overlays the tab content.
                         Color.clear.frame(height: 100)
+                        #endif
                     }
                 }
 
