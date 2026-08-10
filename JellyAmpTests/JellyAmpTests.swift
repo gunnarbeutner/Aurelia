@@ -6,6 +6,7 @@
 //
 
 import Testing
+import Foundation
 @testable import JellyAmp
 
 struct JellyAmpTests {
@@ -28,4 +29,55 @@ struct JellyAmpTests {
         #expect(status.isActive)
     }
 
+    @Test @MainActor func discoveryPrefersRecentTracksAndDistinctArtists() async {
+        let recentA = Track(id: "recent-a", name: "A", artistName: "Artist A", albumName: "One", duration: 1, artworkURL: nil, artistId: "artist-a")
+        let duplicateArtist = Track(id: "recent-a2", name: "A2", artistName: "Artist A", albumName: "Two", duration: 1, artworkURL: nil, artistId: "artist-a")
+        let recentB = Track(id: "recent-b", name: "B", artistName: "Artist B", albumName: "Three", duration: 1, artworkURL: nil, artistId: "artist-b")
+        let api = FakeDiscoveryAPI()
+        let viewModel = DiscoveryViewModel(api: api) { [recentA, duplicateArtist, recentB] }
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.map(\.seed.id) == ["recent-a", "recent-b", "favorite-c"])
+        #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
+    }
+
+}
+
+@MainActor
+private final class FakeDiscoveryAPI: DiscoveryAPI {
+    let baseURL = "https://jellyfin.test"
+    var requestedMixes: [String] = []
+
+    func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
+        requestedMixes.append(itemId)
+        return [audio(id: "mix-\(itemId)", artist: "Mix \(itemId)")]
+    }
+
+    func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] {
+        [audio(id: "favorite-c", artist: "Artist C")]
+    }
+
+    func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] {
+        [audio(id: "random-d", artist: "Artist D")]
+    }
+
+    func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo {
+        AudioMusePluginInfo(version: "1", availableEndpoints: [])
+    }
+
+    func checkAudioMuseHealth() async throws -> Bool { true }
+    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { nil }
+
+    private func audio(id: String, artist: String) -> BaseItemDto {
+        BaseItemDto(
+            Id: id,
+            Name: id,
+            Type: .Audio,
+            RunTimeTicks: 10_000_000,
+            Album: "Album",
+            Artists: [artist],
+            ArtistItems: [NameIdPair(Name: artist, Id: artist.lowercased())]
+        )
+    }
 }
