@@ -61,6 +61,11 @@ struct ServerSetupView: View {
         } message: {
             Text(errorMessage)
         }
+        .onAppear {
+            if serverURL.isEmpty {
+                serverURL = jellyfinService.baseURL
+            }
+        }
     }
 
     // MARK: - Logo Section
@@ -229,7 +234,7 @@ struct ServerSetupView: View {
                 isValidating = false
             }
         } catch {
-            errorMessage = "Could not connect to server. Please check the URL and try again.\n\nError: \(error.localizedDescription)"
+            errorMessage = "Could not connect to \(urlString).\n\n\(error.localizedDescription)"
             showError = true
             isValidating = false
         }

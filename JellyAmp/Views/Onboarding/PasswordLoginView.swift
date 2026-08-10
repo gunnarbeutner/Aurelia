@@ -253,8 +253,11 @@ struct PasswordLoginView: View {
                     isAuthenticating = false
                     if case JellyfinError.unauthorized = error {
                         errorMessage = "Invalid username or password. Please try again."
+                    } else if error is KeychainServiceError {
+                        errorMessage = error.localizedDescription
                     } else {
-                        errorMessage = "Failed to connect to server. Please check your connection and try again."
+                        let endpoint = jellyfinService.baseURL.isEmpty ? "the Jellyfin server" : jellyfinService.baseURL
+                        errorMessage = "Sign in to \(endpoint) failed.\n\n\(error.localizedDescription)"
                     }
                     showError = true
                 }

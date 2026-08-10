@@ -1,8 +1,8 @@
 # JellyAmp
 
-A modern music streaming client for Jellyfin servers, built for iOS and Apple Watch.
+A modern music streaming client for Jellyfin servers, built for iOS, macOS, and Apple Watch.
 
-![Platform](https://img.shields.io/badge/platform-iOS%2017.0%2B%20%7C%20watchOS%2010.0%2B-blue)
+![Platform](https://img.shields.io/badge/platform-iOS%2017.0%2B%20%7C%20macOS%2014.0%2B%20%7C%20watchOS%2010.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -25,6 +25,11 @@ A modern music streaming client for Jellyfin servers, built for iOS and Apple Wa
 - 🎵 **Now Playing** - Full playback controls on your wrist
 - 📡 **Auto-Sync** - Credentials automatically sync from your iPhone
 
+### macOS App
+- 🖥️ **Mac Catalyst** - The complete iPhone music experience in a resizable Mac window
+- 🎛️ **System Media Controls** - Control playback from Control Center and supported keyboards
+- 💾 **Offline Downloads** - Keep albums and tracks available on your Mac
+
 ## Technology
 
 - **SwiftUI** - Modern declarative UI framework
@@ -36,7 +41,7 @@ A modern music streaming client for Jellyfin servers, built for iOS and Apple Wa
 
 ## Requirements
 
-- iOS 17.0+ / watchOS 10.0+
+- iOS 17.0+ / macOS 14.0+ / watchOS 10.0+
 - Xcode 15.0+
 - A running Jellyfin server
 - Jellyfin server with Quick Connect enabled (recommended)
@@ -50,7 +55,21 @@ A modern music streaming client for Jellyfin servers, built for iOS and Apple Wa
 1. Clone this repository
 2. Open `JellyAmp.xcodeproj` in Xcode
 3. Select your development team in the project settings
-4. Build and run on your device (iPhone or Apple Watch)
+4. Build and run on your iPhone, Apple Watch, or Mac
+
+For macOS, select the shared `JellyAmp macOS` scheme and the `My Mac (Mac Catalyst)` destination. Make sure your Apple Developer account is signed in under Xcode Settings > Accounts and Automatic Signing is enabled for the `JellyAmp` target. Xcode may ask to create a Mac Catalyst development provisioning profile for the app's bundle identifier the first time you run it.
+
+You can also verify compilation with an unsigned local build from Terminal:
+
+```bash
+xcodebuild -project JellyAmp.xcodeproj \
+  -scheme "JellyAmp macOS" \
+  -destination "platform=macOS,variant=Mac Catalyst" \
+  -derivedDataPath /tmp/JellyAmpDerived \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+The unsigned artifact is for compile verification only. macOS can launch its linker-signed executable, but Keychain access is unavailable without a development provisioning profile, so it cannot securely retain Jellyfin credentials.
 
 ```bash
 git clone https://github.com/satsdisco/JellyAmp.git

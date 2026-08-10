@@ -165,7 +165,7 @@ class JellyfinService: ObservableObject {
             if let authResult = try? JSONDecoder().decode(AuthenticationResult.self, from: authData),
                let token = authResult.AccessToken {
                 // Store token securely
-                KeychainService.shared.saveAccessToken(token)
+                try KeychainService.shared.saveAccessToken(token)
                 self.isAuthenticated = true
                 self.currentUser = authResult.User
 
@@ -203,7 +203,7 @@ class JellyfinService: ObservableObject {
         case 200:
             let authResult = try JSONDecoder().decode(AuthenticationResult.self, from: data)
             if let token = authResult.AccessToken {
-                KeychainService.shared.saveAccessToken(token)
+                try KeychainService.shared.saveAccessToken(token)
                 self.isAuthenticated = true
                 self.currentUser = authResult.User
 

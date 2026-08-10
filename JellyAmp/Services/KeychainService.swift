@@ -9,6 +9,21 @@
 import Foundation
 import Security
 
+enum KeychainServiceError: LocalizedError {
+    case operationFailed(OSStatus)
+
+    var errorDescription: String? {
+        switch self {
+        case .operationFailed(let status) where status == errSecMissingEntitlement:
+            return "JellyAmp could not securely save your login because this build is not signed for Keychain access. In Xcode, enable Automatic Signing for the JellyAmp target and run the JellyAmp macOS scheme again."
+        case .operationFailed(let status):
+            let systemMessage = SecCopyErrorMessageString(status, nil) as String?
+            return systemMessage.map { "JellyAmp could not securely save your login: \($0) (\(status))." }
+                ?? "JellyAmp could not securely save your login (Keychain error \(status))."
+        }
+    }
+}
+
 /// Service for secure storage of authentication tokens in iOS Keychain
 /// Provides thread-safe access to encrypted credential storage
 class KeychainService {
@@ -23,7 +38,7 @@ class KeychainService {
 
     /// Saves access token to Keychain
     /// - Parameter token: The Jellyfin access token to store securely
-    func saveAccessToken(_ token: String) {
+    func saveAccessToken(_ token: String) throws {
         let data = Data(token.utf8)
 
         // Create query for adding item
@@ -41,8 +56,8 @@ class KeychainService {
         // Add new item
         let status = SecItemAdd(query as CFDictionary, nil)
 
-        if status != errSecSuccess {
-            print("Failed to save access token to Keychain: \(status)")
+        guard status == errSecSuccess else {
+            throw KeychainServiceError.operationFailed(status)
         }
     }
 
