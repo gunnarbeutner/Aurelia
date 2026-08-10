@@ -920,6 +920,115 @@ class JellyfinService: ObservableObject {
         return itemsResponse.Items
     }
 
+    // MARK: - Discovery and Instant Mix
+
+    /// Fetches Jellyfin's Instant Mix for any playable library item. AudioMuse-AI
+    /// overrides this standard route when its plugin is installed.
+    func fetchInstantMix(itemId: String, limit: Int = 50) async throws -> [BaseItemDto] {
+        guard let token = authToken, let userId = currentUserId else {
+            throw JellyfinError.notAuthenticated
+        }
+
+        var components = try buildURLComponents(path: "Items/\(itemId)/InstantMix")
+        components.queryItems = discoveryQueryItems(userId: userId, limit: limit)
+        let request = try authenticatedRequest(from: components, token: token)
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response)
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
+    }
+
+    func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] {
+        Array(try await fetchFavorites(includeItemTypes: "Audio").prefix(limit))
+    }
+
+    func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] {
+        guard let token = authToken, let userId = currentUserId else {
+            throw JellyfinError.notAuthenticated
+        }
+
+        var components = try buildURLComponents(path: "Users/\(userId)/Items")
+        components.queryItems = discoveryQueryItems(userId: userId, limit: limit) + [
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "Random")
+        ]
+        let request = try authenticatedRequest(from: components, token: token)
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response)
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
+    }
+
+    func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo {
+        let (data, response) = try await fetchAudioMuse(path: "info")
+        try validate(response: response, recognizeNotFound: true)
+        return try SafeJellyfinDecoder.decode(AudioMusePluginInfo.self, from: data)
+    }
+
+    func checkAudioMuseHealth() async throws -> Bool {
+        let (_, response) = try await fetchAudioMuse(path: "health")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw JellyfinError.invalidResponse
+        }
+        if httpResponse.statusCode == 404 { throw JellyfinError.notFound }
+        return (200...299).contains(httpResponse.statusCode)
+    }
+
+    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? {
+        let (data, response) = try await fetchAudioMuse(path: "active_tasks")
+        try validate(response: response, recognizeNotFound: true)
+
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !object.isEmpty else {
+            return nil
+        }
+        let status = try SafeJellyfinDecoder.decode(AudioMuseTaskStatus.self, from: data)
+        return status.isActive ? status : nil
+    }
+
+    private func fetchAudioMuse(path: String) async throws -> (Data, URLResponse) {
+        guard let token = authToken else { throw JellyfinError.notAuthenticated }
+        let components = try buildURLComponents(path: "AudioMuseAI/\(path)")
+        let request = try authenticatedRequest(from: components, token: token)
+        return try await session.data(for: request)
+    }
+
+    private func authenticatedRequest(from components: URLComponents, token: String) throws -> URLRequest {
+        var request = URLRequest(url: try buildURL(from: components))
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        return request
+    }
+
+    private func discoveryQueryItems(userId: String, limit: Int) -> [URLQueryItem] {
+        [
+            URLQueryItem(name: "UserId", value: userId),
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,BasicSyncInfo,MediaSources,AlbumPrimaryImageTag,UserData"),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+            URLQueryItem(name: "EnableImageTypes", value: "Primary"),
+            URLQueryItem(name: "EnableUserData", value: "true")
+        ]
+    }
+
+    private func validate(response: URLResponse, recognizeNotFound: Bool = false) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw JellyfinError.invalidResponse
+        }
+        switch httpResponse.statusCode {
+        case 200...299:
+            return
+        case 401:
+            throw JellyfinError.unauthorized
+        case 403:
+            throw JellyfinError.forbidden
+        case 404 where recognizeNotFound:
+            throw JellyfinError.notFound
+        default:
+            throw JellyfinError.invalidResponse
+        }
+    }
+
     // MARK: - Image Upload
 
     /// Upload an image to a Jellyfin item (artist, album, etc.)
@@ -1152,6 +1261,7 @@ enum JellyfinError: LocalizedError {
     case invalidURL
     case unauthorized
     case forbidden
+    case notFound
 
     var errorDescription: String? {
         switch self {
@@ -1169,6 +1279,8 @@ enum JellyfinError: LocalizedError {
             return "Session expired. Please sign in again."
         case .forbidden:
             return "Access forbidden. Please check your permissions."
+        case .notFound:
+            return "The requested Jellyfin feature is not installed."
         }
     }
 }
