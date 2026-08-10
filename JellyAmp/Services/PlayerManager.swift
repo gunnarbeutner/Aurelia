@@ -273,12 +273,18 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Plays/pauses current track
     func togglePlayPause() {
-        guard let player = player else {
-            return
-        }
-
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
+
+        // Restoring playback state recreates the queue and current-track metadata,
+        // but AVPlayer itself cannot be persisted across launches. Lazily rebuild it
+        // on the first play action so the saved position can be resumed.
+        guard let player = player else {
+            if currentTrack != nil {
+                playCurrentTrack()
+            }
+            return
+        }
 
         if isPlaying {
             player.pause()
@@ -294,6 +300,9 @@ class PlayerManager: NSObject, ObservableObject {
     /// Resume playback
     func play() {
         guard let player = player else {
+            if currentTrack != nil {
+                playCurrentTrack()
+            }
             return
         }
 
