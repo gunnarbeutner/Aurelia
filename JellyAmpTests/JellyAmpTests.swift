@@ -53,6 +53,16 @@ struct JellyAmpTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test @MainActor func signedBuildCanAccessKeychain() {
+        let key = "signing-verification-\(UUID().uuidString)"
+        let value = UUID().uuidString
+        defer { KeychainService.shared.remove(for: key) }
+
+        KeychainService.shared.store(value, for: key)
+
+        #expect(KeychainService.shared.retrieve(for: key) == value)
+    }
+
 }
 
 @MainActor
