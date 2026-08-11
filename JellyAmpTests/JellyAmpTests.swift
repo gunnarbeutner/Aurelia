@@ -977,6 +977,32 @@ struct JellyAmpTests {
         #expect(JellyAmpShortcuts.tab(5).modifiers == .command)
     }
 
+    @Test @MainActor func libraryScrollIndexGroupsLettersNumbersAndDecades() {
+        let alphabetical = LibraryScrollIndexBuilder.alphabetical([
+            (id: "numeric", title: "12 Moons"),
+            (id: "alpha", title: "Äther"),
+            (id: "another-alpha", title: "Avalon"),
+            (id: "beta", title: "Boards of Canada")
+        ])
+        let decades = LibraryScrollIndexBuilder.decades([
+            (id: "new", year: 2024),
+            (id: "same-decade", year: 2020),
+            (id: "old", year: 1997),
+            (id: "unknown", year: nil)
+        ])
+
+        #expect(alphabetical == [
+            LibraryScrollIndexEntry(label: "#", targetID: "numeric"),
+            LibraryScrollIndexEntry(label: "A", targetID: "alpha"),
+            LibraryScrollIndexEntry(label: "B", targetID: "beta")
+        ])
+        #expect(decades == [
+            LibraryScrollIndexEntry(label: "2020s", targetID: "new"),
+            LibraryScrollIndexEntry(label: "1990s", targetID: "old"),
+            LibraryScrollIndexEntry(label: "#", targetID: "unknown")
+        ])
+    }
+
 }
 
 @MainActor

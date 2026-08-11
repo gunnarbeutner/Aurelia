@@ -45,6 +45,53 @@ enum SortOption: String, CaseIterable {
     }
 }
 
+struct LibraryScrollIndexEntry: Identifiable, Equatable {
+    let label: String
+    let targetID: String
+
+    var id: String { "\(label)|\(targetID)" }
+}
+
+enum LibraryScrollIndexBuilder {
+    static func alphabetical(
+        _ items: [(id: String, title: String)]
+    ) -> [LibraryScrollIndexEntry] {
+        uniqueEntries(items.map { item in
+            (label: alphabeticalLabel(for: item.title), targetID: item.id)
+        })
+    }
+
+    static func decades(
+        _ items: [(id: String, year: Int?)]
+    ) -> [LibraryScrollIndexEntry] {
+        uniqueEntries(items.map { item in
+            let label = item.year.map { "\(($0 / 10) * 10)s" } ?? "#"
+            return (label: label, targetID: item.id)
+        })
+    }
+
+    private static func alphabeticalLabel(for title: String) -> String {
+        let folded = title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        guard let scalar = folded.unicodeScalars.first else { return "#" }
+        if CharacterSet.letters.contains(scalar) {
+            return String(scalar).uppercased()
+        }
+        return "#"
+    }
+
+    private static func uniqueEntries(
+        _ items: [(label: String, targetID: String)]
+    ) -> [LibraryScrollIndexEntry] {
+        var seen = Set<String>()
+        return items.compactMap { item in
+            guard seen.insert(item.label).inserted else { return nil }
+            return LibraryScrollIndexEntry(label: item.label, targetID: item.targetID)
+        }
+    }
+}
+
 func isLibraryLoadCancellation(_ error: Error) -> Bool {
     if error is CancellationError {
         return true
@@ -186,6 +233,35 @@ struct LibraryView: View {
 
     var favoriteAlbums: [Album] {
         albums.filter { $0.isFavorite }
+    }
+
+    private var scrollIndexEntries: [LibraryScrollIndexEntry] {
+        guard searchText.isEmpty else { return [] }
+
+        switch selectedFilter {
+        case "Artists":
+            return LibraryScrollIndexBuilder.alphabetical(
+                filteredArtists.map { (id: $0.id, title: $0.name) }
+            )
+        case "Albums":
+            let sortedAlbums = filteredAndSortedAlbums
+            switch sortOption {
+            case .nameAsc, .nameDesc:
+                return LibraryScrollIndexBuilder.alphabetical(
+                    sortedAlbums.map { (id: $0.id, title: $0.name) }
+                )
+            case .artistAsc, .artistDesc:
+                return LibraryScrollIndexBuilder.alphabetical(
+                    sortedAlbums.map { (id: $0.id, title: $0.artistName) }
+                )
+            case .yearNewest, .yearOldest:
+                return LibraryScrollIndexBuilder.decades(
+                    sortedAlbums.map { (id: $0.id, year: $0.year) }
+                )
+            }
+        default:
+            return []
+        }
     }
 
     var body: some View {
@@ -641,6 +717,20 @@ struct LibraryView: View {
                                     proxy.scrollTo(savedId, anchor: .center)
                                 }
                             }
+                        }
+                    }
+                    .contentMargins(
+                        .trailing,
+                        scrollIndexEntries.count > 1 ? 28 : 0,
+                        for: .scrollContent
+                    )
+                    .overlay(alignment: .trailing) {
+                        if scrollIndexEntries.count > 1 {
+                            LibraryScrollIndex(entries: scrollIndexEntries) { entry in
+                                proxy.scrollTo(entry.targetID, anchor: .top)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.trailing, 3)
                         }
                     }
                 } // end ScrollView
@@ -1202,6 +1292,65 @@ struct LibraryView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
+    }
+}
+
+private struct LibraryScrollIndex: View {
+    let entries: [LibraryScrollIndexEntry]
+    let onSelect: (LibraryScrollIndexEntry) -> Void
+
+    @State private var activeEntryID: LibraryScrollIndexEntry.ID?
+
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                ForEach(entries) { entry in
+                    Button {
+                        onSelect(entry)
+                    } label: {
+                        Text(entry.label)
+                            .font(.system(size: entries.count > 20 ? 9 : 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(activeEntryID == entry.id ? Color.jellyAmpBackground : Color.jellyAmpAccent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to \(entry.label)")
+                }
+            }
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(Color.jellyAmpElevated.opacity(0.92))
+            )
+            .overlay {
+                Capsule()
+                    .stroke(Color.jellyAmpAccent.opacity(0.22), lineWidth: 1)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        selectEntry(at: value.location.y, height: geometry.size.height)
+                    }
+                    .onEnded { _ in
+                        activeEntryID = nil
+                    }
+            )
+        }
+        .frame(width: 22)
+    }
+
+    private func selectEntry(at yPosition: CGFloat, height: CGFloat) {
+        guard !entries.isEmpty, height > 0 else { return }
+        let clampedPosition = min(max(yPosition, 0), height.nextDown)
+        let index = min(
+            Int(clampedPosition / (height / CGFloat(entries.count))),
+            entries.count - 1
+        )
+        let entry = entries[index]
+        guard activeEntryID != entry.id else { return }
+        activeEntryID = entry.id
+        onSelect(entry)
     }
 }
 
