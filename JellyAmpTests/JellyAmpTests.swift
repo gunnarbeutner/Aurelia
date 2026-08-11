@@ -7,6 +7,7 @@
 
 import Testing
 import Foundation
+import Combine
 @testable import JellyAmp
 
 struct JellyAmpTests {
@@ -67,6 +68,27 @@ struct JellyAmpTests {
         #expect(isLibraryLoadCancellation(CancellationError()))
         #expect(isLibraryLoadCancellation(URLError(.cancelled)))
         #expect(!isLibraryLoadCancellation(URLError(.timedOut)))
+    }
+
+    @Test func playbackProgressPublishesIndependently() {
+        let playerManager = PlayerManager.shared
+        var playerManagerUpdateCount = 0
+        var progressUpdateCount = 0
+        let playerManagerObservation = playerManager.objectWillChange.sink {
+            playerManagerUpdateCount += 1
+        }
+        let progressObservation = playerManager.playbackProgress.objectWillChange.sink {
+            progressUpdateCount += 1
+        }
+        let originalTime = playerManager.currentTime
+
+        playerManager.playbackProgress.update(to: originalTime + 1)
+
+        #expect(playerManagerUpdateCount == 0)
+        #expect(progressUpdateCount == 1)
+
+        playerManager.playbackProgress.update(to: originalTime)
+        withExtendedLifetime((playerManagerObservation, progressObservation)) {}
     }
 
 }

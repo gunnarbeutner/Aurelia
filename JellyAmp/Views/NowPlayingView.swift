@@ -10,6 +10,7 @@ import AVKit
 
 struct NowPlayingView: View {
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @Environment(\.dismiss) var dismiss
@@ -307,7 +308,7 @@ struct NowPlayingView: View {
     private var progressSection: some View {
         VStack(spacing: 6) {
             WaveformView(
-                currentTime: playerManager.currentTime,
+                currentTime: playbackProgress.currentTime,
                 duration: playerManager.duration,
                 trackId: playerManager.currentTrack?.id ?? "none",
                 onSeek: { time in
@@ -318,7 +319,7 @@ struct NowPlayingView: View {
             .accessibilityLabel("Track progress")
 
             HStack {
-                Text(formatTime(playerManager.currentTime))
+                Text(formatTime(playbackProgress.currentTime))
                     .font(.jellyAmpMono)
                     .foregroundColor(.white.opacity(0.4))
                 Spacer()

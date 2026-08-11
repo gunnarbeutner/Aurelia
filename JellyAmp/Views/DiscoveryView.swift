@@ -189,6 +189,9 @@ struct DiscoveryView: View {
             }
             .padding(.horizontal, 20)
         }
+        // Context-menu previews lift beyond the horizontal shelf's bounds.
+        // The default scroll clipping otherwise cuts off their top edge.
+        .scrollClipDisabled()
     }
 
     private var loadingView: some View {

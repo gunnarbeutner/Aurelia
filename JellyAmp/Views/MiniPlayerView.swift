@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MiniPlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
     @Binding var showNowPlaying: Bool
     var namespace: Namespace.ID
 
@@ -178,7 +179,7 @@ struct MiniPlayerView: View {
 
     private var miniPlayerProgress: Double {
         guard playerManager.duration > 0 else { return 0 }
-        return min(max(playerManager.currentTime / playerManager.duration, 0), 1)
+        return min(max(playbackProgress.currentTime / playerManager.duration, 0), 1)
     }
 
     private func miniPlayerArtwork(for track: Track) -> some View {

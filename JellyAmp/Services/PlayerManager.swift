@@ -13,6 +13,16 @@ import Combine
 import UIKit
 import os.log
 
+/// High-frequency playback position updates are isolated from `PlayerManager` so
+/// views interested only in stable playback state are not invalidated twice a second.
+final class PlaybackProgress: ObservableObject {
+    @Published private(set) var currentTime: Double = 0
+
+    func update(to currentTime: Double) {
+        self.currentTime = currentTime
+    }
+}
+
 /// Manages audio playback with AVPlayer and iOS Now Playing integration
 /// Handles background audio, interruptions, and remote controls
 class PlayerManager: NSObject, ObservableObject {
@@ -29,7 +39,11 @@ class PlayerManager: NSObject, ObservableObject {
             }
         }
     }
-    @Published var currentTime: Double = 0
+    let playbackProgress = PlaybackProgress()
+    private(set) var currentTime: Double {
+        get { playbackProgress.currentTime }
+        set { playbackProgress.update(to: newValue) }
+    }
     @Published var duration: Double = 0
     @Published var isBuffering = false
     private var isSeeking = false
