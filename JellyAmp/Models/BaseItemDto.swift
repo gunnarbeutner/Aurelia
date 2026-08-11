@@ -13,6 +13,7 @@ import Foundation
 nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     let Id: String
     let Name: String
+    let SortName: String?
     let ServerId: String?
     let `Type`: ItemType
 
@@ -25,6 +26,10 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     let AlbumPrimaryImageTag: String?
     let ImageTags: ImageTagsWrapper?
     let ArtistItems: [NameIdPair]?
+    let AlbumArtists: [NameIdPair]?
+    let GenreItems: [NameIdPair]?
+    let ParentId: String?
+    let PlaylistItemId: String?
 
     // Playlist/Album properties
     let ChildCount: Int?
@@ -67,6 +72,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         // Required fields
         Id = try container.decode(String.self, forKey: .Id)
         Name = try container.decode(String.self, forKey: .Name)
+        SortName = try? container.decode(String.self, forKey: .SortName)
         ServerId = try? container.decode(String.self, forKey: .ServerId)
         `Type` = (try? container.decode(ItemType.self, forKey: .ItemType)) ?? .Unknown
 
@@ -79,6 +85,10 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         AlbumPrimaryImageTag = try? container.decode(String.self, forKey: .AlbumPrimaryImageTag)
         ImageTags = try? container.decode(ImageTagsWrapper.self, forKey: .ImageTags)
         ArtistItems = try? container.decode([NameIdPair].self, forKey: .ArtistItems)
+        AlbumArtists = try? container.decode([NameIdPair].self, forKey: .AlbumArtists)
+        GenreItems = try? container.decode([NameIdPair].self, forKey: .GenreItems)
+        ParentId = try? container.decode(String.self, forKey: .ParentId)
+        PlaylistItemId = try? container.decode(String.self, forKey: .PlaylistItemId)
 
         ChildCount = try? container.decode(Int.self, forKey: .ChildCount)
         CumulativeRunTimeTicks = try? container.decode(Int64.self, forKey: .CumulativeRunTimeTicks)
@@ -110,6 +120,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
 
         try container.encode(Id, forKey: .Id)
         try container.encode(Name, forKey: .Name)
+        try container.encodeIfPresent(SortName, forKey: .SortName)
         try container.encodeIfPresent(ServerId, forKey: .ServerId)
         try container.encode(`Type`, forKey: .ItemType)
 
@@ -121,6 +132,10 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         try container.encodeIfPresent(AlbumPrimaryImageTag, forKey: .AlbumPrimaryImageTag)
         try container.encodeIfPresent(ImageTags, forKey: .ImageTags)
         try container.encodeIfPresent(ArtistItems, forKey: .ArtistItems)
+        try container.encodeIfPresent(AlbumArtists, forKey: .AlbumArtists)
+        try container.encodeIfPresent(GenreItems, forKey: .GenreItems)
+        try container.encodeIfPresent(ParentId, forKey: .ParentId)
+        try container.encodeIfPresent(PlaylistItemId, forKey: .PlaylistItemId)
 
         try container.encodeIfPresent(ChildCount, forKey: .ChildCount)
         try container.encodeIfPresent(CumulativeRunTimeTicks, forKey: .CumulativeRunTimeTicks)
@@ -148,9 +163,9 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
 
     // CodingKeys enum
     private enum CodingKeys: String, CodingKey {
-        case Id, Name, ServerId
+        case Id, Name, SortName, ServerId
         case ItemType = "Type"  // Renamed to avoid conflict with Swift's Type
-        case RunTimeTicks, Album, AlbumArtist, Artists, AlbumId, AlbumPrimaryImageTag, ImageTags, ArtistItems
+        case RunTimeTicks, Album, AlbumArtist, Artists, AlbumId, AlbumPrimaryImageTag, ImageTags, ArtistItems, AlbumArtists, GenreItems, ParentId, PlaylistItemId
         case ChildCount, CumulativeRunTimeTicks
         case IndexNumber, ParentIndexNumber, PremiereDate, ProductionYear, Overview, Genres
         case DateCreated, CollectionType, Path, ChannelId, IsFolder
@@ -159,10 +174,12 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     }
 
     // Memberwise initializer
-    init(Id: String, Name: String, ServerId: String? = nil, Type: ItemType,
+    init(Id: String, Name: String, SortName: String? = nil, ServerId: String? = nil, Type: ItemType,
          RunTimeTicks: Int64? = nil, Album: String? = nil, AlbumArtist: String? = nil,
          Artists: [String]? = nil, AlbumId: String? = nil, AlbumPrimaryImageTag: String? = nil,
-         ImageTags: ImageTagsWrapper? = nil, ArtistItems: [NameIdPair]? = nil, ChildCount: Int? = nil,
+         ImageTags: ImageTagsWrapper? = nil, ArtistItems: [NameIdPair]? = nil,
+         AlbumArtists: [NameIdPair]? = nil, GenreItems: [NameIdPair]? = nil,
+         ParentId: String? = nil, PlaylistItemId: String? = nil, ChildCount: Int? = nil,
          CumulativeRunTimeTicks: Int64? = nil, IndexNumber: Int? = nil,
          ParentIndexNumber: Int? = nil, PremiereDate: String? = nil,
          ProductionYear: Int? = nil, Overview: String? = nil, Genres: [String]? = nil,
@@ -173,6 +190,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
          CanDownload: Bool? = nil, UserData: UserItemData? = nil) {
         self.Id = Id
         self.Name = Name
+        self.SortName = SortName
         self.ServerId = ServerId
         self.Type = Type
         self.RunTimeTicks = RunTimeTicks
@@ -183,6 +201,10 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         self.AlbumPrimaryImageTag = AlbumPrimaryImageTag
         self.ImageTags = ImageTags
         self.ArtistItems = ArtistItems
+        self.AlbumArtists = AlbumArtists
+        self.GenreItems = GenreItems
+        self.ParentId = ParentId
+        self.PlaylistItemId = PlaylistItemId
         self.ChildCount = ChildCount
         self.CumulativeRunTimeTicks = CumulativeRunTimeTicks
         self.IndexNumber = IndexNumber

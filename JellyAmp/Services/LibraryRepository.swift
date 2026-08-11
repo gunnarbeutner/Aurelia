@@ -34,10 +34,48 @@ nonisolated struct LibraryScope: Hashable, Sendable {
 nonisolated struct LibrarySnapshot: Sendable {
     let albums: [Album]
     let artists: [Artist]
+    let tracks: [Track]
     let playlists: [Playlist]
+    let genres: [Genre]
     let lastSyncedAt: Date?
 
     var hasCachedLibrary: Bool { lastSyncedAt != nil }
+}
+
+nonisolated struct LibraryPlaylistEntry: Hashable, Sendable {
+    let playlistID: String
+    let track: Track
+    let position: Int
+}
+
+nonisolated struct LibraryCatalog: Sendable {
+    let albums: [Album]
+    let artists: [Artist]
+    let tracks: [Track]
+    let playlists: [Playlist]
+    let genres: [Genre]
+    let playlistEntries: [LibraryPlaylistEntry]
+}
+
+nonisolated enum LibrarySearchFilter: Sendable {
+    case all
+    case artists
+    case albums
+    case tracks
+}
+
+nonisolated enum LibrarySearchResult: Identifiable, Hashable, Sendable {
+    case artist(Artist)
+    case album(Album)
+    case track(Track)
+
+    var id: String {
+        switch self {
+        case .artist(let artist): return "artist:\(artist.id)"
+        case .album(let album): return "album:\(album.id)"
+        case .track(let track): return "track:\(track.id)"
+        }
+    }
 }
 
 nonisolated struct RecentTrackEntry: Sendable {
@@ -128,8 +166,12 @@ actor LibraryRepository: RecentTrackCaching {
                 .map { $0.album(isFavorite: favorites.contains($0.itemID)) }
             let artists = try Self.items(db, scope: scope, type: .artist)
                 .map { $0.artist(isFavorite: favorites.contains($0.itemID)) }
+            let tracks = try Self.items(db, scope: scope, type: .track)
+                .map { $0.track(isFavorite: favorites.contains($0.itemID)) }
             let playlists = try Self.items(db, scope: scope, type: .playlist)
                 .map { $0.playlist(isFavorite: favorites.contains($0.itemID)) }
+            let genres = try Self.items(db, scope: scope, type: .genre)
+                .map { $0.genre() }
             let syncedAt = try Date.fetchOne(
                 db,
                 sql: """
@@ -142,7 +184,9 @@ actor LibraryRepository: RecentTrackCaching {
             return LibrarySnapshot(
                 albums: albums,
                 artists: artists,
+                tracks: tracks,
                 playlists: playlists,
+                genres: genres,
                 lastSyncedAt: syncedAt
             )
         }
@@ -182,6 +226,256 @@ actor LibraryRepository: RecentTrackCaching {
                     """,
                 arguments: [scope.serverKey, scope.userID, syncedAt]
             )
+        }
+    }
+
+    /// Atomically replaces every server-owned metadata row for a library. All
+    /// network paging is completed before this method is called, so readers
+    /// continue seeing the previous complete catalog if a request fails.
+    func replaceCompleteLibrary(
+        _ catalog: LibraryCatalog,
+        in scope: LibraryScope,
+        syncedAt: Date = Date()
+    ) throws {
+        try database.write { db in
+            try db.execute(
+                sql: "DELETE FROM itemArtist WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+            try db.execute(
+                sql: "DELETE FROM itemGenre WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+            try db.execute(
+                sql: "DELETE FROM playlistEntry WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+            try db.execute(
+                sql: "DELETE FROM libraryItemFTS WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+            try db.execute(
+                sql: "DELETE FROM libraryItem WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+
+            try Self.save(albums: catalog.albums, db: db, scope: scope)
+            try Self.save(artists: catalog.artists, db: db, scope: scope)
+            try Self.save(tracks: catalog.tracks, db: db, scope: scope)
+            try Self.save(playlists: catalog.playlists, db: db, scope: scope)
+            try Self.save(genres: catalog.genres, db: db, scope: scope)
+
+            for album in catalog.albums {
+                if let artistID = album.artistId {
+                    try Self.saveArtistLink(
+                        itemID: album.id,
+                        artistID: artistID,
+                        position: 0,
+                        db: db,
+                        scope: scope
+                    )
+                }
+                for genreID in album.genreIDs ?? [] {
+                    try Self.saveGenreLink(itemID: album.id, genreID: genreID, db: db, scope: scope)
+                }
+            }
+
+            for track in catalog.tracks {
+                let artistIDs = track.artistIDs ?? track.artistId.map { [$0] } ?? []
+                for (position, artistID) in artistIDs.enumerated() {
+                    try Self.saveArtistLink(
+                        itemID: track.id,
+                        artistID: artistID,
+                        position: position,
+                        db: db,
+                        scope: scope
+                    )
+                }
+                for genreID in track.genreIDs ?? [] {
+                    try Self.saveGenreLink(itemID: track.id, genreID: genreID, db: db, scope: scope)
+                }
+            }
+
+            for entry in catalog.playlistEntries {
+                try Self.save(track: entry.track, db: db, scope: scope)
+                try db.execute(
+                    sql: """
+                        INSERT INTO playlistEntry (
+                            serverKey, userID, playlistID, itemID, entryID, position
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(serverKey, userID, playlistID, itemID) DO UPDATE SET
+                            entryID = excluded.entryID,
+                            position = excluded.position
+                        """,
+                    arguments: [
+                        scope.serverKey,
+                        scope.userID,
+                        entry.playlistID,
+                        entry.track.id,
+                        entry.track.playlistEntryID,
+                        entry.position
+                    ]
+                )
+            }
+
+            try Self.rebuildSearchIndex(db, scope: scope)
+            try db.execute(
+                sql: """
+                    INSERT INTO librarySyncState (serverKey, userID, librarySyncedAt)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(serverKey, userID) DO UPDATE SET
+                        librarySyncedAt = excluded.librarySyncedAt
+                    """,
+                arguments: [scope.serverKey, scope.userID, syncedAt]
+            )
+        }
+    }
+
+    func tracks(inAlbum albumID: String, in scope: LibraryScope) throws -> [Track] {
+        try tracks(
+            sql: """
+                SELECT item.* FROM libraryItem AS item
+                WHERE item.serverKey = ? AND item.userID = ?
+                  AND item.itemType = ? AND item.albumID = ?
+                ORDER BY COALESCE(item.parentIndexNumber, 0),
+                         COALESCE(item.indexNumber, 0), item.sortName COLLATE NOCASE
+                """,
+            arguments: [scope.serverKey, scope.userID, LibraryItemType.track.rawValue, albumID],
+            scope: scope
+        )
+    }
+
+    func tracks(forArtist artistID: String, in scope: LibraryScope) throws -> [Track] {
+        try tracks(
+            sql: """
+                SELECT item.* FROM libraryItem AS item
+                JOIN itemArtist AS relation
+                  ON relation.serverKey = item.serverKey
+                 AND relation.userID = item.userID
+                 AND relation.itemID = item.itemID
+                WHERE item.serverKey = ? AND item.userID = ?
+                  AND item.itemType = ? AND relation.artistID = ?
+                ORDER BY item.albumName COLLATE NOCASE,
+                         COALESCE(item.parentIndexNumber, 0),
+                         COALESCE(item.indexNumber, 0), item.sortName COLLATE NOCASE
+                """,
+            arguments: [scope.serverKey, scope.userID, LibraryItemType.track.rawValue, artistID],
+            scope: scope
+        )
+    }
+
+    func albums(forArtist artistID: String, in scope: LibraryScope) throws -> [Album] {
+        try database.read { db in
+            let favorites = try Self.favoriteItemIDs(db, scope: scope)
+            return try LibraryItemRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT item.* FROM libraryItem AS item
+                    LEFT JOIN itemArtist AS relation
+                      ON relation.serverKey = item.serverKey
+                     AND relation.userID = item.userID
+                     AND relation.itemID = item.itemID
+                    WHERE item.serverKey = ? AND item.userID = ?
+                      AND item.itemType = ?
+                      AND (relation.artistID = ? OR item.artistID = ?)
+                    ORDER BY item.sortName COLLATE NOCASE
+                    """,
+                arguments: [
+                    scope.serverKey, scope.userID, LibraryItemType.album.rawValue,
+                    artistID, artistID
+                ]
+            ).map { $0.album(isFavorite: favorites.contains($0.itemID)) }
+        }
+    }
+
+    func albums(inGenre genreID: String, in scope: LibraryScope) throws -> [Album] {
+        try database.read { db in
+            let favorites = try Self.favoriteItemIDs(db, scope: scope)
+            return try LibraryItemRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT item.* FROM libraryItem AS item
+                    JOIN itemGenre AS relation
+                      ON relation.serverKey = item.serverKey
+                     AND relation.userID = item.userID
+                     AND relation.itemID = item.itemID
+                    WHERE item.serverKey = ? AND item.userID = ?
+                      AND item.itemType = ? AND relation.genreID = ?
+                    ORDER BY item.sortName COLLATE NOCASE
+                    """,
+                arguments: [scope.serverKey, scope.userID, LibraryItemType.album.rawValue, genreID]
+            ).map { $0.album(isFavorite: favorites.contains($0.itemID)) }
+        }
+    }
+
+    func tracks(inPlaylist playlistID: String, in scope: LibraryScope) throws -> [Track] {
+        try tracks(
+            sql: """
+                SELECT item.* FROM playlistEntry AS entry
+                JOIN libraryItem AS item
+                  ON item.serverKey = entry.serverKey
+                 AND item.userID = entry.userID
+                 AND item.itemID = entry.itemID
+                WHERE entry.serverKey = ? AND entry.userID = ? AND entry.playlistID = ?
+                ORDER BY entry.position
+                """,
+            arguments: [scope.serverKey, scope.userID, playlistID],
+            scope: scope
+        )
+    }
+
+    func search(
+        _ query: String,
+        filter: LibrarySearchFilter,
+        in scope: LibraryScope,
+        limit: Int = 100
+    ) throws -> [LibrarySearchResult] {
+        let tokens = query
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"*" }
+        guard !tokens.isEmpty else { return [] }
+
+        let allowedTypes: [LibraryItemType]
+        switch filter {
+        case .all: allowedTypes = [.artist, .album, .track]
+        case .artists: allowedTypes = [.artist]
+        case .albums: allowedTypes = [.album]
+        case .tracks: allowedTypes = [.track]
+        }
+        let placeholders = allowedTypes.map { _ in "?" }.joined(separator: ",")
+        var arguments: StatementArguments = [tokens.joined(separator: " AND "), scope.serverKey, scope.userID]
+        for type in allowedTypes { arguments += [type.rawValue] }
+        arguments += [limit]
+
+        return try database.read { db in
+            let favorites = try Self.favoriteItemIDs(db, scope: scope)
+            let records = try LibraryItemRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT item.*
+                    FROM libraryItemFTS
+                    JOIN libraryItem AS item
+                      ON item.serverKey = libraryItemFTS.serverKey
+                     AND item.userID = libraryItemFTS.userID
+                     AND item.itemID = libraryItemFTS.itemID
+                    WHERE libraryItemFTS MATCH ?
+                      AND item.serverKey = ? AND item.userID = ?
+                      AND item.itemType IN (\(placeholders))
+                    ORDER BY bm25(libraryItemFTS, 7.0, 5.0, 3.0, 2.0),
+                             item.sortName COLLATE NOCASE
+                    LIMIT ?
+                    """,
+                arguments: arguments
+            )
+            return records.compactMap { record in
+                let favorite = favorites.contains(record.itemID)
+                switch record.itemType {
+                case LibraryItemType.artist.rawValue: return .artist(record.artist(isFavorite: favorite))
+                case LibraryItemType.album.rawValue: return .album(record.album(isFavorite: favorite))
+                case LibraryItemType.track.rawValue: return .track(record.track(isFavorite: favorite))
+                default: return nil
+                }
+            }
         }
     }
 
@@ -306,6 +600,47 @@ actor LibraryRepository: RecentTrackCaching {
                 isFavorite: false
             )
         }.prefix(limit).map { $0 }
+    }
+
+    // MARK: - Discovery snapshot
+
+    func discoverySnapshot(in scope: LibraryScope) -> DiscoverySnapshot? {
+        do {
+            return try database.read { db in
+                guard let data = try Data.fetchOne(
+                    db,
+                    sql: """
+                        SELECT payload FROM discoverySnapshot
+                        WHERE serverKey = ? AND userID = ?
+                        """,
+                    arguments: [scope.serverKey, scope.userID]
+                ) else { return nil }
+                return try JSONDecoder().decode(DiscoverySnapshot.self, from: data)
+            }
+        } catch {
+            logger.error("Unable to load Discover snapshot: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func saveDiscoverySnapshot(_ snapshot: DiscoverySnapshot, in scope: LibraryScope) {
+        do {
+            let payload = try JSONEncoder().encode(snapshot)
+            try database.write { db in
+                try db.execute(
+                    sql: """
+                        INSERT INTO discoverySnapshot (serverKey, userID, payload, refreshedAt)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(serverKey, userID) DO UPDATE SET
+                            payload = excluded.payload,
+                            refreshedAt = excluded.refreshedAt
+                        """,
+                    arguments: [scope.serverKey, scope.userID, payload, snapshot.refreshedAt]
+                )
+            }
+        } catch {
+            logger.error("Unable to save Discover snapshot: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Favorites
@@ -583,6 +918,91 @@ actor LibraryRepository: RecentTrackCaching {
                 WHERE isFavorite = 1
                 """)
         }
+        migrator.registerMigration("expandCompleteLibraryCatalog") { db in
+            try db.alter(table: "libraryItem") { table in
+                table.add(column: "sortName", .text)
+                table.add(column: "parentID", .text)
+                table.add(column: "imageTag", .text)
+                table.add(column: "albumImageTag", .text)
+            }
+
+            try db.execute(sql: "UPDATE libraryItem SET sortName = name WHERE sortName IS NULL")
+            try db.execute(sql: """
+                CREATE INDEX libraryItem_type_sortName
+                ON libraryItem(serverKey, userID, itemType, sortName COLLATE NOCASE, itemID)
+                """)
+
+            try db.create(table: "itemArtist") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("itemID", .text).notNull()
+                table.column("artistID", .text).notNull()
+                table.column("position", .integer).notNull().defaults(to: 0)
+                table.primaryKey(["serverKey", "userID", "itemID", "artistID"])
+            }
+            try db.execute(sql: """
+                CREATE INDEX itemArtist_artist
+                ON itemArtist(serverKey, userID, artistID, position, itemID)
+                """)
+
+            try db.create(table: "itemGenre") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("itemID", .text).notNull()
+                table.column("genreID", .text).notNull()
+                table.primaryKey(["serverKey", "userID", "itemID", "genreID"])
+            }
+            try db.execute(sql: """
+                CREATE INDEX itemGenre_genre
+                ON itemGenre(serverKey, userID, genreID, itemID)
+                """)
+
+            try db.create(table: "playlistEntry") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("playlistID", .text).notNull()
+                table.column("itemID", .text).notNull()
+                table.column("entryID", .text)
+                table.column("position", .integer).notNull()
+                table.primaryKey(["serverKey", "userID", "playlistID", "itemID"])
+            }
+            try db.execute(sql: """
+                CREATE INDEX playlistEntry_position
+                ON playlistEntry(serverKey, userID, playlistID, position)
+                """)
+
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE libraryItemFTS USING fts5(
+                    serverKey UNINDEXED,
+                    userID UNINDEXED,
+                    itemID UNINDEXED,
+                    itemType UNINDEXED,
+                    name,
+                    sortName,
+                    artistName,
+                    albumName,
+                    tokenize = 'unicode61 remove_diacritics 2'
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO libraryItemFTS (
+                    serverKey, userID, itemID, itemType,
+                    name, sortName, artistName, albumName
+                )
+                SELECT serverKey, userID, itemID, itemType,
+                       name, COALESCE(sortName, name), artistName, albumName
+                FROM libraryItem
+                """)
+        }
+        migrator.registerMigration("persistDiscoverySnapshot") { db in
+            try db.create(table: "discoverySnapshot") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("payload", .blob).notNull()
+                table.column("refreshedAt", .datetime).notNull()
+                table.primaryKey(["serverKey", "userID"])
+            }
+        }
         return migrator
     }
 
@@ -596,10 +1016,22 @@ actor LibraryRepository: RecentTrackCaching {
             sql: """
                 SELECT * FROM libraryItem
                 WHERE serverKey = ? AND userID = ? AND itemType = ?
-                ORDER BY name COLLATE NOCASE
+                ORDER BY COALESCE(sortName, name) COLLATE NOCASE, itemID
                 """,
             arguments: [scope.serverKey, scope.userID, type.rawValue]
         )
+    }
+
+    private func tracks(
+        sql: String,
+        arguments: StatementArguments,
+        scope: LibraryScope
+    ) throws -> [Track] {
+        try database.read { db in
+            let favorites = try Self.favoriteItemIDs(db, scope: scope)
+            return try LibraryItemRecord.fetchAll(db, sql: sql, arguments: arguments)
+                .map { $0.track(isFavorite: favorites.contains($0.itemID)) }
+        }
     }
 
     private static func favoriteItemIDs(_ db: Database, scope: LibraryScope) throws -> Set<String> {
@@ -625,6 +1057,14 @@ actor LibraryRepository: RecentTrackCaching {
         for playlist in playlists { try save(playlist: playlist, db: db, scope: scope) }
     }
 
+    private static func save(tracks: [Track], db: Database, scope: LibraryScope) throws {
+        for track in tracks { try save(track: track, db: db, scope: scope) }
+    }
+
+    private static func save(genres: [Genre], db: Database, scope: LibraryScope) throws {
+        for genre in genres { try save(genre: genre, db: db, scope: scope) }
+    }
+
     private static func save(album: Album, db: Database, scope: LibraryScope) throws {
         try LibraryItemRecord(album: album, scope: scope).save(db)
         try updateUserState(db, scope: scope, itemID: album.id, isFavorite: album.isFavorite)
@@ -642,6 +1082,64 @@ actor LibraryRepository: RecentTrackCaching {
 
     private static func save(track: Track, db: Database, scope: LibraryScope) throws {
         try LibraryItemRecord(track: track, scope: scope).save(db)
+        try updateUserState(db, scope: scope, itemID: track.id, isFavorite: track.isFavorite)
+    }
+
+    private static func save(genre: Genre, db: Database, scope: LibraryScope) throws {
+        try LibraryItemRecord(genre: genre, scope: scope).save(db)
+    }
+
+    private static func saveArtistLink(
+        itemID: String,
+        artistID: String,
+        position: Int,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        try db.execute(
+            sql: """
+                INSERT INTO itemArtist (serverKey, userID, itemID, artistID, position)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(serverKey, userID, itemID, artistID) DO UPDATE SET
+                    position = excluded.position
+                """,
+            arguments: [scope.serverKey, scope.userID, itemID, artistID, position]
+        )
+    }
+
+    private static func saveGenreLink(
+        itemID: String,
+        genreID: String,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        try db.execute(
+            sql: """
+                INSERT OR IGNORE INTO itemGenre (serverKey, userID, itemID, genreID)
+                VALUES (?, ?, ?, ?)
+                """,
+            arguments: [scope.serverKey, scope.userID, itemID, genreID]
+        )
+    }
+
+    private static func rebuildSearchIndex(_ db: Database, scope: LibraryScope) throws {
+        try db.execute(
+            sql: "DELETE FROM libraryItemFTS WHERE serverKey = ? AND userID = ?",
+            arguments: [scope.serverKey, scope.userID]
+        )
+        try db.execute(
+            sql: """
+                INSERT INTO libraryItemFTS (
+                    serverKey, userID, itemID, itemType,
+                    name, sortName, artistName, albumName
+                )
+                SELECT serverKey, userID, itemID, itemType,
+                       name, COALESCE(sortName, name), artistName, albumName
+                FROM libraryItem
+                WHERE serverKey = ? AND userID = ?
+                """,
+            arguments: [scope.serverKey, scope.userID]
+        )
     }
 
     private static func updateUserState(
@@ -686,6 +1184,7 @@ nonisolated private enum LibraryItemType: String, Sendable {
     case album
     case artist
     case playlist
+    case genre
 }
 
 nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
@@ -696,6 +1195,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
     let itemID: String
     let itemType: String
     let name: String
+    let sortName: String?
     let artistName: String?
     let artistID: String?
     let albumName: String?
@@ -709,6 +1209,9 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
     let albumCount: Int?
     let biography: String?
     let dateCreated: Date?
+    let parentID: String?
+    let imageTag: String?
+    let albumImageTag: String?
     let updatedAt: Date
 
     init(track: Track, scope: LibraryScope) {
@@ -717,6 +1220,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = track.id
         itemType = LibraryItemType.track.rawValue
         name = track.name
+        sortName = track.sortName ?? track.name
         artistName = track.artistName
         artistID = track.artistId
         albumName = track.albumName
@@ -730,6 +1234,9 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         albumCount = nil
         biography = nil
         dateCreated = nil
+        parentID = track.albumId
+        imageTag = nil
+        albumImageTag = nil
         updatedAt = Date()
     }
 
@@ -739,6 +1246,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = album.id
         itemType = LibraryItemType.album.rawValue
         name = album.name
+        sortName = album.sortName ?? album.name
         artistName = album.artistName
         artistID = album.artistId
         albumName = nil
@@ -752,6 +1260,9 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         albumCount = nil
         biography = nil
         dateCreated = nil
+        parentID = nil
+        imageTag = nil
+        albumImageTag = nil
         updatedAt = Date()
     }
 
@@ -761,6 +1272,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = artist.id
         itemType = LibraryItemType.artist.rawValue
         name = artist.name
+        sortName = artist.sortName ?? artist.name
         artistName = nil
         artistID = nil
         albumName = nil
@@ -774,6 +1286,9 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         albumCount = artist.albumCount
         biography = artist.bio
         dateCreated = nil
+        parentID = nil
+        imageTag = nil
+        albumImageTag = nil
         updatedAt = Date()
     }
 
@@ -783,6 +1298,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = playlist.id
         itemType = LibraryItemType.playlist.rawValue
         name = playlist.name
+        sortName = playlist.sortName ?? playlist.name
         artistName = nil
         artistID = nil
         albumName = nil
@@ -796,6 +1312,35 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         albumCount = nil
         biography = nil
         dateCreated = playlist.dateCreated
+        parentID = nil
+        imageTag = nil
+        albumImageTag = nil
+        updatedAt = Date()
+    }
+
+    init(genre: Genre, scope: LibraryScope) {
+        serverKey = scope.serverKey
+        userID = scope.userID
+        itemID = genre.id
+        itemType = LibraryItemType.genre.rawValue
+        name = genre.name
+        sortName = genre.name
+        artistName = nil
+        artistID = nil
+        albumName = nil
+        albumID = nil
+        productionYear = nil
+        duration = nil
+        artworkURL = nil
+        indexNumber = nil
+        parentIndexNumber = nil
+        trackCount = genre.albumCount
+        albumCount = nil
+        biography = nil
+        dateCreated = nil
+        parentID = nil
+        imageTag = nil
+        albumImageTag = nil
         updatedAt = Date()
     }
 
@@ -803,6 +1348,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         Track(
             id: itemID,
             name: name,
+            sortName: sortName,
             artistName: artistName ?? "Unknown Artist",
             albumName: albumName ?? "Unknown Album",
             duration: duration ?? 0,
@@ -812,6 +1358,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
             parentIndexNumber: parentIndexNumber,
             albumId: albumID,
             artistId: artistID,
+            artistIDs: artistID.map { [$0] },
             productionYear: productionYear
         )
     }
@@ -820,6 +1367,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         Album(
             id: itemID,
             name: name,
+            sortName: sortName,
             artistName: artistName ?? "Unknown Artist",
             artistId: artistID,
             year: productionYear,
@@ -833,6 +1381,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         Artist(
             id: itemID,
             name: name,
+            sortName: sortName,
             bio: biography,
             albumCount: albumCount ?? 0,
             artworkURL: artworkURL,
@@ -844,10 +1393,15 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         Playlist(
             id: itemID,
             name: name,
+            sortName: sortName,
             trackCount: trackCount ?? 0,
             artworkURL: artworkURL,
             dateCreated: dateCreated,
             isFavorite: isFavorite
         )
+    }
+
+    func genre() -> Genre {
+        Genre(id: itemID, name: name, albumCount: trackCount)
     }
 }
