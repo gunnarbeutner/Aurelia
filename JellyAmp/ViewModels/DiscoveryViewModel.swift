@@ -13,6 +13,28 @@ struct DiscoveryShelf: Identifiable, Codable, Equatable {
     let tracks: [Track]
 
     var id: String { seed.id }
+
+    var mixTitle: String {
+        "\(seed.artistName) Mix"
+    }
+
+    var supportingArtistNames: [String] {
+        let mainArtist = seed.artistName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var seen = Set<String>()
+
+        let otherArtists = tracks.compactMap { track -> String? in
+            let artist = track.artistName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = artist.lowercased()
+            guard !artist.isEmpty,
+                  key != mainArtist.lowercased(),
+                  seen.insert(key).inserted else {
+                return nil
+            }
+            return artist
+        }
+
+        return otherArtists.isEmpty && !mainArtist.isEmpty ? [mainArtist] : otherArtists
+    }
 }
 
 struct DiscoverySnapshot: Codable, Equatable {

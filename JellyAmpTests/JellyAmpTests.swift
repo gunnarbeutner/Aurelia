@@ -44,6 +44,22 @@ struct JellyAmpTests {
         #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
     }
 
+    @Test func discoveryMixUsesTheSeedArtistAndListsOtherArtistsOnce() {
+        let seed = Track(id: "seed", name: "Seed", artistName: "Main Band", albumName: "Album", duration: 1, artworkURL: nil)
+        let shelf = DiscoveryShelf(
+            seed: seed,
+            tracks: [
+                Track(id: "1", name: "One", artistName: "Guest A", albumName: "A", duration: 1, artworkURL: nil),
+                Track(id: "2", name: "Two", artistName: "Main Band", albumName: "B", duration: 1, artworkURL: nil),
+                Track(id: "3", name: "Three", artistName: "guest a", albumName: "C", duration: 1, artworkURL: nil),
+                Track(id: "4", name: "Four", artistName: "Guest B", albumName: "D", duration: 1, artworkURL: nil)
+            ]
+        )
+
+        #expect(shelf.mixTitle == "Main Band Mix")
+        #expect(shelf.supportingArtistNames == ["Guest A", "Guest B"])
+    }
+
     @Test @MainActor func discoveryFallsBackWhenFavoriteSeedsFail() async {
         let api = FakeDiscoveryAPI()
         api.shouldFailFavorites = true

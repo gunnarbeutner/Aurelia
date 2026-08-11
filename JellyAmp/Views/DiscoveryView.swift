@@ -70,8 +70,8 @@ struct DiscoveryView: View {
                     inlineMessage(message)
                 }
 
-                ForEach(viewModel.shelves) { shelf in
-                    recommendationShelf(shelf)
+                if !viewModel.shelves.isEmpty {
+                    mixesShelf
                 }
 
                 if !viewModel.fallbackTracks.isEmpty {
@@ -138,38 +138,40 @@ struct DiscoveryView: View {
         }
     }
 
-    private func recommendationShelf(_ shelf: DiscoveryShelf) -> some View {
+    private var mixesShelf: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Because you played")
-                        .font(.jellyAmpCaption)
-                        .foregroundColor(.jellyAmpTextSecondary)
-                    Text(shelf.seed.name)
-                        .font(.jellyAmpTitle)
-                        .foregroundColor(.jellyAmpText)
-                        .lineLimit(1)
-                    Text(shelf.seed.artistName)
-                        .font(.jellyAmpCaption)
-                        .foregroundColor(.neonPink)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 12)
-                Button {
-                    startPlayback(shelf.tracks, startingAt: 0)
-                } label: {
-                    Image(systemName: "play.fill")
-                        .font(.headline)
-                        .foregroundColor(.black)
-                        .frame(width: 42, height: 42)
-                        .background(Circle().fill(Color.neonCyan))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Play recommendations for \(shelf.seed.name)")
-            }
-            .padding(.horizontal, 20)
+            Text("Mixes")
+                .font(.jellyAmpTitle)
+                .foregroundColor(.jellyAmpText)
+                .padding(.horizontal, 20)
 
-            trackScroller(shelf.tracks)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 14) {
+                    ForEach(viewModel.shelves) { shelf in
+                        Button {
+                            startPlayback(shelf.tracks, startingAt: 0)
+                        } label: {
+                            DiscoveryMixCard(shelf: shelf)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("discovery-mix-\(shelf.id)")
+                        .accessibilityLabel("Play \(shelf.mixTitle)")
+                        .contextMenu {
+                            Button {
+                                startPlayback(shelf.tracks, startingAt: 0)
+                            } label: {
+                                Label("Play Mix", systemImage: "play.fill")
+                            }
+
+                            Divider()
+
+                            TrackContextMenu(track: shelf.seed)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .scrollClipDisabled()
         }
     }
 
@@ -267,6 +269,52 @@ struct DiscoveryView: View {
         #endif
 
         playerManager.play(tracks: tracks, startingAt: index)
+    }
+}
+
+private struct DiscoveryMixCard: View {
+    let shelf: DiscoveryShelf
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CachedAsyncImage(url: shelf.seed.artworkURL.flatMap(URL.init(string:))) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        LinearGradient(
+                            colors: [Color.neonCyan.opacity(0.35), Color.neonPink.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        Image(systemName: "waveform")
+                            .font(.system(size: 38, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.75))
+                    }
+                }
+            }
+            .frame(width: 170, height: 170)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: "play.fill")
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Color.neonCyan))
+                    .padding(10)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08)))
+
+            Text(shelf.mixTitle)
+                .font(.jellyAmpSubheadline)
+                .foregroundColor(.jellyAmpText)
+                .lineLimit(1)
+            Text(shelf.supportingArtistNames.joined(separator: ", "))
+                .font(.jellyAmpCaption)
+                .foregroundColor(.jellyAmpTextSecondary)
+                .lineLimit(2)
+        }
+        .frame(width: 170, alignment: .leading)
     }
 }
 

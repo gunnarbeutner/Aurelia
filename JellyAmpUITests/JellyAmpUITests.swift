@@ -37,9 +37,9 @@ final class JellyAmpUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
-        let discoveryTrack = app.buttons["discovery-track-ui-layout-track"]
-        XCTAssertTrue(discoveryTrack.waitForExistence(timeout: 5))
-        discoveryTrack.tap()
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
+        discoveryMix.tap()
 
         let miniPlayer = app.buttons["mini-player"]
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
@@ -85,9 +85,9 @@ final class JellyAmpUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
-        let discoveryTrack = app.buttons["discovery-track-ui-layout-track"]
-        XCTAssertTrue(discoveryTrack.waitForExistence(timeout: 5))
-        discoveryTrack.tap()
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
+        discoveryMix.tap()
 
         let miniPlayer = app.buttons["mini-player"]
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
