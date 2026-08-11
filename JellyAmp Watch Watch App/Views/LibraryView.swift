@@ -9,10 +9,7 @@ import SwiftUI
 
 struct LibraryView: View {
     @ObservedObject var jellyfinService = WatchJellyfinService.shared
-    @State private var artists: [WatchArtist] = []
-    @State private var albums: [WatchAlbum] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    @ObservedObject private var libraryStore = WatchLibraryStore.shared
     @State private var selectedTab = 0
 
     private let tabs = ["Artists", "Albums"]
@@ -23,7 +20,7 @@ struct LibraryView: View {
                 notAuthenticatedView
             } else {
                 // Tab selector
-                if !artists.isEmpty || !albums.isEmpty {
+                if !libraryStore.artists.isEmpty || !libraryStore.albums.isEmpty {
                     HStack(spacing: 8) {
                         ForEach(0..<tabs.count, id: \.self) { index in
                             Button(action: {
@@ -53,20 +50,20 @@ struct LibraryView: View {
                 }
 
                 // Content
-                if isLoading {
+                if libraryStore.isLoading {
                     Spacer()
                     ProgressView("Loading...")
                     Spacer()
-                } else if let error = errorMessage {
+                } else if let error = libraryStore.errorMessage, !libraryStore.hasCachedLibrary {
                     errorView(error)
                 } else if selectedTab == 0 {
-                    if artists.isEmpty {
+                    if libraryStore.artists.isEmpty {
                         emptyView(type: "Artists")
                     } else {
                         artistsList
                     }
                 } else {
-                    if albums.isEmpty {
+                    if libraryStore.albums.isEmpty {
                         emptyView(type: "Albums")
                     } else {
                         albumsList
@@ -77,14 +74,7 @@ struct LibraryView: View {
         .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await loadLibrary()
-        }
-        .onChange(of: selectedTab) {
-            if selectedTab == 1 && albums.isEmpty {
-                Task {
-                    await loadAlbums()
-                }
-            }
+            await libraryStore.activate()
         }
         .containerBackground(.black.gradient, for: .navigation)
     }
@@ -92,7 +82,7 @@ struct LibraryView: View {
     // MARK: - Artists List
 
     private var artistsList: some View {
-        List(artists) { artist in
+        List(libraryStore.artists) { artist in
             NavigationLink(destination: ArtistDetailView(artist: artist)) {
                 HStack(spacing: 10) {
                     AlbumArtworkView(
@@ -119,7 +109,7 @@ struct LibraryView: View {
     // MARK: - Albums List
 
     private var albumsList: some View {
-        List(albums) { album in
+        List(libraryStore.albums) { album in
             NavigationLink(destination: AlbumDetailView(album: album)) {
                 HStack(spacing: 10) {
                     AlbumArtworkView(
@@ -204,54 +194,12 @@ struct LibraryView: View {
                 .multilineTextAlignment(.center)
 
             Button("Retry") {
-                Task { await loadLibrary() }
+                Task { await libraryStore.refreshDirectlyFromServer() }
             }
         }
         .padding()
     }
 
-    // MARK: - Data Loading
-
-    private func loadLibrary() async {
-        guard jellyfinService.isAuthenticated else { return }
-
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            artists = try await jellyfinService.fetchArtists()
-            isLoading = false
-        } catch {
-            errorMessage = userFriendlyError(error)
-            isLoading = false
-        }
-    }
-
-    private func loadAlbums() async {
-        do {
-            albums = try await jellyfinService.fetchAlbums()
-        } catch {
-            errorMessage = userFriendlyError(error)
-        }
-    }
-
-    private func userFriendlyError(_ error: Error) -> String {
-        // Convert technical errors to user-friendly messages
-        let nsError = error as NSError
-
-        switch nsError.code {
-        case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
-            return "No internet. Check connection."
-        case NSURLErrorTimedOut:
-            return "Request timed out. Try again."
-        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost:
-            return "Cannot connect to server."
-        case NSURLErrorUserAuthenticationRequired, 401:
-            return "Authentication failed."
-        default:
-            return error.localizedDescription
-        }
-    }
 }
 
 #Preview {

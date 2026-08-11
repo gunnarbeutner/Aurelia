@@ -9,7 +9,7 @@ enum LibrarySyncTrigger: Sendable {
 
 enum LibrarySyncStatus: Equatable, Sendable {
     case idle
-    case syncing(message: String)
+    case syncing(message: String, progress: Double)
     case failed(message: String, hasCachedLibrary: Bool)
 }
 
@@ -59,9 +59,11 @@ final class LibrarySyncCoordinator: ObservableObject {
         }
 
         do {
-            status = .syncing(message: "Syncing albums…")
-            let albumItems = try await allPages { limit, offset in
-                try await self.service.fetchMusicItems(
+            let albumItems = try await allPages(
+                label: "albums",
+                progressRange: 0.02...0.14
+            ) { limit, offset in
+                try await self.service.fetchMusicItemsPage(
                     includeItemTypes: "MusicAlbum",
                     limit: limit,
                     startIndex: offset
@@ -69,15 +71,19 @@ final class LibrarySyncCoordinator: ObservableObject {
             }
 
             try Task.checkCancellation()
-            status = .syncing(message: "Syncing artists…")
-            let artistItems = try await allPages { limit, offset in
-                try await self.service.fetchArtists(limit: limit, startIndex: offset)
+            let artistItems = try await allPages(
+                label: "artists",
+                progressRange: 0.14...0.25
+            ) { limit, offset in
+                try await self.service.fetchArtistsPage(limit: limit, startIndex: offset)
             }
 
             try Task.checkCancellation()
-            status = .syncing(message: "Syncing tracks…")
-            let trackItems = try await allPages { limit, offset in
-                try await self.service.fetchMusicItems(
+            let trackItems = try await allPages(
+                label: "tracks",
+                progressRange: 0.25...0.67
+            ) { limit, offset in
+                try await self.service.fetchMusicItemsPage(
                     includeItemTypes: "Audio",
                     limit: limit,
                     startIndex: offset
@@ -85,26 +91,33 @@ final class LibrarySyncCoordinator: ObservableObject {
             }
 
             try Task.checkCancellation()
-            status = .syncing(message: "Syncing playlists…")
-            let playlistItems = try await allPages { limit, offset in
-                try await self.service.fetchPlaylists(limit: limit, startIndex: offset)
+            let playlistItems = try await allPages(
+                label: "playlists",
+                progressRange: 0.67...0.73
+            ) { limit, offset in
+                try await self.service.fetchPlaylistsPage(limit: limit, startIndex: offset)
             }
 
             try Task.checkCancellation()
-            status = .syncing(message: "Syncing genres…")
-            let genreItems = try await allPages { limit, offset in
-                try await self.service.fetchGenres(limit: limit, startIndex: offset)
+            let genreItems = try await allPages(
+                label: "genres",
+                progressRange: 0.73...0.78
+            ) { limit, offset in
+                try await self.service.fetchGenresPage(limit: limit, startIndex: offset)
             }
 
             let baseURL = service.baseURL
             var playlistEntries: [LibraryPlaylistEntry] = []
             for (playlistIndex, playlistItem) in playlistItems.enumerated() {
                 try Task.checkCancellation()
-                status = .syncing(
-                    message: "Syncing playlist \(playlistIndex + 1) of \(playlistItems.count)…"
-                )
-                let entries = try await allPages { limit, offset in
-                    try await self.service.fetchTracks(
+                let playlistCount = max(playlistItems.count, 1)
+                let rangeStart = 0.78 + 0.17 * Double(playlistIndex) / Double(playlistCount)
+                let rangeEnd = 0.78 + 0.17 * Double(playlistIndex + 1) / Double(playlistCount)
+                let entries = try await allPages(
+                    label: "playlist \(playlistIndex + 1) of \(playlistItems.count)",
+                    progressRange: rangeStart...rangeEnd
+                ) { limit, offset in
+                    try await self.service.fetchTracksPage(
                         parentId: playlistItem.Id,
                         limit: limit,
                         startIndex: offset
@@ -120,7 +133,7 @@ final class LibrarySyncCoordinator: ObservableObject {
             }
 
             try Task.checkCancellation()
-            status = .syncing(message: "Updating local library…")
+            status = .syncing(message: "Updating local library…", progress: 0.96)
             let catalog = LibraryCatalog(
                 albums: albumItems.map { Album(from: $0, baseURL: baseURL) },
                 artists: artistItems.map { Artist(from: $0, baseURL: baseURL) },
@@ -134,6 +147,7 @@ final class LibrarySyncCoordinator: ObservableObject {
             // Cross-client recency is a small, independently refreshed window.
             // A failure here must not invalidate the complete catalog commit.
             if let recentItems = try? await service.fetchRecentlyPlayedTracks(limit: 100) {
+                status = .syncing(message: "Updating recent plays…", progress: 0.99)
                 await repository.replaceRecentlyPlayed(
                     recentTrackEntries(from: recentItems, baseURL: baseURL),
                     in: scope
@@ -151,22 +165,102 @@ final class LibrarySyncCoordinator: ObservableObject {
     }
 
     private func allPages(
-        fetch: @escaping (_ limit: Int, _ offset: Int) async throws -> [BaseItemDto]
+        label: String,
+        progressRange: ClosedRange<Double>,
+        fetch: @escaping (_ limit: Int, _ offset: Int) async throws -> ItemsResponse
     ) async throws -> [BaseItemDto] {
         var offset = 0
         var result: [BaseItemDto] = []
         var seen = Set<String>()
+        var expectedTotal = 0
 
         while true {
             try Task.checkCancellation()
-            let page = try await fetch(pageSize, offset)
-            for item in page where seen.insert(item.Id).inserted {
+            let initialFraction = expectedTotal > 0
+                ? min(Double(offset) / Double(expectedTotal), 1)
+                : 0
+            updateProgress(
+                label: label,
+                completed: min(offset, expectedTotal),
+                total: expectedTotal,
+                fraction: initialFraction,
+                range: progressRange
+            )
+
+            let page = try await fetchPageWithRetry {
+                try await fetch(self.pageSize, offset)
+            }
+            expectedTotal = max(expectedTotal, page.TotalRecordCount)
+            for item in page.Items where seen.insert(item.Id).inserted {
                 result.append(item)
             }
-            guard page.count == pageSize else { break }
-            offset += page.count
+            let completed = expectedTotal > 0
+                ? min(offset + pageSize, expectedTotal)
+                : result.count
+            let fraction = expectedTotal > 0
+                ? min(Double(completed) / Double(expectedTotal), 1)
+                : (page.Items.count < pageSize ? 1 : 0)
+            updateProgress(
+                label: label,
+                completed: completed,
+                total: expectedTotal,
+                fraction: fraction,
+                range: progressRange
+            )
+
+            if expectedTotal > 0 {
+                offset += pageSize
+                guard offset < expectedTotal else { break }
+            } else {
+                guard page.Items.count == pageSize else { break }
+                offset += page.Items.count
+            }
         }
         return result
+    }
+
+    private func fetchPageWithRetry(
+        _ fetch: () async throws -> ItemsResponse
+    ) async throws -> ItemsResponse {
+        var attempt = 0
+        while true {
+            do {
+                return try await fetch()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                attempt += 1
+                guard attempt < 3, isTransientNetworkError(error) else { throw error }
+                try await Task.sleep(for: .milliseconds(500 * attempt))
+            }
+        }
+    }
+
+    private func isTransientNetworkError(_ error: Error) -> Bool {
+        let error = error as NSError
+        guard error.domain == NSURLErrorDomain else { return false }
+        return [
+            NSURLErrorTimedOut,
+            NSURLErrorNetworkConnectionLost,
+            NSURLErrorCannotConnectToHost,
+            NSURLErrorDNSLookupFailed,
+            NSURLErrorNotConnectedToInternet
+        ].contains(error.code)
+    }
+
+    private func updateProgress(
+        label: String,
+        completed: Int,
+        total: Int,
+        fraction: Double,
+        range: ClosedRange<Double>
+    ) {
+        let progress = range.lowerBound + (range.upperBound - range.lowerBound) * fraction
+        let count = total > 0 ? " \(completed) of \(total)" : ""
+        status = .syncing(
+            message: "Syncing \(label)…\(count)",
+            progress: min(max(progress, 0), 1)
+        )
     }
 }
 
@@ -189,12 +283,15 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var isInitialLoading = true
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var syncMessage: String?
+    @Published private(set) var syncProgress: Double?
 
     private let service: JellyfinService
     private let repository: LibraryRepository
     private let coordinator: LibrarySyncCoordinator
     private var activeScope: LibraryScope?
     private var launchedScopes = Set<LibraryScope>()
+    private var cancellables = Set<AnyCancellable>()
 
     init(
         service: JellyfinService,
@@ -204,6 +301,21 @@ final class LibraryStore: ObservableObject {
         self.service = service
         self.repository = repository
         self.coordinator = coordinator
+
+        coordinator.$status
+            .sink { [weak self] status in
+                switch status {
+                case .idle:
+                    self?.syncMessage = nil
+                    self?.syncProgress = nil
+                case .syncing(let message, let progress):
+                    self?.syncMessage = message
+                    self?.syncProgress = progress
+                case .failed:
+                    self?.syncProgress = nil
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func activate() async {
@@ -271,6 +383,10 @@ final class LibraryStore: ObservableObject {
         genres = snapshot.genres
         recentAlbums = await repository.cachedRecentAlbums(in: scope, limit: 40)
         isInitialLoading = !snapshot.hasCachedLibrary
+        PhoneConnectivityManager.shared.syncLibrarySnapshotToWatch(
+            snapshot: snapshot,
+            scope: scope
+        )
     }
 
     private func clear() {
@@ -282,6 +398,8 @@ final class LibraryStore: ObservableObject {
         genres = []
         recentAlbums = []
         errorMessage = nil
+        syncMessage = nil
+        syncProgress = nil
         isInitialLoading = true
         isRefreshing = false
     }

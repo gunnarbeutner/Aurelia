@@ -47,11 +47,12 @@ class JellyfinService: ObservableObject {
     /// Metadata needed to fully reconstruct the local library and its
     /// relationships without issuing follow-up requests from individual views.
     private static let libraryMetadataFields = [
-        "BasicSyncInfo", "MediaSources", "Path", "UserData", "Overview",
+        "BasicSyncInfo", "UserData", "Overview",
         "Genres", "SortName", "ParentId", "AlbumId", "ArtistItems",
         "AlbumArtists", "GenreItems", "DateCreated", "PrimaryImageAspectRatio",
-        "ChildCount", "CumulativeRunTimeTicks"
+        "ChildCount"
     ].joined(separator: ",")
+    private static let libraryRequestTimeout: TimeInterval = 90
 
     // MARK: - Quick Connect Properties
     struct QuickConnectResponse: Codable {
@@ -311,6 +312,17 @@ class JellyfinService: ObservableObject {
 
     /// Fetches music items (albums, playlists) for the authenticated user
     func fetchMusicItems(includeItemTypes: String = "MusicAlbum,Playlist", artistIds: String? = nil, parentId: String? = nil, excludeItemTypes: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
+        try await fetchMusicItemsPage(
+            includeItemTypes: includeItemTypes,
+            artistIds: artistIds,
+            parentId: parentId,
+            excludeItemTypes: excludeItemTypes,
+            limit: limit,
+            startIndex: startIndex
+        ).Items
+    }
+
+    func fetchMusicItemsPage(includeItemTypes: String = "MusicAlbum,Playlist", artistIds: String? = nil, parentId: String? = nil, excludeItemTypes: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -350,6 +362,7 @@ class JellyfinService: ObservableObject {
 
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
+        request.timeoutInterval = Self.libraryRequestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
 
@@ -360,11 +373,15 @@ class JellyfinService: ObservableObject {
             throw JellyfinError.invalidResponse
         }
 
-        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
     }
 
     /// Fetches all artists in the music library
     func fetchArtists(parentId: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
+        try await fetchArtistsPage(parentId: parentId, limit: limit, startIndex: startIndex).Items
+    }
+
+    func fetchArtistsPage(parentId: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -401,6 +418,7 @@ class JellyfinService: ObservableObject {
         }
 
         var request = URLRequest(url: url)
+        request.timeoutInterval = Self.libraryRequestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
 
@@ -411,12 +429,15 @@ class JellyfinService: ObservableObject {
             throw JellyfinError.invalidResponse
         }
 
-        let itemsResponse = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-        return itemsResponse.Items
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
     }
 
     /// Fetches tracks for an album or playlist
     func fetchTracks(parentId: String, limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
+        try await fetchTracksPage(parentId: parentId, limit: limit, startIndex: startIndex).Items
+    }
+
+    func fetchTracksPage(parentId: String, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -440,6 +461,7 @@ class JellyfinService: ObservableObject {
 
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
+        request.timeoutInterval = Self.libraryRequestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
 
@@ -450,7 +472,7 @@ class JellyfinService: ObservableObject {
             throw JellyfinError.invalidResponse
         }
 
-        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
     }
 
     /// Get tracks from an album
@@ -741,6 +763,10 @@ class JellyfinService: ObservableObject {
 
     /// Fetch playlists for the authenticated user
     func fetchPlaylists(limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
+        try await fetchPlaylistsPage(limit: limit, startIndex: startIndex).Items
+    }
+
+    func fetchPlaylistsPage(limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -766,6 +792,7 @@ class JellyfinService: ObservableObject {
 
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
+        request.timeoutInterval = Self.libraryRequestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
 
@@ -780,12 +807,16 @@ class JellyfinService: ObservableObject {
 
         let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
         logger.info("✅ Fetched \(decoded.Items.count) playlists")
-        return decoded.Items
+        return decoded
     }
 
     // MARK: - Genres
 
     func fetchGenres(limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
+        try await fetchGenresPage(limit: limit, startIndex: startIndex).Items
+    }
+
+    func fetchGenresPage(limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw URLError(.userAuthenticationRequired)
@@ -809,6 +840,7 @@ class JellyfinService: ObservableObject {
         }
 
         var request = URLRequest(url: components.url!)
+        request.timeoutInterval = Self.libraryRequestTimeout
         request.setValue("MediaBrowser Token=\"\(token)\", Client=\"\(clientName)\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"\(clientVersion)\"", forHTTPHeaderField: "X-Emby-Authorization")
 
         let (data, response) = try await session.data(for: request)
@@ -817,7 +849,7 @@ class JellyfinService: ObservableObject {
         }
 
         let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-        return decoded.Items
+        return decoded
     }
 
     func fetchAlbumsByGenre(genreId: String) async throws -> [BaseItemDto] {

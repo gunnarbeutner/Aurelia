@@ -12,6 +12,7 @@ struct ArtistDetailView: View {
 
     @ObservedObject var jellyfinService = WatchJellyfinService.shared
     @ObservedObject var playerManager = WatchPlayerManager.shared
+    private let libraryStore = WatchLibraryStore.shared
 
     @State private var albums: [WatchAlbum] = []
     @State private var tracks: [WatchTrack] = []
@@ -321,7 +322,7 @@ struct ArtistDetailView: View {
 
     private func loadAlbums() async {
         do {
-            albums = try await jellyfinService.fetchAlbums(artistId: artist.id)
+            albums = try await libraryStore.albums(for: artist)
             isLoading = false
 
             // Extract unique years
@@ -336,7 +337,7 @@ struct ArtistDetailView: View {
         isLoadingTracks = true
 
         do {
-            tracks = try await jellyfinService.fetchArtistTracks(artistId: artist.id)
+            tracks = try await libraryStore.tracks(for: artist)
             isLoadingTracks = false
         } catch {
             if errorMessage == nil {

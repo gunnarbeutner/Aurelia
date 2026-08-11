@@ -12,6 +12,7 @@ struct AlbumDetailView: View {
 
     @ObservedObject var jellyfinService = WatchJellyfinService.shared
     @ObservedObject var playerManager = WatchPlayerManager.shared
+    private let libraryStore = WatchLibraryStore.shared
 
     @State private var tracks: [WatchTrack] = []
     @State private var isLoading = false
@@ -115,7 +116,7 @@ struct AlbumDetailView: View {
         errorMessage = nil
 
         do {
-            tracks = try await jellyfinService.fetchAlbumTracks(albumId: album.id)
+            tracks = try await libraryStore.tracks(inAlbum: album.id)
             isLoading = false
         } catch {
             errorMessage = error.localizedDescription

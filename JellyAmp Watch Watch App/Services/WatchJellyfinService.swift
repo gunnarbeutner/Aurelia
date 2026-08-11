@@ -18,6 +18,9 @@ class WatchJellyfinService: ObservableObject {
 
     private var accessToken: String?
     private var userId: String?
+    var libraryScope: WatchLibraryScope? {
+        WatchLibraryScope(baseURL: baseURL, userID: userId)
+    }
     private static let deviceIdKey = "JellyAmpWatchDeviceId"
     let deviceId: String = {
         if let existing = UserDefaults.standard.string(forKey: deviceIdKey) {
@@ -54,6 +57,10 @@ class WatchJellyfinService: ObservableObject {
         UserDefaults.standard.set(userName, forKey: "jellyfinUserName")
 
         isAuthenticated = true
+
+        Task { @MainActor in
+            await WatchLibraryStore.shared.activate()
+        }
     }
 
     func loadCredentials() {
@@ -80,6 +87,7 @@ class WatchJellyfinService: ObservableObject {
         userId = nil
         userName = ""
         isAuthenticated = false
+        WatchLibraryStore.shared.deactivate()
     }
     
     /// Validates current session by fetching user info
@@ -173,104 +181,53 @@ class WatchJellyfinService: ObservableObject {
 
     // MARK: - Library Fetching
 
-    func fetchArtists() async throws -> [WatchArtist] {
+    func fetchCompleteLibrarySnapshot() async throws -> WatchLibraryTransferSnapshot {
         guard let userId = userId, let token = accessToken else {
             throw NSError(domain: "WatchJellyfin", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
         }
+        guard let scope = libraryScope else {
+            throw NSError(domain: "WatchJellyfin", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid library scope"])
+        }
 
-        let endpoint = "\(baseURL)/Artists"
-        let params = [
+        let artistItems = try await fetchAllItems(
+            endpoint: "\(baseURL)/Artists",
+            params: [
             "UserId": userId,
             "Recursive": "true",
             "SortBy": "SortName",
             "SortOrder": "Ascending",
-            "Limit": "200",
             "Fields": "BasicSyncInfo"
-        ]
-
-        let url = buildURL(endpoint: endpoint, params: params)
-        var request = URLRequest(url: url)
-        request.addValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try JSONDecoder().decode(ItemsResponse.self, from: data)
-
-        return response.Items.compactMap { WatchArtist(from: $0) }
-    }
-
-    func fetchAlbums(artistId: String? = nil) async throws -> [WatchAlbum] {
-        guard let userId = userId, let token = accessToken else {
-            throw NSError(domain: "WatchJellyfin", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
-        }
-
-        let endpoint = "\(baseURL)/Users/\(userId)/Items"
-        var params: [String: String] = [
+            ],
+            token: token
+        )
+        let albumItems = try await fetchAllItems(
+            endpoint: "\(baseURL)/Users/\(userId)/Items",
+            params: [
             "IncludeItemTypes": "MusicAlbum",
             "Recursive": "true",
             "SortBy": "SortName",
             "SortOrder": "Ascending",
-            "Limit": "200",
-            "Fields": "BasicSyncInfo,CanDelete,PrimaryImageAspectRatio,ProductionYear"
-        ]
-
-        if let artistId = artistId {
-            params["ArtistIds"] = artistId
-        }
-
-        let url = buildURL(endpoint: endpoint, params: params)
-        var request = URLRequest(url: url)
-        request.addValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try JSONDecoder().decode(ItemsResponse.self, from: data)
-
-        return response.Items.compactMap { WatchAlbum(from: $0) }
-    }
-
-    func fetchArtistTracks(artistId: String) async throws -> [WatchTrack] {
-        guard let userId = userId, let token = accessToken else {
-            throw NSError(domain: "WatchJellyfin", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
-        }
-
-        let endpoint = "\(baseURL)/Users/\(userId)/Items"
-        let params = [
+            "Fields": "BasicSyncInfo,PrimaryImageAspectRatio,ProductionYear,ArtistItems"
+            ],
+            token: token
+        )
+        let trackItems = try await fetchAllItems(
+            endpoint: "\(baseURL)/Users/\(userId)/Items",
+            params: [
             "IncludeItemTypes": "Audio",
             "Recursive": "true",
-            "ArtistIds": artistId,
             "SortBy": "Album,SortName",
-            "Fields": "AudioInfo,ParentId,UserData"
-        ]
+            "Fields": "AudioInfo,ParentId,AlbumId,ArtistItems,UserData,ProductionYear"
+            ],
+            token: token
+        )
 
-        let url = buildURL(endpoint: endpoint, params: params)
-        var request = URLRequest(url: url)
-        request.addValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try JSONDecoder().decode(ItemsResponse.self, from: data)
-
-        return response.Items.compactMap { WatchTrack(from: $0) }
-    }
-
-    func fetchAlbumTracks(albumId: String) async throws -> [WatchTrack] {
-        guard let userId = userId, let token = accessToken else {
-            throw NSError(domain: "WatchJellyfin", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
-        }
-
-        let endpoint = "\(baseURL)/Users/\(userId)/Items"
-        let params = [
-            "ParentId": albumId,
-            "SortBy": "ParentIndexNumber,IndexNumber,SortName",
-            "Fields": "AudioInfo,ParentId,UserData"
-        ]
-
-        let url = buildURL(endpoint: endpoint, params: params)
-        var request = URLRequest(url: url)
-        request.addValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try JSONDecoder().decode(ItemsResponse.self, from: data)
-
-        return response.Items.compactMap { WatchTrack(from: $0) }
+        return WatchLibraryTransferSnapshot(
+            scope: scope,
+            artists: artistItems.compactMap(WatchArtist.init(from:)),
+            albums: albumItems.compactMap(WatchAlbum.init(from:)),
+            tracks: trackItems.compactMap(WatchTrack.init(from:))
+        )
     }
 
     // MARK: - Favorites
@@ -341,12 +298,55 @@ class WatchJellyfinService: ObservableObject {
         components.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
         return components.url!
     }
+
+    private func fetchAllItems(
+        endpoint: String,
+        params: [String: String],
+        token: String
+    ) async throws -> [ItemDto] {
+        let pageSize = 500
+        var startIndex = 0
+        var items: [ItemDto] = []
+        var seen = Set<String>()
+
+        while true {
+            var pageParams = params
+            pageParams["Limit"] = String(pageSize)
+            pageParams["StartIndex"] = String(startIndex)
+
+            let url = buildURL(endpoint: endpoint, params: pageParams)
+            var request = URLRequest(url: url)
+            request.addValue("MediaBrowser Token=\"\(token)\"", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 500
+                throw NSError(
+                    domain: "WatchJellyfin",
+                    code: status,
+                    userInfo: [NSLocalizedDescriptionKey: "Library request failed (HTTP \(status))."]
+                )
+            }
+
+            let page = try JSONDecoder().decode(ItemsResponse.self, from: data)
+            for item in page.Items where seen.insert(item.Id).inserted {
+                items.append(item)
+            }
+            startIndex += page.Items.count
+            if page.Items.count < pageSize || startIndex >= (page.TotalRecordCount ?? .max) {
+                break
+            }
+        }
+        return items
+    }
 }
 
 // MARK: - Response Models
 
 struct ItemsResponse: Codable {
     let Items: [ItemDto]
+    let TotalRecordCount: Int?
 }
 
 struct ItemDto: Codable {
@@ -360,6 +360,10 @@ struct ItemDto: Codable {
     let Album: String?
     let ProductionYear: Int?
     let ParentId: String?  // Album ID for tracks
+    let AlbumId: String?
+    let ArtistItems: [NameIdPair]?
+    let IndexNumber: Int?
+    let ParentIndexNumber: Int?
     let UserData: UserDataDto?
 }
 
@@ -374,9 +378,14 @@ struct NameIdPair: Codable {
 
 // MARK: - Watch Models
 
-struct WatchArtist: Identifiable {
+nonisolated struct WatchArtist: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
+
+    init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
 
     init?(from dto: ItemDto) {
         guard dto.`Type` == "MusicArtist" else { return nil }
@@ -385,37 +394,77 @@ struct WatchArtist: Identifiable {
     }
 }
 
-struct WatchAlbum: Identifiable {
+nonisolated struct WatchAlbum: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     let artist: String
+    let artistId: String?
     let year: Int?
+
+    init(id: String, name: String, artist: String, artistId: String?, year: Int?) {
+        self.id = id
+        self.name = name
+        self.artist = artist
+        self.artistId = artistId
+        self.year = year
+    }
 
     init?(from dto: ItemDto) {
         guard dto.`Type` == "MusicAlbum" else { return nil }
         self.id = dto.Id
         self.name = dto.Name
         self.artist = dto.AlbumArtist ?? dto.AlbumArtists?.first?.Name ?? "Unknown Artist"
+        self.artistId = dto.AlbumArtists?.first?.Id ?? dto.ArtistItems?.first?.Id
         self.year = dto.ProductionYear
     }
 }
 
-struct WatchTrack: Identifiable {
+nonisolated struct WatchTrack: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     let artist: String
+    let artistIds: [String]
     let album: String
     let albumId: String
     let duration: TimeInterval
+    let indexNumber: Int?
+    let parentIndexNumber: Int?
     var isFavorite: Bool
+
+    init(
+        id: String,
+        name: String,
+        artist: String,
+        artistIds: [String],
+        album: String,
+        albumId: String,
+        duration: TimeInterval,
+        indexNumber: Int?,
+        parentIndexNumber: Int?,
+        isFavorite: Bool
+    ) {
+        self.id = id
+        self.name = name
+        self.artist = artist
+        self.artistIds = artistIds
+        self.album = album
+        self.albumId = albumId
+        self.duration = duration
+        self.indexNumber = indexNumber
+        self.parentIndexNumber = parentIndexNumber
+        self.isFavorite = isFavorite
+    }
 
     init?(from dto: ItemDto) {
         guard dto.`Type` == "Audio" else { return nil }
         self.id = dto.Id
         self.name = dto.Name
         self.artist = dto.Artists?.first ?? dto.AlbumArtist ?? "Unknown Artist"
+        self.artistIds = dto.ArtistItems?.map(\.Id) ?? dto.AlbumArtists?.map(\.Id) ?? []
         self.album = dto.Album ?? ""
-        self.albumId = dto.ParentId ?? ""
+        self.albumId = dto.AlbumId ?? dto.ParentId ?? ""
+        self.indexNumber = dto.IndexNumber
+        self.parentIndexNumber = dto.ParentIndexNumber
         self.isFavorite = dto.UserData?.IsFavorite ?? false
 
         if let ticks = dto.RunTimeTicks {

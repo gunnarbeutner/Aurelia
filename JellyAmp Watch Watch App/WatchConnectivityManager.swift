@@ -17,6 +17,7 @@ class WatchConnectivityManager: NSObject, ObservableObject {
 
     private var session: WCSession?
     private let jellyfinService = WatchJellyfinService.shared
+    private var lastLibraryRequestAt: Date?
 
     override init() {
         super.init()
@@ -42,6 +43,26 @@ class WatchConnectivityManager: NSObject, ObservableObject {
         }) { error in
             print("❌ Failed to request credentials: \(error.localizedDescription)")
         }
+    }
+
+    func requestLibrarySnapshot() {
+        guard let session, session.activationState == .activated, session.isReachable else {
+            print("⚠️ Phone not reachable - Watch will use its cached library or direct fallback")
+            return
+        }
+        if let lastLibraryRequestAt,
+           Date().timeIntervalSince(lastLibraryRequestAt) < 5 {
+            return
+        }
+        lastLibraryRequestAt = Date()
+
+        session.sendMessage(
+            ["action": "requestLibrarySnapshot"],
+            replyHandler: { _ in },
+            errorHandler: { error in
+                print("❌ Failed to request library snapshot: \(error.localizedDescription)")
+            }
+        )
     }
 
     private func handleCredentialsReply(_ reply: [String: Any]) {
@@ -73,6 +94,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
             print("❌ Watch session activation failed: \(error.localizedDescription)")
         } else {
             print("✅ Watch session activated")
+            DispatchQueue.main.async {
+                self.isPhoneReachable = session.isReachable
+                self.requestCredentials()
+                self.requestLibrarySnapshot()
+            }
         }
     }
 
@@ -80,6 +106,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
         DispatchQueue.main.async {
             self.isPhoneReachable = session.isReachable
             print("📱 Phone reachable: \(session.isReachable)")
+            if session.isReachable {
+                self.requestCredentials()
+                self.requestLibrarySnapshot()
+            }
         }
     }
 
@@ -101,6 +131,18 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
     }
 
+    func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        guard file.metadata?["type"] as? String == "librarySnapshot" else { return }
+        do {
+            let data = try Data(contentsOf: file.fileURL)
+            Task { @MainActor in
+                await WatchLibraryStore.shared.applyTransferredSnapshot(data)
+            }
+        } catch {
+            print("❌ Failed to read transferred library snapshot: \(error.localizedDescription)")
+        }
+    }
+
     private func syncFromContext(_ context: [String: Any]) {
         // Sync credentials if provided
         if let baseURL = context["baseURL"] as? String,
@@ -114,6 +156,7 @@ extension WatchConnectivityManager: WCSessionDelegate {
                 userName: userName
             )
             print("✅ Auto-synced credentials from iPhone")
+            requestLibrarySnapshot()
         }
 
         // TODO: Sync favorites, play history, etc.

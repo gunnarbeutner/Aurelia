@@ -569,7 +569,11 @@ actor LibraryRepository: RecentTrackCaching {
     func recordLocalPlay(_ track: Track, in scope: LibraryScope, playedAt: Date = Date()) {
         do {
             try database.write { db in
-                try Self.save(track: track, db: db, scope: scope)
+                // Playback updates recency, not the server-owned favorite flag.
+                // Persisting the Track through `save(track:)` would copy the
+                // usually-stale value carried by the playback queue over a
+                // newer favorite state already stored in SQLite.
+                try LibraryItemRecord(track: track, scope: scope).save(db)
                 try Self.updateUserState(
                     db,
                     scope: scope,
@@ -1220,7 +1224,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = track.id
         itemType = LibraryItemType.track.rawValue
         name = track.name
-        sortName = track.sortName ?? track.name
+        sortName = track.sortName
         artistName = track.artistName
         artistID = track.artistId
         albumName = track.albumName
@@ -1246,7 +1250,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = album.id
         itemType = LibraryItemType.album.rawValue
         name = album.name
-        sortName = album.sortName ?? album.name
+        sortName = album.sortName
         artistName = album.artistName
         artistID = album.artistId
         albumName = nil
@@ -1272,7 +1276,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = artist.id
         itemType = LibraryItemType.artist.rawValue
         name = artist.name
-        sortName = artist.sortName ?? artist.name
+        sortName = artist.sortName
         artistName = nil
         artistID = nil
         albumName = nil
@@ -1298,7 +1302,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         itemID = playlist.id
         itemType = LibraryItemType.playlist.rawValue
         name = playlist.name
-        sortName = playlist.sortName ?? playlist.name
+        sortName = playlist.sortName
         artistName = nil
         artistID = nil
         albumName = nil
