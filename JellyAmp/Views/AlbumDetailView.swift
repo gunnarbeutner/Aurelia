@@ -14,6 +14,7 @@ struct AlbumDetailView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
+    private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @State private var isFavorite: Bool
     @State private var albumTracks: [Track] = []
@@ -139,33 +140,9 @@ struct AlbumDetailView: View {
     // MARK: - Fetch Album Tracks
     private func fetchAlbumTracks() async {
         isLoadingTracks = true
-
-        do {
-            let tracks = try await jellyfinService.getAlbumTracks(albumId: album.id)
-            let baseURL = jellyfinService.baseURL
-
-            // Map and sort tracks by disc number then track number
-            let mappedTracks = tracks.map { Track(from: $0, baseURL: baseURL) }
-            self.albumTracks = mappedTracks.sorted { track1, track2 in
-                // Sort by disc number first (ParentIndexNumber)
-                let disc1 = track1.parentIndexNumber ?? 0
-                let disc2 = track2.parentIndexNumber ?? 0
-
-                if disc1 != disc2 {
-                    return disc1 < disc2
-                }
-
-                // Then by track number (IndexNumber)
-                let index1 = track1.indexNumber ?? 0
-                let index2 = track2.indexNumber ?? 0
-                return index1 < index2
-            }
-
-            isLoadingTracks = false
-        } catch {
-            print("Error fetching album tracks: \(error)")
-            isLoadingTracks = false
-        }
+        defer { isLoadingTracks = false }
+        guard let scope = jellyfinService.libraryScope else { return }
+        albumTracks = (try? await repository.tracks(inAlbum: album.id, in: scope)) ?? []
     }
 
     // MARK: - Toggle Favorite

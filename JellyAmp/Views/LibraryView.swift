@@ -47,18 +47,26 @@ enum SortOption: String, CaseIterable {
 
 struct LibraryScrollIndexEntry: Identifiable, Equatable {
     let label: String
-    let targetID: String
+    let targetID: String?
 
-    var id: String { "\(label)|\(targetID)" }
+    var id: String { label }
 }
 
 enum LibraryScrollIndexBuilder {
     static func alphabetical(
         _ items: [(id: String, title: String)]
     ) -> [LibraryScrollIndexEntry] {
-        uniqueEntries(items.map { item in
-            (label: alphabeticalLabel(for: item.title), targetID: item.id)
-        })
+        var targets: [String: String] = [:]
+        for item in items {
+            let label = alphabeticalLabel(for: item.title)
+            if targets[label] == nil {
+                targets[label] = item.id
+            }
+        }
+        let labels = ["#"]
+            + (0...9).map(String.init)
+            + "ABCDEFGHIJKLMNOPQRSTUVWXYZ".map(String.init)
+        return labels.map { LibraryScrollIndexEntry(label: $0, targetID: targets[$0]) }
     }
 
     static func decades(
@@ -75,8 +83,9 @@ enum LibraryScrollIndexBuilder {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
         guard let scalar = folded.unicodeScalars.first else { return "#" }
-        if CharacterSet.letters.contains(scalar) {
-            return String(scalar).uppercased()
+        let label = String(scalar).uppercased()
+        if label.range(of: "^[A-Z0-9]$", options: .regularExpression) != nil {
+            return label
         }
         return "#"
     }
@@ -124,10 +133,9 @@ func recentlyPlayedAlbums(from items: [BaseItemDto], baseURL: String) -> [Album]
 }
 
 struct LibraryView: View {
-    @ObservedObject var jellyfinService = JellyfinService.shared
+    @ObservedObject private var libraryStore = LibraryStore.shared
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
-    private let repository = LibraryRepository.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var albums: [Album] = []
     @State private var serverRecentAlbums: [Album]?
@@ -304,8 +312,8 @@ struct LibraryView: View {
                     } description: {
                         Text(error)
                     } actions: {
-                        Button("Try Again") { 
-                            Task { await fetchLibrary() } 
+                        Button("Try Again") {
+                            Task { await syncLibrary() }
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -414,11 +422,6 @@ struct LibraryView: View {
                                         .simultaneousGesture(TapGesture().onEnded {
                                             LibraryState.shared.lastTappedArtistId = artist.id
                                         })
-                                        .onAppear {
-                                            if artist.id == filteredArtists.last?.id && searchText.isEmpty {
-                                                Task { await loadMoreArtists() }
-                                            }
-                                        }
                                     }
                                     
                                     // Load more indicator for artists
@@ -451,11 +454,6 @@ struct LibraryView: View {
                                             LibraryState.shared.lastTappedArtistId = artist.id
                                         })
                                         .padding(.horizontal, 20)
-                                        .onAppear {
-                                            if artist.id == filteredArtists.last?.id && searchText.isEmpty {
-                                                Task { await loadMoreArtists() }
-                                            }
-                                        }
 
                                         if artist.id != filteredArtists.last?.id {
                                             Divider()
@@ -635,11 +633,6 @@ struct LibraryView: View {
                                         .simultaneousGesture(TapGesture().onEnded {
                                             LibraryState.shared.lastTappedAlbumId = album.id
                                         })
-                                        .onAppear {
-                                            if album.id == filteredAndSortedAlbums.last?.id && searchText.isEmpty {
-                                                Task { await loadMoreAlbums() }
-                                            }
-                                        }
                                     }
                                     
                                     // Load more indicator for albums
@@ -672,11 +665,6 @@ struct LibraryView: View {
                                             LibraryState.shared.lastTappedAlbumId = album.id
                                         })
                                         .padding(.horizontal, 20)
-                                        .onAppear {
-                                            if album.id == filteredAndSortedAlbums.last?.id && searchText.isEmpty {
-                                                Task { await loadMoreAlbums() }
-                                            }
-                                        }
 
                                         if album.id != filteredAndSortedAlbums.last?.id {
                                             Divider()
@@ -727,7 +715,8 @@ struct LibraryView: View {
                     .overlay(alignment: .trailing) {
                         if scrollIndexEntries.count > 1 {
                             LibraryScrollIndex(entries: scrollIndexEntries) { entry in
-                                proxy.scrollTo(entry.targetID, anchor: .top)
+                                guard let targetID = entry.targetID else { return }
+                                proxy.scrollTo(targetID, anchor: .top)
                             }
                             .padding(.vertical, 8)
                             .padding(.trailing, 3)
@@ -747,22 +736,9 @@ struct LibraryView: View {
         .refreshable {
             await syncLibrary()
         }
-        // Lazy-load playlists when switching to Playlists tab (in case initial fetch was empty)
         .onChange(of: selectedFilter) { _, newFilter in
-            if newFilter == "Playlists" && playlists.isEmpty && !isLoading {
-                Task {
-                    do {
-                        let items = try await jellyfinService.fetchPlaylists()
-                        let baseURL = jellyfinService.baseURL
-                        let converted = items.map { Playlist(from: $0, baseURL: baseURL) }
-                        await MainActor.run { self.playlists = converted }
-                    } catch {
-                        // silently fail — empty state already handled
-                    }
-                }
-            }
             if newFilter == "Recent" {
-                Task { await refreshRecentlyPlayedAlbums() }
+                serverRecentAlbums = libraryStore.recentAlbums
             }
         }
         // Search moved inline to filterSection
@@ -852,91 +828,24 @@ struct LibraryView: View {
                 }
             }
         }
+        .onReceive(libraryStore.$albums) { albums = $0 }
+        .onReceive(libraryStore.$artists) { artists = $0 }
+        .onReceive(libraryStore.$playlists) { playlists = $0 }
+        .onReceive(libraryStore.$genres) { genres = $0 }
+        .onReceive(libraryStore.$recentAlbums) { serverRecentAlbums = $0 }
+        .onReceive(libraryStore.$isInitialLoading) { isLoading = $0 }
+        .onReceive(libraryStore.$isRefreshing) { isSyncing = $0 }
+        .onReceive(libraryStore.$errorMessage) { errorMessage = $0 }
     }
 
     // MARK: - Genre Loading
 
     private func loadGenreAlbums(genreId: String) async {
         await MainActor.run { isLoadingGenreAlbums = true }
-        do {
-            let items = try await jellyfinService.fetchAlbumsByGenre(genreId: genreId)
-            let baseURL = jellyfinService.baseURL
-            let converted = items.map { Album(from: $0, baseURL: baseURL) }
-            await MainActor.run {
-                self.genreAlbums = converted
-                self.isLoadingGenreAlbums = false
-            }
-        } catch {
-            await MainActor.run { self.isLoadingGenreAlbums = false }
-        }
-    }
-
-    // MARK: - Pagination
-    
-    /// Load more albums for pagination
-    private func loadMoreAlbums() async {
-        guard albumsHasMore && !isLoadingMore else { return }
-        
+        let albums = await libraryStore.albums(inGenre: genreId)
         await MainActor.run {
-            isLoadingMore = true
-        }
-        
-        do {
-            let startIndex = albums.count
-            let newAlbums = try await jellyfinService.fetchMusicItems(
-                includeItemTypes: "MusicAlbum", 
-                limit: 300, 
-                startIndex: startIndex
-            )
-            
-            let baseURL = jellyfinService.baseURL
-            let convertedAlbums = newAlbums.map { Album(from: $0, baseURL: baseURL) }
-            
-            await MainActor.run {
-                self.albums.append(contentsOf: convertedAlbums)
-                self.albumsHasMore = convertedAlbums.count >= 300
-                self.isLoadingMore = false
-            }
-            if let scope = jellyfinService.libraryScope {
-                try? await repository.appendAlbums(convertedAlbums, in: scope)
-            }
-        } catch {
-            await MainActor.run {
-                self.isLoadingMore = false
-            }
-        }
-    }
-    
-    /// Load more artists for pagination
-    private func loadMoreArtists() async {
-        guard artistsHasMore && !isLoadingMore else { return }
-        
-        await MainActor.run {
-            isLoadingMore = true
-        }
-        
-        do {
-            let startIndex = artists.count
-            let newArtists = try await jellyfinService.fetchArtists(
-                limit: 200, 
-                startIndex: startIndex
-            )
-            
-            let baseURL = jellyfinService.baseURL
-            let convertedArtists = newArtists.map { Artist(from: $0, baseURL: baseURL) }
-            
-            await MainActor.run {
-                self.artists.append(contentsOf: convertedArtists)
-                self.artistsHasMore = convertedArtists.count >= 200
-                self.isLoadingMore = false
-            }
-            if let scope = jellyfinService.libraryScope {
-                try? await repository.appendArtists(convertedArtists, in: scope)
-            }
-        } catch {
-            await MainActor.run {
-                self.isLoadingMore = false
-            }
+            self.genreAlbums = albums
+            self.isLoadingGenreAlbums = false
         }
     }
 
@@ -944,157 +853,12 @@ struct LibraryView: View {
 
     /// Sync library - force refresh from server
     private func syncLibrary() async {
-        guard !isSyncing else { return }
-
-        await MainActor.run {
-            isSyncing = true
-        }
-
-        // Reset pagination state
-        await MainActor.run {
-            albumsHasMore = true
-            artistsHasMore = true
-            isLoadingMore = false
-        }
-
-        // Keep the current ScrollView mounted while refreshing. Replacing it with
-        // the initial-loading view would cancel the task owned by .refreshable.
-        await fetchAndCache(showLoadingIndicator: false)
-
-        await MainActor.run {
-            isSyncing = false
-        }
+        await libraryStore.refresh(trigger: .pullToRefresh)
     }
 
     // MARK: - Fetch Library
     private func fetchLibrary() async {
-        if let scope = jellyfinService.libraryScope {
-            await repository.importLegacyCacheIfNeeded(in: scope)
-            if let snapshot = try? await repository.librarySnapshot(in: scope),
-               snapshot.hasCachedLibrary {
-                await MainActor.run {
-                    self.albums = snapshot.albums
-                    self.artists = snapshot.artists
-                    self.playlists = snapshot.playlists
-                    self.errorMessage = nil
-                    self.isLoading = false
-                }
-
-                // Render SQLite immediately, then revalidate it in the background.
-                Task { await syncLibrary() }
-                return
-            }
-        }
-
-        // No cache - fetch with loading indicator
-        await fetchAndCache(showLoadingIndicator: true)
-    }
-
-    private func fetchAndCache(showLoadingIndicator: Bool) async {
-        await MainActor.run {
-            if showLoadingIndicator {
-                isLoading = true
-            }
-            errorMessage = nil
-            albumsHasMore = true
-            artistsHasMore = true
-        }
-
-        do {
-            // Fetch albums, artists, and playlists in parallel with smart limits
-            // Initial load: 300 albums, 200 artists, and all playlists (loads in ~1-2 seconds)
-            async let albumsResult = jellyfinService.fetchMusicItems(includeItemTypes: "MusicAlbum", limit: 300, startIndex: 0)
-            async let artistsResult = jellyfinService.fetchArtists(limit: 200, startIndex: 0)
-            async let playlistsResult = jellyfinService.fetchPlaylists()
-            async let recentAlbumsResult = fetchRecentlyPlayedAlbums()
-
-            let (fetchedAlbums, fetchedArtists, fetchedPlaylists) = try await (albumsResult, artistsResult, playlistsResult)
-            let fetchedRecentAlbums = await recentAlbumsResult
-
-            // Convert BaseItemDto to our UI models
-            let baseURL = jellyfinService.baseURL
-            let newAlbums = fetchedAlbums.map { Album(from: $0, baseURL: baseURL) }
-            let newArtists = fetchedArtists.map { Artist(from: $0, baseURL: baseURL) }
-            let newPlaylists = fetchedPlaylists.map { Playlist(from: $0, baseURL: baseURL) }
-
-            await MainActor.run {
-                self.albums = newAlbums
-                self.artists = newArtists
-                self.playlists = newPlaylists
-                if let fetchedRecentAlbums {
-                    self.serverRecentAlbums = fetchedRecentAlbums
-                }
-                self.isLoading = false
-                
-                // Update pagination state
-                self.albumsHasMore = newAlbums.count >= 300
-                self.artistsHasMore = newArtists.count >= 200
-            }
-
-            if let scope = jellyfinService.libraryScope {
-                try await repository.replaceLibrary(
-                    albums: newAlbums,
-                    artists: newArtists,
-                    playlists: newPlaylists,
-                    in: scope
-                )
-            }
-        } catch where isLibraryLoadCancellation(error) {
-            // Cancellation is expected when the view goes away. It must not
-            // replace a valid library with a user-visible error state.
-            await MainActor.run {
-                if showLoadingIndicator {
-                    isLoading = false
-                }
-            }
-        } catch {
-            await MainActor.run {
-                errorMessage = userFriendlyError(error)
-                isLoading = false
-            }
-        }
-    }
-
-    private func refreshRecentlyPlayedAlbums() async {
-        guard let fetchedAlbums = await fetchRecentlyPlayedAlbums() else { return }
-        await MainActor.run {
-            serverRecentAlbums = fetchedAlbums
-        }
-    }
-
-    private func fetchRecentlyPlayedAlbums() async -> [Album]? {
-        do {
-            let items = try await jellyfinService.fetchRecentlyPlayedTracks(limit: 50)
-            if let scope = jellyfinService.libraryScope {
-                await repository.replaceRecentlyPlayed(
-                    recentTrackEntries(from: items, baseURL: jellyfinService.baseURL),
-                    in: scope
-                )
-            }
-            return recentlyPlayedAlbums(from: items, baseURL: jellyfinService.baseURL)
-        } catch {
-            guard let scope = jellyfinService.libraryScope else { return nil }
-            let cached = await repository.cachedRecentAlbums(in: scope, limit: 20)
-            return cached.isEmpty ? nil : cached
-        }
-    }
-
-    private func userFriendlyError(_ error: Error) -> String {
-        // Convert technical errors to user-friendly messages
-        let nsError = error as NSError
-
-        switch nsError.code {
-        case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
-            return "No internet connection. Please check your network and try again."
-        case NSURLErrorTimedOut:
-            return "Request timed out. Please check your connection and try again."
-        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost:
-            return "Cannot connect to server. Please check your server URL."
-        case NSURLErrorUserAuthenticationRequired, 401:
-            return "Authentication failed. Please sign in again."
-        default:
-            return error.localizedDescription
-        }
+        await libraryStore.activate()
     }
 
     // MARK: - Header Section
@@ -1310,7 +1074,11 @@ private struct LibraryScrollIndex: View {
                     } label: {
                         Text(entry.label)
                             .font(.system(size: entries.count > 20 ? 9 : 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(activeEntryID == entry.id ? Color.jellyAmpText : Color.jellyAmpAccent)
+                            .foregroundStyle(
+                                entry.targetID == nil
+                                    ? Color.jellyAmpTextMuted.opacity(0.35)
+                                    : (activeEntryID == entry.id ? Color.jellyAmpText : Color.jellyAmpAccent)
+                            )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background {
                                 if activeEntryID == entry.id {
@@ -1321,6 +1089,7 @@ private struct LibraryScrollIndex: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(entry.targetID == nil)
                     .accessibilityLabel("Jump to \(entry.label)")
                 }
             }
@@ -1354,6 +1123,7 @@ private struct LibraryScrollIndex: View {
             entries.count - 1
         )
         let entry = entries[index]
+        guard entry.targetID != nil else { return }
         guard activeEntryID != entry.id else { return }
         activeEntryID = entry.id
         onSelect(entry)

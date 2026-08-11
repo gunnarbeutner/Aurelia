@@ -12,6 +12,7 @@ struct PlaylistDetailView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
+    private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @State private var isFavorite: Bool
     @State private var playlistTracks: [Track] = []
@@ -86,24 +87,9 @@ struct PlaylistDetailView: View {
     // MARK: - Fetch Playlist Tracks
     private func fetchPlaylistTracks() async {
         isLoadingTracks = true
-
-        do {
-            let tracks = try await jellyfinService.fetchTracks(parentId: playlist.id)
-            let baseURL = jellyfinService.baseURL
-
-            // Map and sort tracks by index number to preserve playlist order
-            let mappedTracks = tracks.map { Track(from: $0, baseURL: baseURL) }
-            self.playlistTracks = mappedTracks.sorted { track1, track2 in
-                let index1 = track1.indexNumber ?? 0
-                let index2 = track2.indexNumber ?? 0
-                return index1 < index2
-            }
-
-            isLoadingTracks = false
-        } catch {
-            print("Error fetching playlist tracks: \(error)")
-            isLoadingTracks = false
-        }
+        defer { isLoadingTracks = false }
+        guard let scope = jellyfinService.libraryScope else { return }
+        playlistTracks = (try? await repository.tracks(inPlaylist: playlist.id, in: scope)) ?? []
     }
 
     // MARK: - Toggle Favorite

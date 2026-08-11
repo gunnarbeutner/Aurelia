@@ -79,15 +79,11 @@ final class FavoritesViewModel: ObservableObject {
                 await LibraryRepository.shared.importLegacyCacheIfNeeded(in: scope)
                 return await LibraryRepository.shared.favoriteSnapshot(in: scope)
             },
-            cacheSnapshot: { snapshot in
-                guard let scope else { return }
-                await LibraryRepository.shared.replaceFavorites(snapshot, in: scope)
-            },
+            cacheSnapshot: { _ in },
             fetcher: {
-                let items = try await service.fetchFavorites(
-                    includeItemTypes: "Audio,MusicAlbum,MusicArtist"
-                )
-                return Self.makeSnapshot(from: items, baseURL: service.baseURL)
+                try await LibrarySyncCoordinator.shared.sync(trigger: .manual)
+                guard let currentScope = service.libraryScope else { return .empty }
+                return await LibraryRepository.shared.favoriteSnapshot(in: currentScope)
             }
         )
     }
@@ -217,27 +213,6 @@ final class FavoritesViewModel: ObservableObject {
         fetchTask = nil
     }
 
-    private static func makeSnapshot(from items: [BaseItemDto], baseURL: String) -> FavoritesSnapshot {
-        var snapshot = FavoritesSnapshot.empty
-
-        for item in items {
-            switch item.Type {
-            case .Audio:
-                snapshot.tracks.append(Track(from: item, baseURL: baseURL))
-            case .MusicAlbum:
-                snapshot.albums.append(Album(from: item, baseURL: baseURL))
-            case .MusicArtist:
-                snapshot.artists.append(Artist(from: item, baseURL: baseURL))
-            default:
-                break
-            }
-        }
-
-        snapshot.tracks.sort { $0.artistName.localizedCaseInsensitiveCompare($1.artistName) == .orderedAscending }
-        snapshot.albums.sort { $0.artistName.localizedCaseInsensitiveCompare($1.artistName) == .orderedAscending }
-        snapshot.artists.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        return snapshot
-    }
 }
 
 private extension Array where Element: Identifiable {

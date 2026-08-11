@@ -249,7 +249,7 @@ struct FavoritesView: View {
             if favoriteTracks.isEmpty {
                 sectionEmpty("No favorite tracks yet")
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(favoriteTracks.enumerated()), id: \.element.id) { index, track in
                         FavoriteTrackRow(track: track) {
                             playerManager.play(tracks: favoriteTracks, startingAt: index)

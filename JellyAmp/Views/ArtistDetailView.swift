@@ -20,6 +20,7 @@ struct ArtistDetailView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
+    private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -166,21 +167,9 @@ struct ArtistDetailView: View {
     // MARK: - Fetch Artist Data
     private func fetchArtistAlbums() async {
         isLoadingAlbums = true
-
-        do {
-            // Fetch albums for this artist
-            let items = try await jellyfinService.fetchMusicItems(
-                includeItemTypes: "MusicAlbum",
-                artistIds: artist.id
-            )
-
-            let baseURL = jellyfinService.baseURL
-            self.albums = items.map { Album(from: $0, baseURL: baseURL) }
-            isLoadingAlbums = false
-        } catch {
-            print("Error fetching artist albums: \(error)")
-            isLoadingAlbums = false
-        }
+        defer { isLoadingAlbums = false }
+        guard let scope = jellyfinService.libraryScope else { return }
+        albums = (try? await repository.albums(forArtist: artist.id, in: scope)) ?? []
     }
 
     // MARK: - Toggle Favorite
@@ -563,39 +552,17 @@ struct ArtistDetailView: View {
 
         isShuffling = true
 
-        // Get tracks from albums (limit to prevent overwhelming server)
         Task {
-            var allTracks: [Track] = []
-            let maxTracks = 200 // Conservative limit
-            let maxAlbums = 15 // Limit number of albums to fetch from
-
-            // Shuffle albums first to get variety
-            let shuffledAlbums = Array(albums.shuffled().prefix(maxAlbums))
-
-            // Fetch tracks from albums until we hit the limit
-            for album in shuffledAlbums {
-                guard allTracks.count < maxTracks else { break }
-
-                do {
-                    let items = try await jellyfinService.fetchTracks(parentId: album.id)
-                    let baseURL = jellyfinService.baseURL
-                    let tracks = items.map { Track(from: $0, baseURL: baseURL) }
-                    allTracks.append(contentsOf: tracks)
-                } catch {
-                    print("Error fetching tracks for album \(album.name): \(error)")
-                    // Continue to next album instead of failing entirely
-                    continue
-                }
-
-                // Delay to prevent overwhelming the server
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            guard let scope = jellyfinService.libraryScope else {
+                isShuffling = false
+                return
             }
+            let allTracks = (try? await repository.tracks(forArtist: artist.id, in: scope)) ?? []
 
-            // Shuffle and play
             await MainActor.run {
                 isShuffling = false
                 if !allTracks.isEmpty {
-                    playerManager.play(tracks: allTracks.shuffled())
+                    playerManager.play(tracks: Array(allTracks.shuffled().prefix(200)))
                 } else {
                     print("No tracks found to shuffle")
                 }

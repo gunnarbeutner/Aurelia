@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PlaylistSelectionSheet: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
+    @ObservedObject private var libraryStore = LibraryStore.shared
     @Environment(\.dismiss) var dismiss
     @State private var playlists: [Playlist] = []
     @State private var isLoading = true
@@ -129,32 +130,18 @@ struct PlaylistSelectionSheet: View {
             }
         }
         .onAppear {
-            Task {
-                await fetchPlaylists()
-            }
+            playlists = libraryStore.playlists
+            isLoading = false
         }
+        .onReceive(libraryStore.$playlists) { playlists = $0 }
     }
 
     // MARK: - Fetch Playlists
     private func fetchPlaylists() async {
         isLoading = true
-
-        do {
-            let fetchedPlaylists = try await jellyfinService.fetchPlaylists()
-            let baseURL = jellyfinService.baseURL
-            let playlistModels = fetchedPlaylists.map { Playlist(from: $0, baseURL: baseURL) }
-
-            await MainActor.run {
-                self.playlists = playlistModels
-                isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                isLoading = false
-                errorMessage = "Failed to load playlists"
-                print("Error fetching playlists: \(error)")
-            }
-        }
+        await libraryStore.reload()
+        playlists = libraryStore.playlists
+        isLoading = false
     }
 
     // MARK: - Add to Playlist
