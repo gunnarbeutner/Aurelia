@@ -220,17 +220,6 @@ struct JellyAmpTests {
         #expect(queryItems.contains(URLQueryItem(name: "EnableUserData", value: "true")))
     }
 
-    @Test @MainActor func nowPlayingPresentationRequestsAreUnique() {
-        let coordinator = NavigationCoordinator()
-
-        coordinator.presentNowPlaying()
-        let firstRequest = coordinator.nowPlayingPresentationRequest
-        coordinator.presentNowPlaying()
-
-        #expect(firstRequest != nil)
-        #expect(coordinator.nowPlayingPresentationRequest != firstRequest)
-    }
-
     @Test @MainActor func mediaNavigationUsesKnownTrackAndArtistIdentifiers() {
         let coordinator = NavigationCoordinator()
         let track = Track(

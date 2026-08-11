@@ -41,7 +41,12 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(discoveryTrack.waitForExistence(timeout: 5))
         discoveryTrack.tap()
 
+        let miniPlayer = app.buttons["mini-player"]
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
         let closeButton = app.buttons["now-playing-close"]
+        XCTAssertFalse(closeButton.exists)
+        miniPlayer.tap()
         let artwork = app.descendants(matching: .any)["now-playing-artwork"]
         let waveform = app.descendants(matching: .any)["now-playing-waveform"]
         let title = app.staticTexts["now-playing-title"]
@@ -77,11 +82,15 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(discoveryTrack.waitForExistence(timeout: 5))
         discoveryTrack.tap()
 
+        let miniPlayer = app.buttons["mini-player"]
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
         let closeButton = app.buttons["now-playing-close"]
+        XCTAssertFalse(closeButton.exists)
+        miniPlayer.tap()
         XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
         closeButton.tap()
 
-        let miniPlayer = app.buttons["mini-player"]
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
         miniPlayer.tap()

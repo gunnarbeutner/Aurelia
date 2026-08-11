@@ -262,7 +262,6 @@ struct DiscoveryView: View {
             playerManager.currentIndex = index
             playerManager.currentTrack = tracks[index]
             playerManager.duration = tracks[index].duration
-            NavigationCoordinator.shared.presentNowPlaying()
             return
         }
         #endif

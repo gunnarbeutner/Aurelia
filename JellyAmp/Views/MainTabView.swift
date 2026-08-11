@@ -144,17 +144,6 @@ struct MainTabView: View {
                 libraryPath.append(album)
             }
         }
-        .onChange(of: navCoordinator.nowPlayingPresentationRequest) { _, request in
-            guard request != nil else { return }
-            presentNowPlaying()
-        }
-    }
-
-    private func presentNowPlaying() {
-        guard !showNowPlaying else { return }
-        withAnimation(PlayerPresentationMotion.animation) {
-            showNowPlaying = true
-        }
     }
 
     private func dismissNowPlaying() {
