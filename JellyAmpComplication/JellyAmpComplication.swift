@@ -1,86 +1,196 @@
 //
 //  JellyAmpComplication.swift
-//  JellyAmpComplication
+//  JellyAmpComplicationExtension
 //
-//  Created by savetherobot on 09.02.2026.
+//  watchOS complications for JellyAmp
 //
 
 import WidgetKit
 import SwiftUI
 
-struct Provider: TimelineProvider {
-    func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), emoji: "😀")
-    }
+// MARK: - Shared Data
 
-    func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(date: Date(), emoji: "😀")
-        completion(entry)
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
-        var entries: [SimpleEntry] = []
-
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
-        let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
-            let entry = SimpleEntry(date: entryDate, emoji: "😀")
-            entries.append(entry)
+struct NowPlayingData {
+    let trackName: String
+    let artistName: String
+    let albumName: String
+    let isPlaying: Bool
+    
+    static let placeholder = NowPlayingData(
+        trackName: "JellyAmp",
+        artistName: "Music Player",
+        albumName: "",
+        isPlaying: false
+    )
+    
+    static func load() -> NowPlayingData {
+        guard let defaults = UserDefaults(suiteName: "group.de.beutner.JellyAmp") else {
+            return .placeholder
         }
+        
+        let track = defaults.string(forKey: "complication_trackName") ?? ""
+        let artist = defaults.string(forKey: "complication_artistName") ?? ""
+        let album = defaults.string(forKey: "complication_albumName") ?? ""
+        let playing = defaults.bool(forKey: "complication_isPlaying")
+        
+        if track.isEmpty {
+            return .placeholder
+        }
+        
+        return NowPlayingData(
+            trackName: track,
+            artistName: artist,
+            albumName: album,
+            isPlaying: playing
+        )
+    }
+}
 
-        let timeline = Timeline(entries: entries, policy: .atEnd)
+// MARK: - Timeline Entry
+
+struct NowPlayingEntry: TimelineEntry {
+    let date: Date
+    let data: NowPlayingData
+}
+
+// MARK: - Timeline Provider
+
+struct NowPlayingProvider: TimelineProvider {
+    func placeholder(in context: Context) -> NowPlayingEntry {
+        NowPlayingEntry(date: .now, data: .placeholder)
+    }
+    
+    func getSnapshot(in context: Context, completion: @escaping (NowPlayingEntry) -> Void) {
+        completion(NowPlayingEntry(date: .now, data: NowPlayingData.load()))
+    }
+    
+    func getTimeline(in context: Context, completion: @escaping (Timeline<NowPlayingEntry>) -> Void) {
+        let entry = NowPlayingEntry(date: .now, data: NowPlayingData.load())
+        // Refresh every 5 minutes
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 5, to: .now)!
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
         completion(timeline)
     }
-
-//    func relevances() async -> WidgetRelevances<Void> {
-//        // Generate a list containing the contexts this widget is relevant in.
-//    }
 }
 
-struct SimpleEntry: TimelineEntry {
-    let date: Date
-    let emoji: String
-}
+// MARK: - Complication Views
 
-struct JellyAmpComplicationEntryView : View {
-    var entry: Provider.Entry
-
+struct NowPlayingComplicationView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: NowPlayingEntry
+    
     var body: some View {
-        VStack {
-            HStack {
-                Text("Time:")
-                Text(entry.date, style: .time)
-            }
-
-            Text("Emoji:")
-            Text(entry.emoji)
+        switch family {
+        case .accessoryCircular:
+            circularView
+        case .accessoryRectangular:
+            rectangularView
+        case .accessoryCorner:
+            cornerView
+        case .accessoryInline:
+            inlineView
+        default:
+            circularView
         }
     }
-}
-
-struct JellyAmpComplication: Widget {
-    let kind: String = "JellyAmpComplication"
-
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            if #available(watchOS 10.0, *) {
-                JellyAmpComplicationEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
+    
+    // Circular: play/pause icon with ring
+    private var circularView: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            
+            if entry.data.trackName == "JellyAmp" {
+                Image(systemName: "waveform")
+                    .font(.title3)
+                    .foregroundColor(.cyan)
             } else {
-                JellyAmpComplicationEntryView(entry: entry)
-                    .padding()
-                    .background()
+                Image(systemName: entry.data.isPlaying ? "waveform" : "pause.fill")
+                    .font(.title3)
+                    .foregroundColor(.cyan)
             }
         }
-        .configurationDisplayName("My Widget")
-        .description("This is an example widget.")
+    }
+    
+    // Rectangular: track name + artist
+    private var rectangularView: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: entry.data.isPlaying ? "waveform" : "music.note")
+                    .font(.caption2)
+                    .foregroundColor(.cyan)
+                
+                Text("JellyAmp")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            Text(entry.data.trackName)
+                .font(.headline)
+                .lineLimit(1)
+            
+            Text(entry.data.artistName)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    // Corner: small icon
+    private var cornerView: some View {
+        Image(systemName: "waveform")
+            .font(.title3)
+            .foregroundColor(.cyan)
+            .widgetLabel {
+                Text(entry.data.trackName == "JellyAmp" ? "JellyAmp" : entry.data.trackName)
+            }
+    }
+    
+    // Inline: text only
+    private var inlineView: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "waveform")
+            if entry.data.trackName == "JellyAmp" {
+                Text("JellyAmp")
+            } else {
+                Text("\(entry.data.trackName) — \(entry.data.artistName)")
+            }
+        }
     }
 }
+
+// MARK: - Widget
+
+@main
+struct JellyAmpComplicationWidget: Widget {
+    let kind = "JellyAmpNowPlaying"
+    
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: NowPlayingProvider()) { entry in
+            NowPlayingComplicationView(entry: entry)
+                .containerBackground(.black, for: .widget)
+        }
+        .configurationDisplayName("Now Playing")
+        .description("Shows what's playing on JellyAmp")
+        .supportedFamilies([
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryCorner,
+            .accessoryInline
+        ])
+    }
+}
+
+// MARK: - Preview
 
 #Preview(as: .accessoryRectangular) {
-    JellyAmpComplication()
+    JellyAmpComplicationWidget()
 } timeline: {
-    SimpleEntry(date: .now, emoji: "😀")
-    SimpleEntry(date: .now, emoji: "🤩")
+    NowPlayingEntry(date: .now, data: .placeholder)
+    NowPlayingEntry(date: .now, data: NowPlayingData(
+        trackName: "Dark Star",
+        artistName: "Grateful Dead",
+        albumName: "Live/Dead",
+        isPlaying: true
+    ))
 }
