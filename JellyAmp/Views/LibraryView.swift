@@ -311,7 +311,7 @@ struct LibraryView: View {
                     }
                 } else {
                     ScrollViewReader { proxy in
-                    ScrollView {
+                    ScrollView(.vertical, showsIndicators: scrollIndexEntries.count <= 1) {
                         if selectedFilter == "Favorites" {
                             // Favorites View - Show both artists and albums
                             VStack(alignment: .leading, spacing: 20) {
@@ -1310,8 +1310,14 @@ private struct LibraryScrollIndex: View {
                     } label: {
                         Text(entry.label)
                             .font(.system(size: entries.count > 20 ? 9 : 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(activeEntryID == entry.id ? Color.jellyAmpBackground : Color.jellyAmpAccent)
+                            .foregroundStyle(activeEntryID == entry.id ? Color.jellyAmpText : Color.jellyAmpAccent)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background {
+                                if activeEntryID == entry.id {
+                                    Capsule()
+                                        .fill(Color.jellyAmpAccent.opacity(0.28))
+                                }
+                            }
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
