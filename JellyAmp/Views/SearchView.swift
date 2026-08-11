@@ -10,14 +10,14 @@ import UIKit
 
 struct SearchView: View {
     let searchFocusRequest: Int
-    @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var playerManager = PlayerManager.shared
+    private let repository = LibraryRepository.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dismissSearch) private var dismissSearch
 
     @State private var searchText = ""
-    @State private var searchResults: [BaseItemDto] = []
+    @State private var searchResults: [LibrarySearchResult] = []
     @State private var isSearching = false
     @State private var selectedFilter: SearchFilter = .all
     @State private var searchTask: Task<Void, Never>?
@@ -62,7 +62,7 @@ struct SearchView: View {
                     emptySearchView
                 } else if isSearching {
                     loadingView
-                } else if filteredResults.isEmpty {
+                } else if searchResults.isEmpty {
                     noResultsView
                 } else {
                     searchResultsList
@@ -78,6 +78,9 @@ struct SearchView: View {
         }
         .onChange(of: searchFocusRequest) { _, _ in
             focusSearchField()
+        }
+        .onChange(of: selectedFilter) { _, _ in
+            performSearch(query: searchText)
         }
         .navigationDestination(for: Album.self) { album in
             AlbumDetailView(album: album)
@@ -174,33 +177,32 @@ struct SearchView: View {
     private var searchResultsList: some View {
         ScrollView {
             VStack(spacing: 8) {
-                ForEach(filteredResults, id: \.id) { item in
-                    if item.type == "MusicArtist" {
-                        NavigationLink(value: Artist(from: item, baseURL: jellyfinService.baseURL)) {
-                            SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
+                ForEach(searchResults) { result in
+                    switch result {
+                    case .artist(let artist):
+                        NavigationLink(value: artist) {
+                            SearchResultRow(result: result)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityIdentifier("search-result-\(item.id)")
+                        .accessibilityIdentifier("search-result-\(artist.id)")
                         .contextMenu {
-                            InstantMixButton(itemId: item.id, itemName: item.Name)
+                            InstantMixButton(itemId: artist.id, itemName: artist.name)
                         }
-                    } else if item.type == "MusicAlbum" {
-                        let album = Album(from: item, baseURL: jellyfinService.baseURL)
+                    case .album(let album):
                         NavigationLink(value: album) {
-                            SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
+                            SearchResultRow(result: result)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityIdentifier("search-result-\(item.id)")
+                        .accessibilityIdentifier("search-result-\(album.id)")
                         .contextMenu {
                             AlbumContextMenu(album: album)
                         }
-                    } else {
-                        let track = Track(from: item, baseURL: jellyfinService.baseURL)
-                        Button { handleItemTap(item) } label: {
-                            SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
+                    case .track(let track):
+                        Button { handleTrackTap(track) } label: {
+                            SearchResultRow(result: result)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityIdentifier("search-result-\(item.id)")
+                        .accessibilityIdentifier("search-result-\(track.id)")
                         .contextMenu {
                             TrackContextMenu(track: track)
                         }
@@ -255,20 +257,6 @@ struct SearchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Computed Properties
-    private var filteredResults: [BaseItemDto] {
-        switch selectedFilter {
-        case .all:
-            return searchResults
-        case .artists:
-            return searchResults.filter { $0.type == "MusicArtist" }
-        case .albums:
-            return searchResults.filter { $0.type == "MusicAlbum" }
-        case .tracks:
-            return searchResults.filter { $0.type == "Audio" }
-        }
-    }
-
     // MARK: - Actions
     private func performSearch(query: String) {
         guard !query.isEmpty else {
@@ -296,7 +284,14 @@ struct SearchView: View {
             }
 
             do {
-                let results = try await jellyfinService.searchMusic(query: query)
+                guard let scope = JellyfinService.shared.libraryScope else {
+                    throw JellyfinError.notAuthenticated
+                }
+                let results = try await repository.search(
+                    query,
+                    filter: selectedFilter.libraryFilter,
+                    in: scope
+                )
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
@@ -315,39 +310,40 @@ struct SearchView: View {
     }
 
     #if DEBUG
-    private static var uiTestSearchResults: [BaseItemDto] {
+    private static var uiTestSearchResults: [LibrarySearchResult] {
         (1...8).map { index in
-            BaseItemDto(
-                Id: "ui-search-\(index)",
-                Name: "Search Layout Track \(index)",
-                Type: .Audio,
-                RunTimeTicks: 1_800_000_000,
-                Album: "Search Layout Album",
-                AlbumArtist: "Search Layout Artist",
-                Artists: ["Search Layout Artist"],
-                AlbumId: "ui-search-album"
-            )
+            .track(Track(
+                id: "ui-search-\(index)",
+                name: "Search Layout Track \(index)",
+                artistName: "Search Layout Artist",
+                albumName: "Search Layout Album",
+                duration: 180,
+                artworkURL: nil,
+                albumId: "ui-search-album"
+            ))
         }
     }
     #endif
 
-    private func handleItemTap(_ item: BaseItemDto) {
-        switch item.type {
-        case "Audio":
-            // Playback may subsequently expand the player over this view. Drop
-            // search focus first so its keyboard cannot follow that transition.
-            dismissSearch()
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder),
-                to: nil,
-                from: nil,
-                for: nil
-            )
-            let track = Track(from: item, baseURL: jellyfinService.baseURL)
-            playerManager.play(tracks: [track])
+    private func handleTrackTap(_ track: Track) {
+        dismissSearch()
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+        playerManager.play(tracks: [track])
+    }
+}
 
-        default:
-            break
+private extension SearchView.SearchFilter {
+    var libraryFilter: LibrarySearchFilter {
+        switch self {
+        case .all: return .all
+        case .artists: return .artists
+        case .albums: return .albums
+        case .tracks: return .tracks
         }
     }
 }
@@ -365,18 +361,13 @@ private extension View {
 
 // MARK: - Search Result Row
 struct SearchResultRow: View {
-    let item: BaseItemDto
-    let baseURL: String
+    let result: LibrarySearchResult
 
     var body: some View {
         HStack(spacing: 16) {
                 // Artwork/Icon
-                if let imageTags = item.imageTags,
-                   let primaryTag = imageTags["Primary"] {
-                    let itemId = item.id
-                    let imageURL = "\(baseURL)/Items/\(itemId)/Images/Primary?fillHeight=80&fillWidth=80&quality=90&tag=\(primaryTag)"
-
-                    CachedAsyncImage(url: URL(string: imageURL)) { phase in
+                if let artworkURL, let url = URL(string: artworkURL) {
+                    CachedAsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
                             placeholderImage
@@ -399,7 +390,7 @@ struct SearchResultRow: View {
 
                 // Item Info
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(item.name ?? "Unknown")
+                    Text(name)
                         .font(.body.weight(.semibold))
                         .foregroundColor(Color.jellyAmpText)
                         .lineLimit(1)
@@ -417,17 +408,18 @@ struct SearchResultRow: View {
                             )
 
                         // Additional Info based on type
-                        if item.type == "MusicArtist" {
+                        if case .artist(let artist) = result {
                             // Show album count for artists
-                            if let albumCount = item.AlbumCount {
+                            let albumCount = artist.albumCount
+                            if albumCount > 0 {
                                 Text("\(albumCount) album\(albumCount == 1 ? "" : "s")")
                                     .font(.subheadline)
                                     .foregroundColor(.jellyAmpTextSecondary)
                                     .lineLimit(1)
                             }
-                        } else if let artist = item.artists?.first {
+                        } else if let subtitle {
                             // Show artist name for albums/tracks
-                            Text(artist)
+                            Text(subtitle)
                                 .font(.subheadline)
                                 .foregroundColor(.jellyAmpTextSecondary)
                                 .lineLimit(1)
@@ -471,29 +463,50 @@ struct SearchResultRow: View {
     }
 
     private var itemTypeLabel: String {
-        switch item.type {
-        case "MusicArtist": return "ARTIST"
-        case "MusicAlbum": return "ALBUM"
-        case "Audio": return "TRACK"
-        default: return item.type
+        switch result {
+        case .artist: return "ARTIST"
+        case .album: return "ALBUM"
+        case .track: return "TRACK"
         }
     }
 
     private var itemTypeColor: Color {
-        switch item.type {
-        case "MusicArtist": return .neonCyan
-        case "MusicAlbum": return .neonPink
-        case "Audio": return .neonPurple
-        default: return .neonCyan
+        switch result {
+        case .artist: return .neonCyan
+        case .album: return .neonPink
+        case .track: return .neonPurple
         }
     }
 
     private var itemTypeIcon: String {
-        switch item.type {
-        case "MusicArtist": return "person.circle.fill"
-        case "MusicAlbum": return "square.stack.fill"
-        case "Audio": return "music.note"
-        default: return "music.note"
+        switch result {
+        case .artist: return "person.circle.fill"
+        case .album: return "square.stack.fill"
+        case .track: return "music.note"
+        }
+    }
+
+    private var name: String {
+        switch result {
+        case .artist(let artist): return artist.name
+        case .album(let album): return album.name
+        case .track(let track): return track.name
+        }
+    }
+
+    private var subtitle: String? {
+        switch result {
+        case .artist: return nil
+        case .album(let album): return album.artistName
+        case .track(let track): return track.artistName
+        }
+    }
+
+    private var artworkURL: String? {
+        switch result {
+        case .artist(let artist): return artist.artworkURL
+        case .album(let album): return album.artworkURL
+        case .track(let track): return track.artworkURL
         }
     }
 }

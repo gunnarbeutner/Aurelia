@@ -9,7 +9,7 @@ import Foundation
 import Combine
 import OSLog
 
-struct DiscoveryShelf: Identifiable, Codable, Equatable {
+struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     let seed: Track
     let tracks: [Track]
 
@@ -38,7 +38,7 @@ struct DiscoveryShelf: Identifiable, Codable, Equatable {
     }
 }
 
-struct DiscoverySnapshot: Codable, Equatable {
+struct DiscoverySnapshot: Codable, Equatable, Sendable {
     let shelves: [DiscoveryShelf]
     let fallbackTracks: [Track]
     let recentTracks: [Track]?
@@ -74,7 +74,7 @@ struct DiscoveryCache {
 
 @MainActor
 final class DiscoveryViewModel: ObservableObject {
-    static let maximumMixShelfCount = 6
+    static let maximumMixShelfCount = 10
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "JellyAmp",
@@ -94,6 +94,9 @@ final class DiscoveryViewModel: ObservableObject {
     private let recentCache: (any RecentTrackCaching)?
     private let recentScope: LibraryScope?
     private let cache: DiscoveryCache?
+    private let snapshotRepository: LibraryRepository?
+    private let snapshotScope: LibraryScope?
+    private var hasLoadedDatabaseCache = false
     private var loadedRecentSignature: [String] = []
     private var lastRefreshDate: Date?
     private var pendingSnapshot: DiscoverySnapshot?
@@ -109,6 +112,8 @@ final class DiscoveryViewModel: ObservableObject {
             recentTracksProvider: { PlayerManager.shared.recentlyPlayedTracks },
             recentCache: LibraryRepository.shared,
             recentScope: service.libraryScope,
+            snapshotRepository: LibraryRepository.shared,
+            snapshotScope: service.libraryScope,
             cache: DiscoveryCache(
                 key: DiscoveryCache.key(
                     baseURL: service.baseURL,
@@ -123,12 +128,16 @@ final class DiscoveryViewModel: ObservableObject {
         recentTracksProvider: @escaping () -> [Track],
         recentCache: (any RecentTrackCaching)? = nil,
         recentScope: LibraryScope? = nil,
+        snapshotRepository: LibraryRepository? = nil,
+        snapshotScope: LibraryScope? = nil,
         cache: DiscoveryCache? = nil
     ) {
         self.api = api
         self.recentTracksProvider = recentTracksProvider
         self.recentCache = recentCache
         self.recentScope = recentScope
+        self.snapshotRepository = snapshotRepository
+        self.snapshotScope = snapshotScope
         self.cache = cache
         recentTracks = Self.uniqueRecentTracks(recentTracksProvider())
 
@@ -146,6 +155,16 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     func activate() async {
+        if !hasLoadedDatabaseCache {
+            hasLoadedDatabaseCache = true
+            if let snapshotRepository,
+               let snapshotScope,
+               let stored = await snapshotRepository.discoverySnapshot(in: snapshotScope),
+               lastRefreshDate == nil || stored.refreshedAt >= (lastRefreshDate ?? .distantPast) {
+                apply(stored)
+            }
+        }
+
         // Adopt recommendations prepared during the previous visit before the
         // page becomes interactive. Automatic refreshes then stage their result
         // for the next visit so shelves never reorder under the user's finger.
@@ -281,6 +300,9 @@ final class DiscoveryViewModel: ObservableObject {
                 pendingSnapshot = snapshot
             }
             cache?.save(snapshot)
+            if let snapshotRepository, let snapshotScope {
+                await snapshotRepository.saveDiscoverySnapshot(snapshot, in: snapshotScope)
+            }
         } catch is CancellationError {
             return
         } catch {
