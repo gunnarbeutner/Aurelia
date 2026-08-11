@@ -109,7 +109,9 @@ struct ArtistDetailView: View {
             AlbumDetailView(album: album)
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
-            NowPlayingView()
+            SwipeToDismissPlayer(onDismiss: { showNowPlaying = false }) {
+                NowPlayingView(onDismiss: { showNowPlaying = false })
+            }
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
         .onChange(of: selectedPhotoItem) { _, newItem in

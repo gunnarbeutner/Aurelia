@@ -91,12 +91,14 @@ struct MainTabView: View {
             // removal transitions can leave a departing layer intercepting taps.
             if playerManager.currentTrack != nil {
                 GeometryReader { geometry in
-                    NowPlayingView(onDismiss: dismissNowPlaying)
-                        .offset(
-                            y: showNowPlaying
-                                ? 0
-                                : geometry.size.height + geometry.safeAreaInsets.bottom
-                        )
+                    SwipeToDismissPlayer(onDismiss: dismissNowPlaying) {
+                        NowPlayingView(onDismiss: dismissNowPlaying)
+                    }
+                    .offset(
+                        y: showNowPlaying
+                            ? 0
+                            : geometry.size.height + geometry.safeAreaInsets.bottom
+                    )
                 }
                 .allowsHitTesting(showNowPlaying)
                 .accessibilityHidden(!showNowPlaying)
@@ -171,6 +173,41 @@ struct MainTabView: View {
                 }
             }
         )
+    }
+}
+
+struct SwipeToDismissPlayer<Content: View>: View {
+    let onDismiss: () -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var dragOffset: CGFloat = 0
+
+    var body: some View {
+        content()
+            .offset(y: dragOffset)
+            .opacity(max(0, 1.0 - Double(dragOffset) / 500.0))
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        let isDownward = value.translation.height > 0
+                        let isVertical = abs(value.translation.height) > abs(value.translation.width)
+                        dragOffset = isDownward && isVertical ? value.translation.height : 0
+                    }
+                    .onEnded { value in
+                        let shouldDismiss = value.translation.height > 150
+                            || value.predictedEndTranslation.height > 300
+
+                        if shouldDismiss {
+                            withAnimation(PlayerPresentationMotion.animation) {
+                                dragOffset = 0
+                                onDismiss()
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
     }
 }
 

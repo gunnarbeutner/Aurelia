@@ -91,7 +91,10 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(artwork.waitForExistence(timeout: 5))
         XCTAssertEqual(artwork.frame.midX, app.windows.firstMatch.frame.midX, accuracy: 2)
 
-        closeButton.tap()
+        let window = app.windows.firstMatch
+        let swipeStart = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        let swipeEnd = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
     }

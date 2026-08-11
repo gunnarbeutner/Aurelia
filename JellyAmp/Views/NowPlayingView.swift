@@ -33,7 +33,6 @@ struct NowPlayingView: View {
     @State private var dominantColor: Color?
     @State private var artworkImage: Image?
     @ObservedObject var sleepTimer = SleepTimerManager.shared
-    @State private var dragOffset: CGFloat = 0
     var onDismiss: (() -> Void)?
 
     var body: some View {
@@ -83,29 +82,6 @@ struct NowPlayingView: View {
                 }
             }
         }
-        .offset(y: max(0, dragOffset))
-        .opacity(1.0 - Double(max(0, dragOffset)) / 500.0)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    if value.translation.height > 0 {
-                        dragOffset = value.translation.height
-                    }
-                }
-                .onEnded { value in
-                    if value.translation.height > 150 || value.velocity.height > 500 {
-                        if let onDismiss = onDismiss {
-                            onDismiss()
-                        } else {
-                            dismiss()
-                        }
-                    } else {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            dragOffset = 0
-                        }
-                    }
-                }
-        )
         .onChange(of: playerManager.currentTrack) { _, newTrack in
             isFavorite = newTrack?.isFavorite ?? false
             extractDominantColor(for: newTrack)
