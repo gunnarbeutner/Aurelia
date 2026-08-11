@@ -9,6 +9,7 @@ import Testing
 import Foundation
 import Combine
 import UIKit
+import SwiftUI
 @testable import JellyAmp
 
 struct JellyAmpTests {
@@ -887,6 +888,21 @@ struct JellyAmpTests {
             translation: CGSize(width: 0, height: 80),
             predictedEndTranslation: CGSize(width: 0, height: 250)
         ))
+    }
+
+    @Test func keyboardShortcutsFollowMusicAndNavigationConventions() {
+        #expect(JellyAmpShortcuts.playPause.key == .space)
+        #expect(JellyAmpShortcuts.playPause.modifiers.isEmpty)
+        #expect(JellyAmpShortcuts.previousTrack.key == .leftArrow)
+        #expect(JellyAmpShortcuts.previousTrack.modifiers.isEmpty)
+        #expect(JellyAmpShortcuts.nextTrack.key == .rightArrow)
+        #expect(JellyAmpShortcuts.nextTrack.modifiers.isEmpty)
+        #expect(JellyAmpShortcuts.seekBackward.modifiers == [.option, .command])
+        #expect(JellyAmpShortcuts.seekForward.modifiers == [.option, .command])
+        #expect(JellyAmpShortcuts.focusSearch.key == "f")
+        #expect(JellyAmpShortcuts.focusSearch.modifiers == .command)
+        #expect(JellyAmpShortcuts.tab(5).key == "5")
+        #expect(JellyAmpShortcuts.tab(5).modifiers == .command)
     }
 
 }

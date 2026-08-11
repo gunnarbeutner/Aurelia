@@ -208,7 +208,10 @@ struct NowPlayingView: View {
                 queueSection
                     .padding(.top, 24)
 
-                Spacer().frame(height: 40)
+                // The player is presented inside the selected tab's content so
+                // the native tab bar remains usable. Leave enough trailing
+                // scroll space for the final queue row to clear that bar.
+                Spacer().frame(height: MiniPlayerLayout.tabBarClearance + 40)
             }
             .frame(width: NowPlayingLayout.contentWidth(for: geometry.size.width))
             .padding(.horizontal, NowPlayingLayout.horizontalPadding)

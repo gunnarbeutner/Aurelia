@@ -145,8 +145,10 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
         miniPlayer.tap()
 
+        let playerScrollView = app.scrollViews["now-playing-scroll"]
+        XCTAssertTrue(playerScrollView.waitForExistence(timeout: 5))
         let nextTrack = app.buttons["now-playing-up-next-ui-layout-next"]
-        XCTAssertTrue(waitForHittable(nextTrack, timeout: 5))
+        XCTAssertTrue(scrollToHittable(nextTrack, in: playerScrollView))
         let delete = app.buttons["Delete Next Test Track from queue"]
         XCTAssertFalse(delete.exists)
         let swipeStart = nextTrack.coordinate(
@@ -164,7 +166,7 @@ final class JellyAmpUITests: XCTestCase {
             timeout: 5
         ))
         let remainingTrack = app.buttons["now-playing-up-next-ui-layout-after-next"]
-        XCTAssertTrue(waitForHittable(remainingTrack, timeout: 5))
+        XCTAssertTrue(scrollToHittable(remainingTrack, in: playerScrollView))
         remainingTrack.tap()
         XCTAssertTrue(waitForLabel(title, containing: "After Delete Test Track", timeout: 5))
     }
@@ -315,6 +317,32 @@ final class JellyAmpUITests: XCTestCase {
             object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func scrollToHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maxAttempts: Int = 4
+    ) -> Bool {
+        guard element.waitForExistence(timeout: 5) else { return false }
+
+        for _ in 0..<maxAttempts where !element.isHittable {
+            let start = scrollView.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.15, dy: 0.8)
+            )
+            let end = scrollView.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)
+            )
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: end,
+                withVelocity: .fast,
+                thenHoldForDuration: 0
+            )
+        }
+
+        return element.isHittable
     }
 
     @MainActor

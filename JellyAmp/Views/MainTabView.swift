@@ -14,6 +14,7 @@ enum PlayerPresentationMotion {
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showNowPlaying = false
+    @State private var searchFocusRequest = 0
     @State private var libraryPath = NavigationPath()
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
@@ -45,7 +46,7 @@ struct MainTabView: View {
                 
                 tabContent(for: 2) {
                     NavigationStack {
-                        SearchView()
+                        SearchView(searchFocusRequest: searchFocusRequest)
                     }
                 }
                 .tabItem {
@@ -148,6 +149,34 @@ struct MainTabView: View {
                 libraryPath.append(album)
             }
         }
+        .focusedSceneValue(\.jellyAmpCommandActions, commandActions)
+    }
+
+    private var commandActions: JellyAmpCommandActions {
+        JellyAmpCommandActions(
+            selectedTab: selectedTab,
+            isPlayerPresented: showNowPlaying,
+            selectTab: { tab in
+                if showNowPlaying {
+                    dismissNowPlaying()
+                }
+                selectedTab = tab
+            },
+            focusSearch: {
+                if showNowPlaying {
+                    dismissNowPlaying()
+                }
+                selectedTab = 2
+                searchFocusRequest += 1
+            },
+            togglePlayer: {
+                guard playerManager.currentTrack != nil else { return }
+                withAnimation(PlayerPresentationMotion.animation) {
+                    showNowPlaying.toggle()
+                }
+            },
+            dismissPlayer: dismissNowPlaying
+        )
     }
 
     private func dismissNowPlaying() {

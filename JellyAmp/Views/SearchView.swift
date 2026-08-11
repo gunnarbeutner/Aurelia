@@ -9,6 +9,7 @@ import SwiftUI
 import UIKit
 
 struct SearchView: View {
+    let searchFocusRequest: Int
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var playerManager = PlayerManager.shared
@@ -20,10 +21,12 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var selectedFilter: SearchFilter = .all
     @State private var searchTask: Task<Void, Never>?
-    #if targetEnvironment(macCatalyst)
-    @FocusState private var isCatalystSearchFocused: Bool
-    #endif
+    @FocusState private var isSearchFieldFocused: Bool
     // Navigation handled by NavigationStack
+
+    init(searchFocusRequest: Int = 0) {
+        self.searchFocusRequest = searchFocusRequest
+    }
 
     enum SearchFilter: String, CaseIterable {
         case all = "All"
@@ -68,9 +71,13 @@ struct SearchView: View {
         }
         #if !targetEnvironment(macCatalyst)
         .searchable(text: $searchText, prompt: "Search artists, albums, tracks...")
+        .jellyAmpSearchFocused($isSearchFieldFocused)
         #endif
         .onChange(of: searchText) { _, newValue in
             performSearch(query: newValue)
+        }
+        .onChange(of: searchFocusRequest) { _, _ in
+            focusSearchField()
         }
         .navigationDestination(for: Album.self) { album in
             AlbumDetailView(album: album)
@@ -91,7 +98,7 @@ struct SearchView: View {
             TextField("Search artists, albums, tracks…", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.body)
-                .focused($isCatalystSearchFocused)
+                .focused($isSearchFieldFocused)
                 .focusEffectDisabled()
 
             if !searchText.isEmpty {
@@ -112,7 +119,7 @@ struct SearchView: View {
                 .fill(Color.jellyAmpElevated)
                 .overlay(
                     Capsule().stroke(
-                        isCatalystSearchFocused
+                        isSearchFieldFocused
                             ? Color.jellyAmpAccent.opacity(0.45)
                             : Color.white.opacity(0.12),
                         lineWidth: 1
@@ -124,6 +131,12 @@ struct SearchView: View {
         .padding(.top, 12)
     }
     #endif
+
+    private func focusSearchField() {
+        DispatchQueue.main.async {
+            isSearchFieldFocused = true
+        }
+    }
 
     // MARK: - Filter Tabs
     private var filterTabs: some View {
@@ -335,6 +348,17 @@ struct SearchView: View {
 
         default:
             break
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func jellyAmpSearchFocused(_ focus: FocusState<Bool>.Binding) -> some View {
+        if #available(iOS 18.0, macCatalyst 18.0, *) {
+            searchFocused(focus)
+        } else {
+            self
         }
     }
 }

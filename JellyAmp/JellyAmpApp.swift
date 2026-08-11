@@ -78,6 +78,9 @@ struct JellyAmpApp: App {
             ContentView()
             #endif
         }
+        .commands {
+            JellyAmpCommands()
+        }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             handleScenePhaseChange(oldPhase: oldPhase, newPhase: newPhase)
         }
