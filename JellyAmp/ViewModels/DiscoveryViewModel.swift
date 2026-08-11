@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import OSLog
 
 struct DiscoveryShelf: Identifiable, Codable, Equatable {
     let seed: Track
@@ -73,6 +74,11 @@ struct DiscoveryCache {
 
 @MainActor
 final class DiscoveryViewModel: ObservableObject {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "JellyAmp",
+        category: "Discovery"
+    )
+
     @Published private(set) var shelves: [DiscoveryShelf] = []
     @Published private(set) var fallbackTracks: [Track] = []
     @Published private(set) var recentTracks: [Track] = []
@@ -134,7 +140,7 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     var hasContent: Bool {
-        !shelves.isEmpty || !fallbackTracks.isEmpty
+        !shelves.isEmpty || !fallbackTracks.isEmpty || !recentTracks.isEmpty
     }
 
     func activate() async {
@@ -142,7 +148,8 @@ final class DiscoveryViewModel: ObservableObject {
         // page becomes interactive. Automatic refreshes then stage their result
         // for the next visit so shelves never reorder under the user's finger.
         applyPendingSnapshot()
-        await loadIfNeeded(publishResult: !hasContent)
+        let needsInitialRecommendations = shelves.isEmpty && fallbackTracks.isEmpty
+        await loadIfNeeded(publishResult: needsInitialRecommendations)
         await updateAudioMuseStatus()
 
         while !Task.isCancelled {
@@ -194,19 +201,24 @@ final class DiscoveryViewModel: ObservableObject {
         }
 
         do {
-            let recentTracks = await fetchRecentlyPlayedTracks()
+            let previousShelves = shelves
+            let recentTracks = try await fetchRecentlyPlayedTracks()
             let recent = uniqueSeeds(recentTracks)
             async let favoriteTracks = fetchFavoriteSeedTracks()
             async let randomTracks = fetchRandomSeedTracks()
-            let fetchedSeeds = await (favoriteTracks, randomTracks)
+            let fetchedSeeds = try await (favoriteTracks, randomTracks)
             let candidates = uniqueSeeds(recent + fetchedSeeds.0 + fetchedSeeds.1)
 
             var newShelves: [DiscoveryShelf] = []
             var usedRecommendationIds = Set<String>()
+            var mixFailures: [String] = []
+            var emptyMixCount = 0
 
             for seed in candidates.prefix(12) where newShelves.count < 3 {
                 do {
+                    try Task.checkCancellation()
                     let items = try await api.fetchInstantMix(itemId: seed.id, limit: 13)
+                    try Task.checkCancellation()
                     let tracks = items
                         .filter { $0.Type == .Audio && $0.Id != seed.id }
                         .map { Track(from: $0, baseURL: api.baseURL) }
@@ -214,9 +226,19 @@ final class DiscoveryViewModel: ObservableObject {
                     let recommendations = Array(tracks.prefix(12))
                     if !recommendations.isEmpty {
                         newShelves.append(DiscoveryShelf(seed: seed, tracks: recommendations))
+                    } else {
+                        emptyMixCount += 1
+                        Self.logger.info(
+                            "Instant Mix returned no recommendations for seed \(seed.id, privacy: .private(mask: .hash))"
+                        )
                     }
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
-                    // A single unanalyzed seed must not prevent other shelves loading.
+                    mixFailures.append(error.localizedDescription)
+                    Self.logger.warning(
+                        "Instant Mix failed for seed \(seed.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .public)"
+                    )
                     continue
                 }
             }
@@ -225,14 +247,26 @@ final class DiscoveryViewModel: ObservableObject {
                 throw DiscoveryError.noMusic
             }
 
+            // A refresh is transactional for recommendation shelves. Recent
+            // playback can still move forward, but a temporary plugin/server
+            // failure must never replace known-good mixes with an empty array.
+            let resolvedShelves = newShelves.isEmpty ? previousShelves : newShelves
+            let fallbackTracks = resolvedShelves.isEmpty && recentTracks.isEmpty
+                ? Array(candidates.prefix(12))
+                : []
             let snapshot = DiscoverySnapshot(
-                shelves: newShelves,
-                fallbackTracks: newShelves.isEmpty && recentTracks.isEmpty
-                    ? Array(candidates.prefix(12))
-                    : [],
+                shelves: resolvedShelves,
+                fallbackTracks: fallbackTracks,
                 recentTracks: Array(recentTracks.prefix(12)),
                 recentSignature: Array(recentTracks.prefix(12).map(\.id)),
                 refreshedAt: Date()
+            )
+            let mixIssue = mixRefreshIssue(
+                candidatesWereAvailable: !candidates.isEmpty,
+                generatedShelfCount: newShelves.count,
+                retainedPreviousShelves: newShelves.isEmpty && !previousShelves.isEmpty,
+                failureDescriptions: mixFailures,
+                emptyMixCount: emptyMixCount
             )
 
             guard generation == refreshGeneration else { return }
@@ -240,11 +274,13 @@ final class DiscoveryViewModel: ObservableObject {
             if publishResult {
                 pendingSnapshot = nil
                 apply(snapshot)
-                errorMessage = nil
+                errorMessage = mixIssue
             } else {
                 pendingSnapshot = snapshot
             }
             cache?.save(snapshot)
+        } catch is CancellationError {
+            return
         } catch {
             if publishResult {
                 errorMessage = error.localizedDescription
@@ -287,7 +323,7 @@ final class DiscoveryViewModel: ObservableObject {
         return tracks.filter { itemIds.insert($0.id).inserted }
     }
 
-    private func fetchRecentlyPlayedTracks() async -> [Track] {
+    private func fetchRecentlyPlayedTracks() async throws -> [Track] {
         do {
             let items = try await api.fetchRecentlyPlayedTracks(limit: 20)
             let tracks = Self.uniqueRecentTracks(
@@ -302,6 +338,8 @@ final class DiscoveryViewModel: ObservableObject {
                 )
             }
             return tracks
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             // Preserve useful offline behavior without treating one device's
             // local history as authoritative when Jellyfin is reachable.
@@ -316,22 +354,45 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
-    private func fetchFavoriteSeedTracks() async -> [Track] {
+    private func fetchFavoriteSeedTracks() async throws -> [Track] {
         do {
             return try await api.fetchFavoriteTracks(limit: 12)
                 .map { Track(from: $0, baseURL: api.baseURL) }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return []
         }
     }
 
-    private func fetchRandomSeedTracks() async -> [Track] {
+    private func fetchRandomSeedTracks() async throws -> [Track] {
         do {
             return try await api.fetchRandomTracks(limit: 12)
                 .map { Track(from: $0, baseURL: api.baseURL) }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return []
         }
+    }
+
+    private func mixRefreshIssue(
+        candidatesWereAvailable: Bool,
+        generatedShelfCount: Int,
+        retainedPreviousShelves: Bool,
+        failureDescriptions: [String],
+        emptyMixCount: Int
+    ) -> String? {
+        guard candidatesWereAvailable, generatedShelfCount == 0,
+              !failureDescriptions.isEmpty || emptyMixCount > 0 else {
+            return nil
+        }
+
+        let summary = retainedPreviousShelves
+            ? "Couldn’t refresh Instant Mixes. Showing the previous mixes."
+            : "Instant Mixes are temporarily unavailable."
+        guard let detail = failureDescriptions.first else { return summary }
+        return "\(summary) \(detail)"
     }
 
     private func uniqueSeeds(_ tracks: [Track]) -> [Track] {

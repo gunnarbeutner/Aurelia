@@ -225,6 +225,8 @@ struct JellyAmpTests {
         #expect(viewModel.shelves.isEmpty)
         #expect(viewModel.recentTracks.map(\.id) == ["recent"])
         #expect(viewModel.fallbackTracks.isEmpty)
+        #expect(viewModel.hasContent)
+        #expect(viewModel.errorMessage != nil)
     }
 
     @Test @MainActor func discoveryOffersStartListeningFallbackWithoutHistory() async {
@@ -237,6 +239,76 @@ struct JellyAmpTests {
         #expect(viewModel.shelves.isEmpty)
         #expect(viewModel.recentTracks.isEmpty)
         #expect(viewModel.fallbackTracks.map(\.id) == ["favorite-c", "random-d"])
+    }
+
+    @Test @MainActor func discoveryRetainsExistingMixesWhenEveryRefreshMixFails() async {
+        var recent = [
+            Track(
+                id: "recent-a",
+                name: "Recent A",
+                artistName: "Artist A",
+                albumName: "Album A",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-a"
+            )
+        ]
+        let api = FakeDiscoveryAPI()
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+
+        await viewModel.refresh()
+        let originalShelves = viewModel.shelves
+        recent = [
+            Track(
+                id: "recent-b",
+                name: "Recent B",
+                artistName: "Artist B",
+                albumName: "Album B",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-b"
+            )
+        ]
+        api.shouldFailMixes = true
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves == originalShelves)
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
+        #expect(viewModel.errorMessage?.contains("Showing the previous mixes") == true)
+    }
+
+    @Test @MainActor func discoveryTreatsRecentTracksAsContentWhenMixesAreEmpty() async {
+        let recent = Track(
+            id: "recent",
+            name: "Recent",
+            artistName: "Recent Artist",
+            albumName: "Recent Album",
+            duration: 1,
+            artworkURL: nil,
+            artistId: "recent-artist"
+        )
+        let api = FakeDiscoveryAPI()
+        api.shouldReturnEmptyMixes = true
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [recent] })
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.recentTracks.map(\.id) == ["recent"])
+        #expect(viewModel.hasContent)
+        #expect(viewModel.errorMessage == "Instant Mixes are temporarily unavailable.")
+    }
+
+    @Test func jellyfinHTTPErrorIncludesStatusAndServerMessage() {
+        let withMessage = JellyfinError.httpError(
+            statusCode: 502,
+            message: "AudioMuse backend unavailable"
+        )
+        let withoutMessage = JellyfinError.httpError(statusCode: 503, message: nil)
+
+        #expect(withMessage.localizedDescription == "Server returned HTTP 502: AudioMuse backend unavailable")
+        #expect(withoutMessage.localizedDescription == "Server returned HTTP 503.")
     }
 
     @Test @MainActor func discoveryRestoresCachedMixesWithoutRefetching() async throws {
@@ -912,6 +984,7 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     let baseURL = "https://jellyfin.test"
     var requestedMixes: [String] = []
     var shouldFailMixes = false
+    var shouldReturnEmptyMixes = false
     var shouldFailFavorites = false
     var shouldFailRecent = true
     var serverRecentTracks: [BaseItemDto] = []
@@ -919,6 +992,7 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
         requestedMixes.append(itemId)
         if shouldFailMixes { throw FakeError.unavailable }
+        if shouldReturnEmptyMixes { return [] }
         return [audio(id: "mix-\(itemId)", artist: "Mix \(itemId)")]
     }
 

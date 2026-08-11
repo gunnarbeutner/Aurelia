@@ -933,7 +933,7 @@ class JellyfinService: ObservableObject {
         components.queryItems = Self.instantMixQueryItems(userId: userId, limit: limit)
         let request = try authenticatedRequest(from: components, token: token)
         let (data, response) = try await session.data(for: request)
-        try validate(response: response)
+        try validate(response: response, data: data)
         return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
     }
 
@@ -1064,7 +1064,11 @@ class JellyfinService: ObservableObject {
         ]
     }
 
-    private func validate(response: URLResponse, recognizeNotFound: Bool = false) throws {
+    private func validate(
+        response: URLResponse,
+        data: Data? = nil,
+        recognizeNotFound: Bool = false
+    ) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw JellyfinError.invalidResponse
         }
@@ -1078,8 +1082,38 @@ class JellyfinService: ObservableObject {
         case 404 where recognizeNotFound:
             throw JellyfinError.notFound
         default:
-            throw JellyfinError.invalidResponse
+            throw JellyfinError.httpError(
+                statusCode: httpResponse.statusCode,
+                message: serverErrorMessage(from: data)
+            )
         }
+    }
+
+    private func serverErrorMessage(from data: Data?) -> String? {
+        guard let data, !data.isEmpty else { return nil }
+
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for key in ["Message", "message", "Detail", "detail", "Title", "title", "Error", "error"] {
+                if let value = object[key] as? String,
+                   let message = sanitizedServerMessage(value) {
+                    return message
+                }
+            }
+        }
+
+        guard let text = String(data: data, encoding: .utf8),
+              !text.localizedCaseInsensitiveContains("<html") else {
+            return nil
+        }
+        return sanitizedServerMessage(text)
+    }
+
+    private func sanitizedServerMessage(_ value: String) -> String? {
+        let normalized = value
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return nil }
+        return String(normalized.prefix(240))
     }
 
     // MARK: - Image Upload
@@ -1319,6 +1353,7 @@ enum JellyfinError: LocalizedError {
     case unauthorized
     case forbidden
     case notFound
+    case httpError(statusCode: Int, message: String?)
 
     var errorDescription: String? {
         switch self {
@@ -1338,6 +1373,11 @@ enum JellyfinError: LocalizedError {
             return "Access forbidden. Please check your permissions."
         case .notFound:
             return "The requested Jellyfin feature is not installed."
+        case .httpError(let statusCode, let message):
+            if let message {
+                return "Server returned HTTP \(statusCode): \(message)"
+            }
+            return "Server returned HTTP \(statusCode)."
         }
     }
 }
