@@ -930,7 +930,7 @@ class JellyfinService: ObservableObject {
         }
 
         var components = try buildURLComponents(path: "Items/\(itemId)/InstantMix")
-        components.queryItems = discoveryQueryItems(userId: userId, limit: limit)
+        components.queryItems = Self.instantMixQueryItems(userId: userId, limit: limit)
         let request = try authenticatedRequest(from: components, token: token)
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
@@ -997,6 +997,25 @@ class JellyfinService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
         return request
+    }
+
+    static func instantMixQueryItems(userId: String, limit: Int) -> [URLQueryItem] {
+        let fields = [
+            "PrimaryImageAspectRatio",
+            "MediaSources"
+        ]
+
+        return [
+            URLQueryItem(name: "UserId", value: userId),
+            URLQueryItem(name: "Limit", value: String(limit))
+        ] + fields.map {
+            URLQueryItem(name: "Fields", value: $0)
+        } + [
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+            URLQueryItem(name: "EnableImageTypes", value: "Primary"),
+            URLQueryItem(name: "EnableUserData", value: "true")
+        ]
     }
 
     private func discoveryQueryItems(userId: String, limit: Int) -> [URLQueryItem] {

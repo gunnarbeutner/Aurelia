@@ -16,4 +16,11 @@ class NavigationCoordinator: ObservableObject {
 
     /// Set this to navigate to an album after dismissing NowPlaying
     @Published var pendingAlbumNavigation: Album?
+
+    /// Changes whenever playback should present the full Now Playing view.
+    @Published private(set) var nowPlayingPresentationRequest: UUID?
+
+    func presentNowPlaying() {
+        nowPlayingPresentationRequest = UUID()
+    }
 }

@@ -91,6 +91,28 @@ struct JellyAmpTests {
         withExtendedLifetime((playerManagerObservation, progressObservation)) {}
     }
 
+    @Test @MainActor func instantMixUsesAudioMuseCompatibleFields() {
+        let queryItems = JellyfinService.instantMixQueryItems(userId: "user", limit: 50)
+        let fields = queryItems
+            .filter { $0.name == "Fields" }
+            .compactMap(\.value)
+
+        #expect(fields == ["PrimaryImageAspectRatio", "MediaSources"])
+        #expect(fields.allSatisfy { !$0.contains(",") })
+        #expect(queryItems.contains(URLQueryItem(name: "EnableUserData", value: "true")))
+    }
+
+    @Test @MainActor func nowPlayingPresentationRequestsAreUnique() {
+        let coordinator = NavigationCoordinator()
+
+        coordinator.presentNowPlaying()
+        let firstRequest = coordinator.nowPlayingPresentationRequest
+        coordinator.presentNowPlaying()
+
+        #expect(firstRequest != nil)
+        #expect(coordinator.nowPlayingPresentationRequest != firstRequest)
+    }
+
 }
 
 @MainActor

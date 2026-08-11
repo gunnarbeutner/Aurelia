@@ -133,6 +133,10 @@ struct MainTabView: View {
                 libraryPath.append(album)
             }
         }
+        .onChange(of: navCoordinator.nowPlayingPresentationRequest) { _, request in
+            guard request != nil else { return }
+            showNowPlaying = true
+        }
     }
 
     private var instantMixErrorBinding: Binding<Bool> {
