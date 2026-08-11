@@ -115,11 +115,44 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(artwork.waitForExistence(timeout: 5))
         XCTAssertEqual(artwork.frame.midX, app.windows.firstMatch.frame.midX, accuracy: 2)
 
-        let window = app.windows.firstMatch
-        let swipeStart = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
-        let swipeEnd = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+        let scrollView = app.scrollViews["now-playing-scroll"]
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+        let originalArtworkY = artwork.frame.minY
+        scrollView.swipeDown()
+        XCTAssertTrue(closeButton.exists)
+        XCTAssertEqual(artwork.frame.minY, originalArtworkY, accuracy: 3)
+
+        let dismissHandle = app.descendants(matching: .any)["now-playing-dismiss-handle"]
+        XCTAssertTrue(dismissHandle.waitForExistence(timeout: 5))
+        let swipeStart = dismissHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let swipeEnd = swipeStart.withOffset(CGVector(dx: 0, dy: 420))
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+    }
+
+    @MainActor
+    func testSwitchingTabsDismissesNowPlaying() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-layout"]
+        app.launch()
+
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
+        discoveryMix.tap()
+
+        let miniPlayer = app.buttons["mini-player"]
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+        miniPlayer.tap()
+
+        let closeButton = app.buttons["now-playing-close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+
+        let libraryTab = app.tabBars.buttons["Library"]
+        XCTAssertTrue(waitForHittable(libraryTab, timeout: 5))
+        libraryTab.tap()
+
+        XCTAssertTrue(closeButton.waitForNonExistence(timeout: 5))
         XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
     }
 

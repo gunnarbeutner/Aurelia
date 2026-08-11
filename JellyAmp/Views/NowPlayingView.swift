@@ -10,6 +10,9 @@ import AVKit
 
 enum NowPlayingLayout {
     static let horizontalPadding: CGFloat = 20
+    static let regularHorizontalPadding: CGFloat = 28
+    static let regularColumnSpacing: CGFloat = 28
+    static let minimumTwoColumnAspectRatio: CGFloat = 1.25
 
     static func contentWidth(for screenWidth: CGFloat) -> CGFloat {
         max(0, screenWidth - horizontalPadding * 2)
@@ -18,9 +21,28 @@ enum NowPlayingLayout {
     static func artworkSize(for screenWidth: CGFloat) -> CGFloat {
         min(screenWidth * 0.65, 320)
     }
+
+    static func regularColumnWidths(for screenWidth: CGFloat) -> (player: CGFloat, queue: CGFloat) {
+        let availableWidth = max(
+            0,
+            screenWidth - regularHorizontalPadding * 2 - regularColumnSpacing
+        )
+        let columnWidth = availableWidth / 2
+        return (columnWidth, columnWidth)
+    }
+
+    static func usesTwoColumns(
+        isCompactWidth: Bool,
+        screenWidth: CGFloat,
+        screenHeight: CGFloat
+    ) -> Bool {
+        guard !isCompactWidth, screenHeight > 0 else { return false }
+        return screenWidth / screenHeight >= minimumTwoColumnAspectRatio
+    }
 }
 
 struct NowPlayingView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
     @ObservedObject var jellyfinService = JellyfinService.shared
@@ -34,7 +56,6 @@ struct NowPlayingView: View {
     @State private var artworkImage: Image?
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     var onDismiss: (() -> Void)?
-    var isDismissGestureActive = false
 
     var body: some View {
         GeometryReader { geo in
@@ -42,46 +63,15 @@ struct NowPlayingView: View {
                 // Background: blurred album art (PWA style)
                 backgroundLayer
 
-                // Content in ScrollView for safety
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        // Top Bar
-                        topBar
-                            .padding(.top, 8)
-
-                        // Album Artwork — responsive
-                        artworkSection(screenWidth: geo.size.width, screenHeight: geo.size.height)
-                            .padding(.top, 16)
-
-                        // Track Info + Favorite
-                        trackInfoSection
-                            .padding(.top, 20)
-
-                        // Progress Slider
-                        progressSection
-                            .padding(.top, 24)
-
-                        // Controls (PWA layout: shuffle | prev | play | next | repeat)
-                        controlsSection
-                            .padding(.top, 20)
-
-                        // Secondary actions
-                        secondaryActionsSection
-                            .padding(.top, 16)
-
-                        // Up Next preview
-                        upNextSection
-                            .padding(.top, 24)
-
-                        // Bottom padding
-                        Spacer().frame(height: 40)
-                    }
-                    // An explicit width prevents any intrinsically wide child
-                    // (such as the waveform) from shifting centered content.
-                    .frame(width: NowPlayingLayout.contentWidth(for: geo.size.width))
-                    .padding(.horizontal, NowPlayingLayout.horizontalPadding)
+                if NowPlayingLayout.usesTwoColumns(
+                    isCompactWidth: horizontalSizeClass == .compact,
+                    screenWidth: geo.size.width,
+                    screenHeight: geo.size.height
+                ) {
+                    regularContent(in: geo)
+                } else {
+                    compactContent(in: geo)
                 }
-                .scrollDisabled(isDismissGestureActive)
             }
         }
         .onChange(of: playerManager.currentTrack) { _, newTrack in
@@ -91,6 +81,95 @@ struct NowPlayingView: View {
         .onAppear {
             isFavorite = playerManager.currentTrack?.isFavorite ?? false
             extractDominantColor(for: playerManager.currentTrack)
+        }
+    }
+
+    private func compactContent(in geometry: GeometryProxy) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.top, horizontalSizeClass == .compact ? 20 : 8)
+
+                artworkSection(
+                    screenWidth: geometry.size.width,
+                    screenHeight: geometry.size.height
+                )
+                .padding(.top, 16)
+
+                trackInfoSection
+                    .padding(.top, 20)
+
+                progressSection
+                    .padding(.top, 24)
+
+                controlsSection
+                    .padding(.top, 20)
+
+                secondaryActionsSection
+                    .padding(.top, 16)
+
+                upNextSection(limit: horizontalSizeClass == .compact ? 2 : nil)
+                    .padding(.top, 24)
+
+                Spacer().frame(height: 40)
+            }
+            .frame(width: NowPlayingLayout.contentWidth(for: geometry.size.width))
+            .padding(.horizontal, NowPlayingLayout.horizontalPadding)
+        }
+        .accessibilityIdentifier("now-playing-scroll")
+    }
+
+    private func regularContent(in geometry: GeometryProxy) -> some View {
+        let columns = NowPlayingLayout.regularColumnWidths(for: geometry.size.width)
+
+        return VStack(spacing: 0) {
+            topBar
+                .padding(.top, 8)
+                .padding(.horizontal, NowPlayingLayout.regularHorizontalPadding)
+
+            HStack(alignment: .top, spacing: NowPlayingLayout.regularColumnSpacing) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        artworkSection(
+                            screenWidth: columns.player,
+                            screenHeight: geometry.size.height
+                        )
+                        .padding(.top, 12)
+
+                        trackInfoSection
+                            .padding(.top, 20)
+
+                        progressSection
+                            .padding(.top, 24)
+
+                        controlsSection
+                            .padding(.top, 20)
+
+                        secondaryActionsSection
+                            .padding(.top, 16)
+
+                        Spacer().frame(height: 24)
+                    }
+                    .frame(width: columns.player)
+                }
+                .accessibilityIdentifier("now-playing-player-column")
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    upNextSection(limit: nil)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(width: columns.queue)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 1)
+                        .offset(x: -NowPlayingLayout.regularColumnSpacing / 2)
+                }
+                .accessibilityIdentifier("now-playing-queue-column")
+            }
+            .padding(.horizontal, NowPlayingLayout.regularHorizontalPadding)
+            .padding(.bottom, 20)
         }
     }
 
@@ -475,7 +554,7 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Up Next Section
-    private var upNextSection: some View {
+    private func upNextSection(limit: Int?) -> some View {
         Group {
             if playerManager.currentIndex < playerManager.queue.count - 1 {
                 VStack(alignment: .leading, spacing: 10) {
@@ -486,7 +565,7 @@ struct NowPlayingView: View {
                         .foregroundColor(.white.opacity(0.3))
                         .padding(.horizontal, 4)
 
-                    ForEach(nextTracks, id: \.id) { track in
+                    ForEach(nextTracks(limit: limit), id: \.id) { track in
                         HStack(spacing: 12) {
                             CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
                                 switch phase {
@@ -529,9 +608,12 @@ struct NowPlayingView: View {
         }
     }
 
-    private var nextTracks: [Track] {
+    private func nextTracks(limit: Int?) -> [Track] {
         let startIdx = playerManager.currentIndex + 1
-        let endIdx = min(startIdx + 2, playerManager.queue.count)
+        let endIdx = min(
+            startIdx + (limit ?? playerManager.queue.count),
+            playerManager.queue.count
+        )
         guard startIdx < playerManager.queue.count else { return [] }
         return Array(playerManager.queue[startIdx..<endIdx])
     }

@@ -650,6 +650,48 @@ struct JellyAmpTests {
         }
     }
 
+    @Test @MainActor func regularNowPlayingColumnsFillAvailableWidth() {
+        for screenWidth in [700.0, 768.0, 1024.0, 1280.0] {
+            let columns = NowPlayingLayout.regularColumnWidths(for: screenWidth)
+            let occupiedWidth = NowPlayingLayout.regularHorizontalPadding * 2
+                + columns.player
+                + NowPlayingLayout.regularColumnSpacing
+                + columns.queue
+
+            #expect(abs(occupiedWidth - screenWidth) < 0.001)
+            #expect(columns.player > 0)
+            #expect(abs(columns.player - columns.queue) < 0.001)
+        }
+    }
+
+    @Test @MainActor func nowPlayingUsesColumnsOnlyForRegularWidthLandscapeGeometry() {
+        #expect(NowPlayingLayout.usesTwoColumns(
+            isCompactWidth: false,
+            screenWidth: 1366,
+            screenHeight: 1024
+        ))
+        #expect(!NowPlayingLayout.usesTwoColumns(
+            isCompactWidth: false,
+            screenWidth: 1024,
+            screenHeight: 1366
+        ))
+        #expect(!NowPlayingLayout.usesTwoColumns(
+            isCompactWidth: false,
+            screenWidth: 1024,
+            screenHeight: 1024
+        ))
+        #expect(!NowPlayingLayout.usesTwoColumns(
+            isCompactWidth: false,
+            screenWidth: 1600,
+            screenHeight: 1375
+        ))
+        #expect(!NowPlayingLayout.usesTwoColumns(
+            isCompactWidth: true,
+            screenWidth: 1366,
+            screenHeight: 768
+        ))
+    }
+
     @Test @MainActor func playerDismissalTracksOnlyDownwardVerticalDragsOneToOne() {
         #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: 96)) == 96)
         #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: -96)) == 0)

@@ -22,41 +22,51 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
-                NavigationStack {
-                    DiscoveryView()
+            TabView(selection: selectedTabBinding) {
+                tabContent(for: 0) {
+                    NavigationStack {
+                        DiscoveryView()
+                    }
                 }
                 .tabItem {
                     Label("Discover", systemImage: "sparkles")
                 }
                 .tag(0)
 
-                NavigationStack(path: $libraryPath) {
-                    LibraryView()
+                tabContent(for: 1) {
+                    NavigationStack(path: $libraryPath) {
+                        LibraryView()
+                    }
                 }
                 .tabItem {
                     Label("Library", systemImage: "music.note.list")
                 }
                 .tag(1)
                 
-                NavigationStack {
-                    SearchView()
+                tabContent(for: 2) {
+                    NavigationStack {
+                        SearchView()
+                    }
                 }
                 .tabItem {
                     Label("Search", systemImage: "magnifyingglass")
                 }
                 .tag(2)
                 
-                NavigationStack {
-                    FavoritesView(isActive: selectedTab == 3)
+                tabContent(for: 3) {
+                    NavigationStack {
+                        FavoritesView(isActive: selectedTab == 3)
+                    }
                 }
                 .tabItem {
                     Label("Favorites", systemImage: "heart.fill")
                 }
                 .tag(3)
                 
-                NavigationStack {
-                    SettingsView()
+                tabContent(for: 4) {
+                    NavigationStack {
+                        SettingsView()
+                    }
                 }
                 .tabItem {
                     Label("Settings", systemImage: "gearshape.fill")
@@ -70,6 +80,7 @@ struct MainTabView: View {
                     MiniPlayerView(showNowPlaying: $showNowPlaying)
                         .padding(.horizontal, 8)
                         .padding(.top, 8)
+                        .opacity(showNowPlaying ? 0 : 1)
                         .allowsHitTesting(!showNowPlaying)
                         .accessibilityHidden(showNowPlaying)
                 }
@@ -81,31 +92,12 @@ struct MainTabView: View {
                     MiniPlayerView(showNowPlaying: $showNowPlaying)
                         .padding(.horizontal, 8)
                         .padding(.bottom, MiniPlayerLayout.tabBarClearance)
+                        .opacity(showNowPlaying ? 0 : 1)
                         .allowsHitTesting(!showNowPlaying)
                         .accessibilityHidden(showNowPlaying)
                 }
             }
             #endif
-            
-            // Keep the player mounted and animate one intact layer. Conditional
-            // removal transitions can leave a departing layer intercepting taps.
-            if playerManager.currentTrack != nil {
-                GeometryReader { geometry in
-                    SwipeToDismissPlayer(
-                        isPresented: showNowPlaying,
-                        hiddenOffset: geometry.size.height + geometry.safeAreaInsets.bottom,
-                        onDismiss: dismissNowPlaying
-                    ) { isDismissGestureActive in
-                        NowPlayingView(
-                            onDismiss: dismissNowPlaying,
-                            isDismissGestureActive: isDismissGestureActive
-                        )
-                    }
-                }
-                .allowsHitTesting(showNowPlaying)
-                .accessibilityHidden(!showNowPlaying)
-                .zIndex(1)
-            }
 
             if instantMixCoordinator.isLoading {
                 HStack(spacing: 10) {
@@ -127,6 +119,11 @@ struct MainTabView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(instantMixCoordinator.errorMessage ?? "Unable to create an Instant Mix.")
+        }
+        .onChange(of: selectedTab) { oldTab, newTab in
+            if oldTab != newTab {
+                dismissNowPlaying()
+            }
         }
         .onChange(of: navCoordinator.pendingArtistNavigation) { _, artist in
             guard let artist = artist else { return }
@@ -155,6 +152,48 @@ struct MainTabView: View {
         }
     }
 
+    private var selectedTabBinding: Binding<Int> {
+        Binding(
+            get: { selectedTab },
+            set: { newTab in
+                guard newTab != selectedTab else { return }
+                dismissNowPlaying()
+                selectedTab = newTab
+            }
+        )
+    }
+
+    private func tabContent<Content: View>(
+        for tab: Int,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .overlay {
+                if selectedTab == tab {
+                    playerPresentation
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var playerPresentation: some View {
+        // Keep the player mounted and animate one intact layer. Constraining it
+        // to the selected tab's content leaves the system tab controls usable.
+        if playerManager.currentTrack != nil {
+            GeometryReader { geometry in
+                SwipeToDismissPlayer(
+                    isPresented: showNowPlaying,
+                    hiddenOffset: geometry.size.height + geometry.safeAreaInsets.bottom,
+                    onDismiss: dismissNowPlaying
+                ) {
+                    NowPlayingView(onDismiss: dismissNowPlaying)
+                }
+            }
+            .allowsHitTesting(showNowPlaying)
+            .accessibilityHidden(!showNowPlaying)
+        }
+    }
+
     private var instantMixErrorBinding: Binding<Bool> {
         Binding(
             get: { instantMixCoordinator.errorMessage != nil },
@@ -168,27 +207,41 @@ struct MainTabView: View {
 }
 
 struct SwipeToDismissPlayer<Content: View>: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let isPresented: Bool
     let hiddenOffset: CGFloat
     let onDismiss: () -> Void
-    @ViewBuilder let content: (Bool) -> Content
+    @ViewBuilder let content: () -> Content
     @State private var dragOffset: CGFloat = 0
-    @State private var isDismissGestureActive = false
 
     var body: some View {
-        content(isDismissGestureActive)
+        ZStack(alignment: .top) {
+            content()
+
+            if horizontalSizeClass == .compact {
+                dismissHandle
+            }
+        }
             .offset(y: isPresented ? dragOffset : hiddenOffset)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12)
+            .onChange(of: isPresented) { _, _ in
+                dragOffset = 0
+            }
+    }
+
+    private var dismissHandle: some View {
+        Capsule()
+            .fill(Color.white.opacity(0.45))
+            .frame(width: 38, height: 5)
+            .frame(width: 96, height: 28, alignment: .top)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8)
                     .onChanged { value in
                         dragOffset = PlayerDismissalInteraction.offset(
                             for: value.translation
                         )
-                        isDismissGestureActive = dragOffset > 0
                     }
                     .onEnded { value in
-                        isDismissGestureActive = false
-
                         if PlayerDismissalInteraction.shouldDismiss(
                             translation: value.translation,
                             predictedEndTranslation: value.predictedEndTranslation
@@ -201,10 +254,10 @@ struct SwipeToDismissPlayer<Content: View>: View {
                         }
                     }
             )
-            .onChange(of: isPresented) { _, _ in
-                dragOffset = 0
-                isDismissGestureActive = false
-            }
+            .accessibilityElement()
+            .accessibilityLabel("Dismiss now playing")
+            .accessibilityHint("Swipe down to close the player")
+            .accessibilityIdentifier("now-playing-dismiss-handle")
     }
 }
 
