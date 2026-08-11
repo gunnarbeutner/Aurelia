@@ -197,12 +197,14 @@ final class JellyAmpUITests: XCTestCase {
 
         let artwork = app.images["album-detail-artwork"]
         let playAll = app.buttons["album-play-all"]
+        let artistLink = app.buttons["album-artist-link"]
         let shuffle = app.buttons["album-shuffle"]
         let favorite = app.buttons["album-favorite"]
         let download = app.buttons["album-download"]
         let firstTrack = app.descendants(matching: .any)["album-track-ui-album-track-1"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 5))
         XCTAssertTrue(playAll.waitForExistence(timeout: 5))
+        XCTAssertTrue(artistLink.waitForExistence(timeout: 5))
         XCTAssertTrue(shuffle.waitForExistence(timeout: 5))
         XCTAssertTrue(favorite.waitForExistence(timeout: 5))
         XCTAssertTrue(download.waitForExistence(timeout: 5))
@@ -210,7 +212,7 @@ final class JellyAmpUITests: XCTestCase {
 
         let windowFrame = app.windows.firstMatch.frame
         XCTAssertEqual(artwork.frame.midX, windowFrame.midX, accuracy: 2)
-        for element in [artwork, playAll, shuffle, favorite, download, firstTrack] {
+        for element in [artwork, artistLink, playAll, shuffle, favorite, download, firstTrack] {
             XCTAssertGreaterThanOrEqual(element.frame.minX, windowFrame.minX)
             XCTAssertLessThanOrEqual(element.frame.maxX, windowFrame.maxX)
         }

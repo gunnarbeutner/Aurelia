@@ -315,9 +315,20 @@ struct AlbumDetailView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, Spacing.lg)
 
-                Text(album.artistName)
+                Button {
+                    NavigationCoordinator.shared.navigateToArtist(for: album)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(album.artistName)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                    }
                     .font(.jellyAmpHeadline)
                     .foregroundColor(.neonPink)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("album-artist-link")
+                .accessibilityLabel("View \(album.artistName)")
             }
             .padding(.top, 20)
             .padding(.bottom, 20)

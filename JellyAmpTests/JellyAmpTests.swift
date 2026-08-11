@@ -285,6 +285,23 @@ struct JellyAmpTests {
         #expect(KeychainService.shared.retrieve(for: key) == value)
     }
 
+    @Test @MainActor func albumArtistNavigationUsesTheAlbumArtistIdentifier() {
+        let coordinator = NavigationCoordinator()
+        let album = Album(
+            id: "album",
+            name: "Album",
+            artistName: "Band",
+            artistId: "band-id",
+            year: 2026,
+            artworkURL: nil
+        )
+
+        coordinator.navigateToArtist(for: album)
+
+        #expect(coordinator.pendingArtistNavigation?.id == "band-id")
+        #expect(coordinator.pendingArtistNavigation?.name == "Band")
+    }
+
     private static func favoriteSnapshot(id: String) -> FavoritesSnapshot {
         FavoritesSnapshot(
             tracks: [
