@@ -8,6 +8,7 @@
 import Testing
 import Foundation
 import Combine
+import UIKit
 @testable import JellyAmp
 
 struct JellyAmpTests {
@@ -124,6 +125,15 @@ struct JellyAmpTests {
 
         playerManager.playbackProgress.update(to: originalTime)
         withExtendedLifetime((playerManagerObservation, progressObservation)) {}
+    }
+
+    @Test @MainActor func imageMemoryCacheHitsAreSynchronous() {
+        let url = URL(string: "https://jellyamp.test/artwork/\(UUID().uuidString)")!
+        let image = UIImage()
+
+        ImageCache.shared.cacheMemoryImage(image, for: url)
+
+        #expect(ImageCache.shared.cachedMemoryImage(for: url) === image)
     }
 
     @Test @MainActor func instantMixUsesAudioMuseCompatibleFields() {

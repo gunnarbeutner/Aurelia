@@ -8,18 +8,32 @@
 import UIKit
 import os.log
 
+private final class MemoryImageCache: @unchecked Sendable {
+    nonisolated(unsafe) private let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 100 * 1024 * 1024
+        cache.countLimit = 300
+        return cache
+    }()
+
+    nonisolated init() {}
+
+    nonisolated func image(for key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    nonisolated func insert(_ image: UIImage, for key: String, cost: Int) {
+        cache.setObject(image, forKey: key as NSString, cost: cost)
+    }
+}
+
 actor ImageCache {
     static let shared = ImageCache()
 
     private let logger = Logger(subsystem: "com.jellyamp.app", category: "ImageCache")
 
     // MARK: - Memory Cache
-    private let memoryCache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 100 * 1024 * 1024 // 100MB
-        cache.countLimit = 300
-        return cache
-    }()
+    nonisolated private let memoryCache = MemoryImageCache()
 
     // MARK: - Disk Cache
     private let diskCacheURL: URL = {
@@ -41,12 +55,23 @@ actor ImageCache {
 
     // MARK: - Public API
 
+    /// Context-menu previews are recreated synchronously. Giving them direct
+    /// access to the thread-safe memory layer prevents an empty-to-loaded state
+    /// transition from replacing the preview while its menu is opening.
+    nonisolated func cachedMemoryImage(for url: URL) -> UIImage? {
+        memoryCache.image(for: Self.cacheKey(for: url))
+    }
+
+    nonisolated func cacheMemoryImage(_ image: UIImage, for url: URL, cost: Int = 0) {
+        memoryCache.insert(image, for: Self.cacheKey(for: url), cost: cost)
+    }
+
     /// Get image from cache (memory → disk) or nil
     func cachedImage(for url: URL) -> UIImage? {
-        let key = cacheKey(for: url)
+        let key = Self.cacheKey(for: url)
 
         // Memory
-        if let img = memoryCache.object(forKey: key as NSString) {
+        if let img = memoryCache.image(for: key) {
             return img
         }
 
@@ -67,7 +92,7 @@ actor ImageCache {
 
         // Promote to memory
         let cost = data.count
-        memoryCache.setObject(img, forKey: key as NSString, cost: cost)
+        cacheMemoryImage(img, for: url, cost: cost)
         return img
     }
 
@@ -86,10 +111,10 @@ actor ImageCache {
             throw URLError(.badServerResponse)
         }
 
-        let key = cacheKey(for: url)
+        let key = Self.cacheKey(for: url)
 
         // Memory
-        memoryCache.setObject(img, forKey: key as NSString, cost: data.count)
+        cacheMemoryImage(img, for: url, cost: data.count)
 
         // Disk (fire and forget)
         let filePath = diskCacheURL.appendingPathComponent(key)
@@ -100,7 +125,7 @@ actor ImageCache {
 
     // MARK: - Helpers
 
-    private func cacheKey(for url: URL) -> String {
+    nonisolated private static func cacheKey(for url: URL) -> String {
         // SHA256-like hash using simple approach
         let str = url.absoluteString
         var hash: UInt64 = 5381

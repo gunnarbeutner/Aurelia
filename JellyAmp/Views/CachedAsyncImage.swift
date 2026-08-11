@@ -17,6 +17,10 @@ struct CachedAsyncImage<Content: View>: View {
     init(url: URL?, @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         self.url = url
         self.content = content
+        if let url, let image = ImageCache.shared.cachedMemoryImage(for: url) {
+            _phase = State(initialValue: .success(Image(uiImage: image)))
+            _wasCacheHit = State(initialValue: true)
+        }
     }
 
     var body: some View {
@@ -24,7 +28,9 @@ struct CachedAsyncImage<Content: View>: View {
             .opacity(phase.image != nil ? 1 : 1)
             .animation(wasCacheHit ? nil : .easeIn(duration: 0.2), value: phase.image != nil)
             .task(id: url) {
-                await loadImage()
+                if phase.image == nil {
+                    await loadImage()
+                }
             }
     }
 
