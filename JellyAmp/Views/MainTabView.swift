@@ -80,7 +80,7 @@ struct MainTabView: View {
                 if playerManager.currentTrack != nil {
                     MiniPlayerView(showNowPlaying: $showNowPlaying)
                         .padding(.horizontal, 8)
-                        .padding(.bottom, 56)
+                        .padding(.bottom, MiniPlayerLayout.tabBarClearance)
                         .allowsHitTesting(!showNowPlaying)
                         .accessibilityHidden(showNowPlaying)
                 }

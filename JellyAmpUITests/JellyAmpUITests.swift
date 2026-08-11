@@ -116,6 +116,55 @@ final class JellyAmpUITests: XCTestCase {
     }
 
     @MainActor
+    func testSearchResultsStayAboveMiniPlayerWithKeyboardVisible() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-layout"]
+        app.launch()
+
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
+        discoveryMix.tap()
+
+        let miniPlayer = app.buttons["mini-player"]
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+        app.tabBars.buttons["Search"].tap()
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.tap()
+        searchField.typeText("layout")
+
+        let keyboardOnboardingContinue = app.buttons["Continue"]
+        if keyboardOnboardingContinue.waitForExistence(timeout: 2) {
+            keyboardOnboardingContinue.tap()
+        }
+
+        let resultsList = app.scrollViews["search-results-list"]
+        let lastResult = app.buttons["search-result-ui-search-8"]
+        XCTAssertTrue(resultsList.waitForExistence(timeout: 5))
+        XCTAssertTrue(lastResult.waitForExistence(timeout: 5))
+
+        let dragStart = resultsList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        let dragEnd = resultsList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+        for _ in 0..<6 where lastResult.frame.maxY > miniPlayer.frame.minY {
+            dragStart.press(
+                forDuration: 0.05,
+                thenDragTo: dragEnd,
+                withVelocity: .fast,
+                thenHoldForDuration: 0
+            )
+        }
+
+        XCTAssertTrue(lastResult.isHittable)
+        XCTAssertLessThanOrEqual(lastResult.frame.maxY, miniPlayer.frame.minY + 1)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Search results clear the mini player"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"),

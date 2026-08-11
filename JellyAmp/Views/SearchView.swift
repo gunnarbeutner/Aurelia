@@ -113,6 +113,7 @@ struct SearchView: View {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("search-result-\(item.id)")
                         .contextMenu {
                             InstantMixButton(itemId: item.id, itemName: item.Name)
                         }
@@ -122,6 +123,7 @@ struct SearchView: View {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("search-result-\(item.id)")
                         .contextMenu {
                             AlbumContextMenu(album: album)
                         }
@@ -131,16 +133,24 @@ struct SearchView: View {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("search-result-\(item.id)")
                         .contextMenu {
                             TrackContextMenu(track: track)
                         }
                     }
                 }
 
-                // Bottom padding
-                Color.clear.frame(height: 100)
+                Color.clear.frame(height: 20)
             }
             .padding(.top, 8)
+        }
+        .accessibilityIdentifier("search-results-list")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerManager.currentTrack != nil {
+                Color.jellyAmpBackground
+                    .frame(height: MiniPlayerLayout.contentClearance)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -199,6 +209,15 @@ struct SearchView: View {
             return
         }
 
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout") {
+            searchTask?.cancel()
+            searchResults = Self.uiTestSearchResults
+            isSearching = false
+            return
+        }
+        #endif
+
         // Cancel previous search task to avoid race conditions
         searchTask?.cancel()
         searchTask = Task {
@@ -227,6 +246,23 @@ struct SearchView: View {
             }
         }
     }
+
+    #if DEBUG
+    private static var uiTestSearchResults: [BaseItemDto] {
+        (1...8).map { index in
+            BaseItemDto(
+                Id: "ui-search-\(index)",
+                Name: "Search Layout Track \(index)",
+                Type: .Audio,
+                RunTimeTicks: 1_800_000_000,
+                Album: "Search Layout Album",
+                AlbumArtist: "Search Layout Artist",
+                Artists: ["Search Layout Artist"],
+                AlbumId: "ui-search-album"
+            )
+        }
+    }
+    #endif
 
     private func handleItemTap(_ item: BaseItemDto) {
         switch item.type {

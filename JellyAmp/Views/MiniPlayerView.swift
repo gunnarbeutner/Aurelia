@@ -7,6 +7,12 @@
 
 import SwiftUI
 
+enum MiniPlayerLayout {
+    static let tabBarClearance: CGFloat = 56
+    static let expandedHeight: CGFloat = 62
+    static let contentClearance: CGFloat = tabBarClearance + expandedHeight + 8
+}
+
 struct MiniPlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
