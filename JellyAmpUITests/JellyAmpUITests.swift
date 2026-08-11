@@ -162,6 +162,9 @@ final class JellyAmpUITests: XCTestCase {
         attachment.name = "Search results clear the mini player"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        lastResult.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     }
 
     @MainActor

@@ -6,12 +6,14 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SearchView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var playerManager = PlayerManager.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dismissSearch) private var dismissSearch
 
     @State private var searchText = ""
     @State private var searchResults: [BaseItemDto] = []
@@ -267,7 +269,15 @@ struct SearchView: View {
     private func handleItemTap(_ item: BaseItemDto) {
         switch item.type {
         case "Audio":
-            // Play track
+            // Playback may subsequently expand the player over this view. Drop
+            // search focus first so its keyboard cannot follow that transition.
+            dismissSearch()
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil,
+                from: nil,
+                for: nil
+            )
             let track = Track(from: item, baseURL: jellyfinService.baseURL)
             playerManager.play(tracks: [track])
 
