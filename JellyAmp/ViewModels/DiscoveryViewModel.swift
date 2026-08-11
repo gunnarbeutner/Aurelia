@@ -74,6 +74,8 @@ struct DiscoveryCache {
 
 @MainActor
 final class DiscoveryViewModel: ObservableObject {
+    static let maximumMixShelfCount = 6
+
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "JellyAmp",
         category: "Discovery"
@@ -214,7 +216,7 @@ final class DiscoveryViewModel: ObservableObject {
             var mixFailures: [String] = []
             var emptyMixCount = 0
 
-            for seed in candidates.prefix(12) where newShelves.count < 3 {
+            for seed in candidates.prefix(12) where newShelves.count < Self.maximumMixShelfCount {
                 do {
                     try Task.checkCancellation()
                     let items = try await api.fetchInstantMix(itemId: seed.id, limit: 13)

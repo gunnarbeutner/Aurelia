@@ -154,9 +154,30 @@ struct JellyAmpTests {
 
         await viewModel.refresh()
 
-        #expect(viewModel.shelves.map(\.seed.id) == ["recent-a", "recent-b", "favorite-c"])
+        #expect(viewModel.shelves.map(\.seed.id) == ["recent-a", "recent-b", "favorite-c", "random-d"])
         #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
         #expect(viewModel.recentTracks.map(\.id) == ["recent-a", "recent-a2", "recent-b"])
+    }
+
+    @Test @MainActor func discoveryBuildsUpToSixMixShelves() async {
+        let recent = (0..<8).map { index in
+            Track(
+                id: "recent-\(index)",
+                name: "Recent \(index)",
+                artistName: "Artist \(index)",
+                albumName: "Album \(index)",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-\(index)"
+            )
+        }
+        let api = FakeDiscoveryAPI()
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.count == DiscoveryViewModel.maximumMixShelfCount)
+        #expect(viewModel.shelves.map(\.seed.id) == (0..<6).map { "recent-\($0)" })
     }
 
     @Test @MainActor func discoveryUsesJellyfinRecentlyPlayedStateWhenAvailable() async {
