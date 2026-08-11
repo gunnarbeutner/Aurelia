@@ -28,31 +28,43 @@ struct CachedAsyncImage<Content: View>: View {
             .opacity(phase.image != nil ? 1 : 1)
             .animation(wasCacheHit ? nil : .easeIn(duration: 0.2), value: phase.image != nil)
             .task(id: url) {
-                if phase.image == nil {
-                    await loadImage()
-                }
+                await loadImage(for: url)
             }
     }
 
-    private func loadImage() async {
-        guard let url = url else {
+    private func loadImage(for requestedURL: URL?) async {
+        guard let requestedURL else {
+            wasCacheHit = false
             phase = .empty
             return
         }
 
+        // A reused SwiftUI view keeps its @State when the URL changes. Clear the
+        // previous image before resolving the new URL so it cannot remain visible.
+        if let cached = ImageCache.shared.cachedMemoryImage(for: requestedURL) {
+            wasCacheHit = true
+            phase = .success(Image(uiImage: cached))
+            return
+        }
+
+        wasCacheHit = false
+        phase = .empty
+
         // Check cache synchronously first
-        if let cached = await ImageCache.shared.cachedImage(for: url) {
+        if let cached = await ImageCache.shared.cachedImage(for: requestedURL) {
+            guard !Task.isCancelled else { return }
             wasCacheHit = true
             phase = .success(Image(uiImage: cached))
             return
         }
 
         // Network fetch
-        wasCacheHit = false
         do {
-            let img = try await ImageCache.shared.loadImage(from: url)
+            let img = try await ImageCache.shared.loadImage(from: requestedURL)
+            guard !Task.isCancelled else { return }
             phase = .success(Image(uiImage: img))
         } catch {
+            guard !Task.isCancelled else { return }
             phase = .failure(error)
         }
     }
