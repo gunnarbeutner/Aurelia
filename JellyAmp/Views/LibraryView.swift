@@ -293,17 +293,15 @@ struct LibraryView: View {
                 // View Mode & Sort Controls
                 viewControlsSection
 
+                if isSyncing && !isLoading {
+                    librarySyncProgressView(compact: true)
+                }
+
                 // Content based on filter
                 if isLoading {
                     // Loading state
                     Spacer()
-                    ProgressView()
-                        .tint(.jellyAmpAccent)
-                        .scaleEffect(1.5)
-                    Text("Loading library...")
-                        .font(.jellyAmpBody)
-                        .foregroundColor(.jellyAmpTextSecondary)
-                        .padding(.top, 20)
+                    librarySyncProgressView(compact: false)
                     Spacer()
                 } else if let error = errorMessage {
                     // Error state
@@ -836,6 +834,35 @@ struct LibraryView: View {
         .onReceive(libraryStore.$isInitialLoading) { isLoading = $0 }
         .onReceive(libraryStore.$isRefreshing) { isSyncing = $0 }
         .onReceive(libraryStore.$errorMessage) { errorMessage = $0 }
+    }
+
+    @ViewBuilder
+    private func librarySyncProgressView(compact: Bool) -> some View {
+        VStack(spacing: compact ? 6 : 14) {
+            if let progress = libraryStore.syncProgress {
+                ProgressView(value: progress)
+                    .tint(.jellyAmpAccent)
+                    .frame(maxWidth: compact ? .infinity : 320)
+            } else {
+                ProgressView()
+                    .tint(.jellyAmpAccent)
+                    .scaleEffect(compact ? 0.85 : 1.25)
+            }
+
+            HStack(spacing: 8) {
+                Text(libraryStore.syncMessage ?? "Preparing library sync…")
+                    .font(compact ? .jellyAmpCaption : .jellyAmpBody)
+                    .foregroundColor(.jellyAmpTextSecondary)
+                if let progress = libraryStore.syncProgress {
+                    Text("\(Int(progress * 100))%")
+                        .font(.jellyAmpMono)
+                        .foregroundColor(.jellyAmpTextMuted)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, compact ? 6 : 12)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Genre Loading

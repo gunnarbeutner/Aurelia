@@ -10,6 +10,7 @@ import SwiftUI
 struct DiscoveryView: View {
     @StateObject private var viewModel: DiscoveryViewModel
     @ObservedObject private var playerManager = PlayerManager.shared
+    @ObservedObject private var libraryStore = LibraryStore.shared
 
     init() {
         #if DEBUG
@@ -64,6 +65,10 @@ struct DiscoveryView: View {
     private var discoveryContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
+                if libraryStore.isRefreshing {
+                    librarySyncBanner
+                }
+
                 statusBanner
 
                 if let message = viewModel.errorMessage {
@@ -233,13 +238,51 @@ struct DiscoveryView: View {
 
     private var loadingView: some View {
         VStack(spacing: 14) {
-            ProgressView()
-                .tint(.neonCyan)
-                .scaleEffect(1.3)
-            Text("Finding music for you…")
+            if let progress = libraryStore.syncProgress {
+                ProgressView(value: progress)
+                    .tint(.neonCyan)
+                    .frame(maxWidth: 300)
+            } else {
+                ProgressView()
+                    .tint(.neonCyan)
+                    .scaleEffect(1.3)
+            }
+            Text(libraryStore.syncMessage ?? "Finding music for you…")
                 .font(.jellyAmpBody)
                 .foregroundColor(.jellyAmpTextSecondary)
+            if let progress = libraryStore.syncProgress {
+                Text("\(Int(progress * 100))%")
+                    .font(.jellyAmpMono)
+                    .foregroundColor(.jellyAmpTextMuted)
+            }
         }
+        .padding(.horizontal, 24)
+    }
+
+    private var librarySyncBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(
+                    libraryStore.syncMessage ?? "Syncing library…",
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+                .font(.jellyAmpCaption)
+                .foregroundColor(.jellyAmpTextSecondary)
+                Spacer()
+                if let progress = libraryStore.syncProgress {
+                    Text("\(Int(progress * 100))%")
+                        .font(.jellyAmpMono)
+                        .foregroundColor(.jellyAmpTextMuted)
+                }
+            }
+            if let progress = libraryStore.syncProgress {
+                ProgressView(value: progress)
+                    .tint(.neonCyan)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.jellyAmpElevated))
+        .padding(.horizontal, 20)
     }
 
     private var emptyView: some View {

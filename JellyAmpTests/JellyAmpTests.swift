@@ -271,7 +271,7 @@ struct JellyAmpTests {
         #expect(viewModel.recentTracks.map(\.id) == ["recent-a", "recent-a2", "recent-b"])
     }
 
-    @Test @MainActor func discoveryBuildsUpToSixMixShelves() async {
+    @Test @MainActor func discoveryBuildsUpToMaximumMixShelves() async {
         let recent = (0..<8).map { index in
             Track(
                 id: "recent-\(index)",
@@ -289,7 +289,10 @@ struct JellyAmpTests {
         await viewModel.refresh()
 
         #expect(viewModel.shelves.count == DiscoveryViewModel.maximumMixShelfCount)
-        #expect(viewModel.shelves.map(\.seed.id) == (0..<6).map { "recent-\($0)" })
+        #expect(viewModel.shelves.map(\.seed.id) == [
+            "recent-0", "recent-1", "recent-2", "recent-3", "recent-4",
+            "recent-5", "recent-6", "recent-7", "favorite-c", "random-d"
+        ])
     }
 
     @Test @MainActor func discoveryUsesJellyfinRecentlyPlayedStateWhenAvailable() async {

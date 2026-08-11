@@ -9,7 +9,7 @@ import Foundation
 import Combine
 import OSLog
 
-struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
+nonisolated struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     let seed: Track
     let tracks: [Track]
 
@@ -38,7 +38,7 @@ struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-struct DiscoverySnapshot: Codable, Equatable, Sendable {
+nonisolated struct DiscoverySnapshot: Codable, Equatable, Sendable {
     let shelves: [DiscoveryShelf]
     let fallbackTracks: [Track]
     let recentTracks: [Track]?

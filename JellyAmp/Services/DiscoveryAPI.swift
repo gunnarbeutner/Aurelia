@@ -19,7 +19,7 @@ protocol DiscoveryAPI {
     func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus?
 }
 
-struct AudioMusePluginInfo: Decodable, Equatable {
+nonisolated struct AudioMusePluginInfo: Decodable, Equatable {
     let version: String
     let availableEndpoints: [String]
 
@@ -29,7 +29,7 @@ struct AudioMusePluginInfo: Decodable, Equatable {
     }
 }
 
-struct AudioMuseTaskStatus: Decodable, Equatable {
+nonisolated struct AudioMuseTaskStatus: Decodable, Equatable {
     let taskId: String?
     let taskType: String?
     let status: String?

@@ -14,13 +14,17 @@ actor ArtistImageService {
     private var cache: [String: CachedImage] = [:]
     private let cacheTTL: TimeInterval = 7 * 24 * 60 * 60 // 7 days
 
-    private struct CachedImage: Codable {
+    private nonisolated struct CachedImage: Codable {
         let imageUrl: String?
         let fetchedAt: Date
     }
 
     private init() {
-        loadCache()
+        guard let data = try? Data(contentsOf: Self.cacheFileURL),
+              let decoded = try? JSONDecoder().decode([String: CachedImage].self, from: data) else {
+            return
+        }
+        cache = decoded
     }
 
     /// Get an artist image URL, checking Jellyfin first, then Wikipedia
@@ -82,21 +86,13 @@ actor ArtistImageService {
         name.lowercased().replacingOccurrences(of: " ", with: "-")
     }
 
-    private var cacheFileURL: URL {
+    private nonisolated static var cacheFileURL: URL {
         let docs = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return docs.appendingPathComponent("artist-image-cache.json")
     }
 
-    private func loadCache() {
-        guard let data = try? Data(contentsOf: cacheFileURL),
-              let decoded = try? JSONDecoder().decode([String: CachedImage].self, from: data) else {
-            return
-        }
-        cache = decoded
-    }
-
     private func saveCache() {
         guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: cacheFileURL)
+        try? data.write(to: Self.cacheFileURL)
     }
 }
