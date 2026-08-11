@@ -24,7 +24,7 @@ struct NowPlayingData {
     )
     
     static func load() -> NowPlayingData {
-        guard let defaults = UserDefaults(suiteName: "group.jellyampos.Jellywatch.JellyAmp") else {
+        guard let defaults = UserDefaults(suiteName: "group.de.beutner.JellyAmp") else {
             return .placeholder
         }
         

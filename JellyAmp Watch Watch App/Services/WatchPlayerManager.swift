@@ -267,7 +267,7 @@ class WatchPlayerManager: NSObject, ObservableObject {
 
     /// Write now-playing data to shared App Group for complications
     private func updateComplicationData(track: WatchTrack?) {
-        guard let defaults = UserDefaults(suiteName: "group.jellyampos.Jellywatch.JellyAmp") else { return }
+        guard let defaults = UserDefaults(suiteName: "group.de.beutner.JellyAmp") else { return }
 
         if let track = track {
             defaults.set(track.name, forKey: "complication_trackName")
