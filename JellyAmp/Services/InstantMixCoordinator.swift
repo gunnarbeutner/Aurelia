@@ -56,7 +56,6 @@ final class InstantMixCoordinator: ObservableObject {
                 }
 
                 self.playerManager.play(tracks: tracks)
-                NavigationCoordinator.shared.presentNowPlaying()
             } catch is CancellationError {
                 return
             } catch {

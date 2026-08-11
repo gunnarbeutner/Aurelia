@@ -56,17 +56,7 @@ struct ArtistDetailView: View {
                     Color.jellyAmpBackground.ignoresSafeArea()
 
                     if let artworkURL = effectiveArtworkURL, let url = URL(string: artworkURL) {
-                        CachedAsyncImage(url: url) { phase in
-                            if case .success(let image) = phase {
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .blur(radius: 80)
-                                    .scaleEffect(1.3)
-                                    .saturation(1.5)
-                                    .opacity(0.3)
-                            }
-                        }
+                        ViewportBlurredArtwork(url: url, opacity: 0.3)
                         .ignoresSafeArea()
                     }
 

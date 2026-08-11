@@ -32,6 +32,74 @@ final class JellyAmpUITests: XCTestCase {
     }
 
     @MainActor
+    func testDiscoverPresentationKeepsNowPlayingCentered() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-layout"]
+        app.launch()
+
+        let discoveryTrack = app.buttons["discovery-track-ui-layout-track"]
+        XCTAssertTrue(discoveryTrack.waitForExistence(timeout: 5))
+        discoveryTrack.tap()
+
+        let closeButton = app.buttons["now-playing-close"]
+        let artwork = app.descendants(matching: .any)["now-playing-artwork"]
+        let waveform = app.descendants(matching: .any)["now-playing-waveform"]
+        let title = app.staticTexts["now-playing-title"]
+        let favorite = app.buttons["now-playing-favorite"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(artwork.waitForExistence(timeout: 5))
+        XCTAssertTrue(waveform.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertEqual(artwork.frame.midX, windowFrame.midX, accuracy: 2)
+        XCTAssertGreaterThanOrEqual(artwork.frame.minX, windowFrame.minX)
+        XCTAssertLessThanOrEqual(artwork.frame.maxX, windowFrame.maxX)
+        XCTAssertGreaterThanOrEqual(waveform.frame.minX, windowFrame.minX)
+        XCTAssertLessThanOrEqual(waveform.frame.maxX, windowFrame.maxX)
+        XCTAssertLessThan(closeButton.frame.midX, windowFrame.midX)
+        XCTAssertFalse(title.frame.intersects(favorite.frame))
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Centered Discover to Now Playing"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testAlbumDetailWithArtworkStaysInsideViewport() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-album-layout"]
+        app.launch()
+
+        let artwork = app.images["album-detail-artwork"]
+        let playAll = app.buttons["album-play-all"]
+        let shuffle = app.buttons["album-shuffle"]
+        let favorite = app.buttons["album-favorite"]
+        let download = app.buttons["album-download"]
+        let firstTrack = app.descendants(matching: .any)["album-track-ui-album-track-1"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 5))
+        XCTAssertTrue(playAll.waitForExistence(timeout: 5))
+        XCTAssertTrue(shuffle.waitForExistence(timeout: 5))
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(firstTrack.waitForExistence(timeout: 5))
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertEqual(artwork.frame.midX, windowFrame.midX, accuracy: 2)
+        for element in [artwork, playAll, shuffle, favorite, download, firstTrack] {
+            XCTAssertGreaterThanOrEqual(element.frame.minX, windowFrame.minX)
+            XCTAssertLessThanOrEqual(element.frame.maxX, windowFrame.maxX)
+        }
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Bounded Album Detail"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

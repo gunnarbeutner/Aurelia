@@ -62,6 +62,9 @@ final class DiscoveryViewModel: ObservableObject {
     private let cache: DiscoveryCache?
     private var loadedRecentSignature: [String] = []
     private var lastRefreshDate: Date?
+    private var pendingSnapshot: DiscoverySnapshot?
+    private var isPreparingRefresh = false
+    private var refreshGeneration: UInt64 = 0
     private var observedActiveAnalysis = false
     private let cacheMaxAge: TimeInterval = 6 * 60 * 60
 
@@ -101,7 +104,11 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     func activate() async {
-        await loadIfNeeded()
+        // Adopt recommendations prepared during the previous visit before the
+        // page becomes interactive. Automatic refreshes then stage their result
+        // for the next visit so shelves never reorder under the user's finger.
+        applyPendingSnapshot()
+        await loadIfNeeded(publishResult: !hasContent)
         await updateAudioMuseStatus()
 
         while !Task.isCancelled {
@@ -112,28 +119,44 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
-    func loadIfNeeded() async {
+    func loadIfNeeded(publishResult: Bool = true) async {
         let signature = recentSeedCandidates().prefix(3).map(\.id)
-        let cacheIsStale = lastRefreshDate.map {
+        let freshestSignature = pendingSnapshot?.recentSignature ?? loadedRecentSignature
+        let freshestRefreshDate = pendingSnapshot?.refreshedAt ?? lastRefreshDate
+        let cacheIsStale = freshestRefreshDate.map {
             Date().timeIntervalSince($0) >= cacheMaxAge
         } ?? true
-        guard !hasContent || signature != loadedRecentSignature || cacheIsStale else { return }
-        await refresh(force: true)
+        guard !hasContent || signature != freshestSignature || cacheIsStale else { return }
+        await refresh(force: true, publishResult: publishResult)
     }
 
-    func refresh(force: Bool = true) async {
+    func refresh(force: Bool = true, publishResult: Bool = true) async {
         guard force || !hasContent else { return }
         guard !isLoading && !isRefreshing else { return }
+        guard publishResult || !isPreparingRefresh else { return }
 
-        let retainingContent = hasContent
-        if retainingContent {
-            isRefreshing = true
+        // A user-initiated refresh supersedes any automatic preparation already
+        // in flight. The older result is discarded when it completes.
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+
+        if publishResult {
+            let retainingContent = hasContent
+            if retainingContent {
+                isRefreshing = true
+            } else {
+                isLoading = true
+            }
         } else {
-            isLoading = true
+            isPreparingRefresh = true
         }
         defer {
-            isLoading = false
-            isRefreshing = false
+            if publishResult {
+                isLoading = false
+                isRefreshing = false
+            } else {
+                isPreparingRefresh = false
+            }
         }
 
         do {
@@ -167,14 +190,27 @@ final class DiscoveryViewModel: ObservableObject {
                 throw DiscoveryError.noMusic
             }
 
-            shelves = newShelves
-            fallbackTracks = newShelves.isEmpty ? Array(candidates.prefix(12)) : []
-            loadedRecentSignature = Array(recent.prefix(3).map(\.id))
-            lastRefreshDate = Date()
-            errorMessage = nil
-            saveSnapshot()
+            let snapshot = DiscoverySnapshot(
+                shelves: newShelves,
+                fallbackTracks: newShelves.isEmpty ? Array(candidates.prefix(12)) : [],
+                recentSignature: Array(recent.prefix(3).map(\.id)),
+                refreshedAt: Date()
+            )
+
+            guard generation == refreshGeneration else { return }
+
+            if publishResult {
+                pendingSnapshot = nil
+                apply(snapshot)
+                errorMessage = nil
+            } else {
+                pendingSnapshot = snapshot
+            }
+            cache?.save(snapshot)
         } catch {
-            errorMessage = error.localizedDescription
+            if publishResult {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -194,7 +230,7 @@ final class DiscoveryViewModel: ObservableObject {
                 availability = .ready(version: info.version)
                 if observedActiveAnalysis {
                     observedActiveAnalysis = false
-                    await refresh(force: true)
+                    await refresh(force: true, publishResult: false)
                 }
             }
         } catch let error as JellyfinError {
@@ -241,16 +277,18 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
-    private func saveSnapshot() {
-        guard let lastRefreshDate else { return }
-        cache?.save(
-            DiscoverySnapshot(
-                shelves: shelves,
-                fallbackTracks: fallbackTracks,
-                recentSignature: loadedRecentSignature,
-                refreshedAt: lastRefreshDate
-            )
-        )
+    private func applyPendingSnapshot() {
+        guard let pendingSnapshot else { return }
+        apply(pendingSnapshot)
+        self.pendingSnapshot = nil
+        errorMessage = nil
+    }
+
+    private func apply(_ snapshot: DiscoverySnapshot) {
+        shelves = snapshot.shelves
+        fallbackTracks = snapshot.fallbackTracks
+        loadedRecentSignature = snapshot.recentSignature
+        lastRefreshDate = snapshot.refreshedAt
     }
 }
 

@@ -8,6 +8,18 @@
 import SwiftUI
 import AVKit
 
+enum NowPlayingLayout {
+    static let horizontalPadding: CGFloat = 20
+
+    static func contentWidth(for screenWidth: CGFloat) -> CGFloat {
+        max(0, screenWidth - horizontalPadding * 2)
+    }
+
+    static func artworkSize(for screenWidth: CGFloat) -> CGFloat {
+        min(screenWidth * 0.65, 320)
+    }
+}
+
 struct NowPlayingView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
@@ -65,7 +77,10 @@ struct NowPlayingView: View {
                         // Bottom padding
                         Spacer().frame(height: 40)
                     }
-                    .padding(.horizontal, 20)
+                    // An explicit width prevents any intrinsically wide child
+                    // (such as the waveform) from shifting centered content.
+                    .frame(width: NowPlayingLayout.contentWidth(for: geo.size.width))
+                    .padding(.horizontal, NowPlayingLayout.horizontalPadding)
                 }
             }
         }
@@ -112,17 +127,7 @@ struct NowPlayingView: View {
             if let track = playerManager.currentTrack,
                let artworkURLString = track.artworkURL,
                let artworkURL = URL(string: artworkURLString) {
-                CachedAsyncImage(url: artworkURL) { phase in
-                    if case .success(let image) = phase {
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .blur(radius: 80)
-                            .scaleEffect(1.3)
-                            .saturation(1.5)
-                            .opacity(0.35)
-                    }
-                }
+                ViewportBlurredArtwork(url: artworkURL)
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: 0.8), value: track.id)
             }
@@ -166,6 +171,7 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Close now playing")
+            .accessibilityIdentifier("now-playing-close")
 
             Spacer()
 
@@ -199,7 +205,7 @@ struct NowPlayingView: View {
 
     // MARK: - Artwork Section (responsive)
     private func artworkSection(screenWidth: CGFloat, screenHeight: CGFloat) -> some View {
-        let artSize = min(screenWidth * 0.65, 320.0)
+        let artSize = NowPlayingLayout.artworkSize(for: screenWidth)
 
         return ZStack {
             if let track = playerManager.currentTrack,
@@ -233,6 +239,9 @@ struct NowPlayingView: View {
                     .matchedGeometryEffect(id: "albumArt", in: namespace)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Now playing artwork")
+        .accessibilityIdentifier("now-playing-artwork")
     }
 
     private func placeholderArtwork(size: CGFloat) -> some View {
@@ -254,8 +263,12 @@ struct NowPlayingView: View {
 
     // MARK: - Track Info Section (with inline favorite — matches PWA)
     private var trackInfoSection: some View {
-        ZStack(alignment: .topTrailing) {
-            // Centered track info
+        HStack(alignment: .top, spacing: 0) {
+            // Balance the trailing action so track information remains centered.
+            Color.clear
+                .frame(width: 44, height: 44)
+                .accessibilityHidden(true)
+
             VStack(alignment: .center, spacing: 6) {
                 if let track = playerManager.currentTrack {
                     Text(track.name)
@@ -264,6 +277,7 @@ struct NowPlayingView: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.75)
                         .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("now-playing-title")
 
                     Button {
                         navigateToArtist(track: track)
@@ -291,7 +305,6 @@ struct NowPlayingView: View {
             }
             .frame(maxWidth: .infinity)
 
-            // Favorite button anchored top-right
             Button {
                 toggleFavorite()
             } label: {
@@ -301,6 +314,7 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+            .accessibilityIdentifier("now-playing-favorite")
         }
     }
 
@@ -317,6 +331,7 @@ struct NowPlayingView: View {
             )
             .frame(height: 32)
             .accessibilityLabel("Track progress")
+            .accessibilityIdentifier("now-playing-waveform")
 
             HStack {
                 Text(formatTime(playbackProgress.currentTime))
@@ -584,29 +599,12 @@ struct NowPlayingView: View {
     }
 
     private func navigateToArtist(track: Track) {
-        let artist = Artist(
-            id: track.artistId ?? "",
-            name: track.artistName,
-            bio: nil,
-            albumCount: 0,
-            artworkURL: nil
-        )
-        guard !artist.id.isEmpty else { return }
-        NavigationCoordinator.shared.pendingArtistNavigation = artist
+        NavigationCoordinator.shared.navigateToArtist(for: track)
         if let onDismiss = onDismiss { onDismiss() } else { dismiss() }
     }
 
     private func navigateToAlbum(track: Track) {
-        guard let albumId = track.albumId else { return }
-        let album = Album(
-            id: albumId,
-            name: track.albumName,
-            artistName: track.artistName,
-            artistId: track.artistId,
-            year: track.productionYear,
-            artworkURL: track.artworkURL
-        )
-        NavigationCoordinator.shared.pendingAlbumNavigation = album
+        NavigationCoordinator.shared.navigateToAlbum(for: track)
         if let onDismiss = onDismiss { onDismiss() } else { dismiss() }
     }
 

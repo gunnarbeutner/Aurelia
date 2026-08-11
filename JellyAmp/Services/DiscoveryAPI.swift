@@ -103,3 +103,41 @@ enum AudioMuseAvailability: Equatable {
 }
 
 extension JellyfinService: DiscoveryAPI {}
+
+#if DEBUG
+/// Network-free recommendations used only by the Now Playing UI regression test.
+struct PlayerLayoutDiscoveryAPI: DiscoveryAPI {
+    let baseURL = "https://ui-test.invalid"
+
+    func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
+        [
+            audio(
+                id: "ui-layout-track",
+                name: "The Age Of Love (Extended Live Version) (Live)"
+            ),
+            audio(id: "ui-layout-next", name: "Next Test Track")
+        ]
+    }
+
+    func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] { [] }
+    func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] { [] }
+    func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo { throw JellyfinError.notFound }
+    func checkAudioMuseHealth() async throws -> Bool { false }
+    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { nil }
+
+    private func audio(id: String, name: String) -> BaseItemDto {
+        BaseItemDto(
+            Id: id,
+            Name: name,
+            Type: .Audio,
+            RunTimeTicks: 2_400_000_000,
+            Album: "Layout Album",
+            AlbumArtist: "Layout Artist",
+            Artists: ["Layout Artist"],
+            AlbumId: "ui-layout-album",
+            AlbumPrimaryImageTag: "ui-test",
+            ArtistItems: [NameIdPair(Name: "Layout Artist", Id: "ui-layout-artist")]
+        )
+    }
+}
+#endif

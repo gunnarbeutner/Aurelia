@@ -8,10 +8,16 @@
 import SwiftUI
 import AVFoundation
 import UserNotifications
+import UIKit
 
 @main
 struct JellyAmpApp: App {
     @Environment(\.scenePhase) private var scenePhase
+
+    #if DEBUG
+    private let isPlayerLayoutUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout")
+    private let isAlbumLayoutUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-album-layout")
+    #endif
 
     // Initialize Watch Connectivity
     private let watchConnectivity = PhoneConnectivityManager.shared
@@ -19,8 +25,28 @@ struct JellyAmpApp: App {
     init() {
         // Brand kit fonts: Chakra Petch, Sora, JetBrains Mono (registered via Info.plist)
         // Request notification permissions for download completion alerts
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout")
+            || ProcessInfo.processInfo.arguments.contains("--ui-test-album-layout") {
+            cachePlayerLayoutTestArtwork()
+            return
+        }
+        #endif
         requestNotificationPermissions()
     }
+
+    #if DEBUG
+    private func cachePlayerLayoutTestArtwork() {
+        guard let url = URL(
+            string: "https://ui-test.invalid/Items/ui-layout-album/Images/Primary?maxWidth=300&tag=ui-test"
+        ) else { return }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
+        }
+        ImageCache.shared.cacheMemoryImage(image, for: url)
+    }
+    #endif
 
     private func requestNotificationPermissions() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -34,7 +60,17 @@ struct JellyAmpApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if isPlayerLayoutUITest {
+                MainTabView()
+            } else if isAlbumLayoutUITest {
+                AlbumDetailLayoutUITestHost()
+            } else {
+                ContentView()
+            }
+            #else
             ContentView()
+            #endif
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             handleScenePhaseChange(oldPhase: oldPhase, newPhase: newPhase)

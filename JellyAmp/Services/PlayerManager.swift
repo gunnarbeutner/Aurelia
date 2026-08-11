@@ -240,6 +240,10 @@ class PlayerManager: NSObject, ObservableObject {
         pendingSeekTime = 0  // Fresh tap — always start from beginning
         queue = [track]
         currentIndex = 0
+        // This overload is used for an explicit user selection. Automatic
+        // track changes and resume use playCurrentTrack()/play() directly and
+        // must not reopen Now Playing after the user dismissed it.
+        NavigationCoordinator.shared.presentNowPlaying()
         playCurrentTrack()
     }
 
@@ -282,6 +286,9 @@ class PlayerManager: NSObject, ObservableObject {
             currentIndex = originalIndex
         }
 
+        // Playing a supplied list is an explicit user selection. Keep the
+        // presentation request here so every caller gets the same behavior.
+        NavigationCoordinator.shared.presentNowPlaying()
         playCurrentTrack()
     }
 
@@ -396,12 +403,12 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Adds a track to the end of the queue
     func addToQueue(track: Track) {
-        queue.append(track)
-        // If nothing playing, start playing
         if currentTrack == nil {
-            currentIndex = queue.count - 1
-            playCurrentTrack()
+            play(track)
+            return
         }
+
+        queue.append(track)
     }
 
     /// Adds multiple tracks to the end of the queue, preserving their order.
@@ -417,6 +424,11 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Insert track to play after current track
     func playNext(track: Track) {
+        if currentTrack == nil {
+            play(track)
+            return
+        }
+
         let insertIndex = min(currentIndex + 1, queue.count)
         queue.insert(track, at: insertIndex)
         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -440,11 +452,12 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Add track to end of queue
     func playLast(track: Track) {
-        queue.append(track)
         if currentTrack == nil {
-            currentIndex = queue.count - 1
-            playCurrentTrack()
+            play(track)
+            return
         }
+
+        queue.append(track)
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
     }
@@ -692,6 +705,8 @@ class PlayerManager: NSObject, ObservableObject {
     func jumpToTrack(at index: Int) {
         guard index >= 0 && index < queue.count else { return }
         currentIndex = index
+        // Selecting a queued track is another explicit user playback action.
+        NavigationCoordinator.shared.presentNowPlaying()
         playCurrentTrack()
     }
 

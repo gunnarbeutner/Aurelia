@@ -3,6 +3,8 @@ import SwiftUI
 /// Waveform-style progress bar that replaces the standard slider.
 /// Generates pseudo-random bars from track ID for consistent appearance.
 struct WaveformView: View {
+    static let barSpacing: CGFloat = 1.5
+
     let currentTime: Double
     let duration: Double
     let trackId: String
@@ -25,14 +27,19 @@ struct WaveformView: View {
 
     var body: some View {
         GeometryReader { geo in
-            HStack(alignment: .center, spacing: 1.5) {
-                ForEach(0..<bars.count, id: \.self) { index in
-                    let barProgress = Double(index) / Double(bars.count)
-                    let isPlayed = barProgress <= progress
+            Canvas { context, size in
+                let rects = Self.barRects(in: size, heights: bars)
 
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(isPlayed ? Color.neonCyan : Color.white.opacity(0.12))
-                        .frame(height: geo.size.height * bars[index])
+                for (index, rect) in rects.enumerated() {
+                    let barProgress = Double(index) / Double(bars.count)
+                    let path = Path(
+                        roundedRect: rect,
+                        cornerRadius: min(1, rect.width / 2)
+                    )
+                    context.fill(
+                        path,
+                        with: .color(barProgress <= progress ? .neonCyan : .white.opacity(0.12))
+                    )
                 }
             }
             .contentShape(Rectangle())
@@ -48,6 +55,30 @@ struct WaveformView: View {
                         onSeek(pct * duration)
                         isDragging = false
                     }
+            )
+        }
+    }
+
+    /// Produces a bounded set of waveform bars. Keeping this calculation
+    /// independent of SwiftUI's intrinsic sizing prevents the waveform from
+    /// expanding its parent scroll view beyond the device width.
+    static func barRects(in size: CGSize, heights: [CGFloat]) -> [CGRect] {
+        guard !heights.isEmpty, size.width > 0, size.height > 0 else { return [] }
+
+        let gapCount = max(0, heights.count - 1)
+        let spacing = gapCount > 0
+            ? min(barSpacing, size.width / CGFloat(gapCount))
+            : 0
+        let totalSpacing = spacing * CGFloat(gapCount)
+        let barWidth = max(0, (size.width - totalSpacing) / CGFloat(heights.count))
+
+        return heights.enumerated().map { index, heightFraction in
+            let barHeight = size.height * min(max(heightFraction, 0), 1)
+            return CGRect(
+                x: CGFloat(index) * (barWidth + spacing),
+                y: (size.height - barHeight) / 2,
+                width: barWidth,
+                height: barHeight
             )
         }
     }

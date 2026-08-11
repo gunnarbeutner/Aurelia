@@ -117,20 +117,22 @@ struct SearchView: View {
                             InstantMixButton(itemId: item.id, itemName: item.Name)
                         }
                     } else if item.type == "MusicAlbum" {
-                        NavigationLink(value: Album(from: item, baseURL: jellyfinService.baseURL)) {
+                        let album = Album(from: item, baseURL: jellyfinService.baseURL)
+                        NavigationLink(value: album) {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
-                            InstantMixButton(itemId: item.id, itemName: item.Name)
+                            AlbumContextMenu(album: album)
                         }
                     } else {
+                        let track = Track(from: item, baseURL: jellyfinService.baseURL)
                         Button { handleItemTap(item) } label: {
                             SearchResultRow(item: item, baseURL: jellyfinService.baseURL)
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
-                            InstantMixButton(itemId: item.id, itemName: item.Name)
+                            TrackContextMenu(track: track)
                         }
                     }
                 }

@@ -90,6 +90,79 @@ struct JellyAmpTests {
         #expect(restoredAPI.requestedMixes.isEmpty)
     }
 
+    @Test @MainActor func discoveryStagesAutomaticRefreshUntilNextActivation() async {
+        var recent = [
+            Track(
+                id: "recent-a",
+                name: "Recent A",
+                artistName: "Artist A",
+                albumName: "Album A",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-a"
+            )
+        ]
+        let api = FakeDiscoveryAPI()
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+
+        await viewModel.refresh()
+        #expect(viewModel.shelves.first?.seed.id == "recent-a")
+
+        recent = [
+            Track(
+                id: "recent-b",
+                name: "Recent B",
+                artistName: "Artist B",
+                albumName: "Album B",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-b"
+            )
+        ]
+        await viewModel.loadIfNeeded(publishResult: false)
+
+        #expect(viewModel.shelves.first?.seed.id == "recent-a")
+
+        await viewModel.activate()
+
+        #expect(viewModel.shelves.first?.seed.id == "recent-b")
+    }
+
+    @Test @MainActor func discoveryExplicitRefreshPublishesStagedChangesImmediately() async {
+        var recent = [
+            Track(
+                id: "recent-a",
+                name: "Recent A",
+                artistName: "Artist A",
+                albumName: "Album A",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-a"
+            )
+        ]
+        let api = FakeDiscoveryAPI()
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+
+        await viewModel.refresh()
+        recent = [
+            Track(
+                id: "recent-b",
+                name: "Recent B",
+                artistName: "Artist B",
+                albumName: "Album B",
+                duration: 1,
+                artworkURL: nil,
+                artistId: "artist-b"
+            )
+        ]
+        await viewModel.loadIfNeeded(publishResult: false)
+        #expect(viewModel.shelves.first?.seed.id == "recent-a")
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.first?.seed.id == "recent-b")
+    }
+
     @Test @MainActor func signedBuildCanAccessKeychain() {
         let key = "signing-verification-\(UUID().uuidString)"
         let value = UUID().uuidString
@@ -156,6 +229,72 @@ struct JellyAmpTests {
 
         #expect(firstRequest != nil)
         #expect(coordinator.nowPlayingPresentationRequest != firstRequest)
+    }
+
+    @Test @MainActor func mediaNavigationUsesKnownTrackAndArtistIdentifiers() {
+        let coordinator = NavigationCoordinator()
+        let track = Track(
+            id: "track-id",
+            name: "Track",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 1,
+            artworkURL: "https://jellyamp.test/album.jpg",
+            albumId: "album-id",
+            artistId: "artist-id",
+            productionYear: 2026
+        )
+
+        coordinator.navigateToAlbum(for: track)
+        #expect(coordinator.pendingAlbumNavigation?.id == "album-id")
+        #expect(coordinator.pendingAlbumNavigation?.artistId == "artist-id")
+
+        coordinator.navigateToArtist(for: track)
+        #expect(coordinator.pendingArtistNavigation?.id == "artist-id")
+        #expect(coordinator.pendingArtistNavigation?.artworkURL == nil)
+
+        coordinator.pendingArtistNavigation = nil
+        coordinator.navigateToArtist(
+            for: Album(
+                id: "album-id",
+                name: "Album",
+                artistName: "Artist",
+                artistId: "artist-id",
+                year: 2026,
+                artworkURL: "https://jellyamp.test/album.jpg"
+            )
+        )
+        #expect(coordinator.pendingArtistNavigation?.id == "artist-id")
+        #expect(coordinator.pendingArtistNavigation?.artworkURL == nil)
+    }
+
+    @Test @MainActor func waveformBarsStayInsidePlayerViewport() {
+        let heights = (0..<60).map { CGFloat(($0 % 8) + 1) / 8 }
+
+        for viewportWidth in [280.0, 335.0, 353.0, 390.0] {
+            let size = CGSize(width: viewportWidth, height: 32)
+            let rects = WaveformView.barRects(in: size, heights: heights)
+
+            #expect(rects.count == heights.count)
+            #expect(rects.allSatisfy { $0.minX >= 0 && $0.maxX <= size.width + 0.001 })
+            #expect(rects.allSatisfy { $0.minY >= 0 && $0.maxY <= size.height + 0.001 })
+            #expect(abs((rects.last?.maxX ?? 0) - size.width) < 0.001)
+        }
+    }
+
+    @Test @MainActor func nowPlayingArtworkRemainsCenteredAtIPhoneWidths() {
+        for screenWidth in [320.0, 375.0, 393.0, 430.0] {
+            let contentWidth = NowPlayingLayout.contentWidth(for: screenWidth)
+            let artworkWidth = NowPlayingLayout.artworkSize(for: screenWidth)
+            let artworkOrigin = NowPlayingLayout.horizontalPadding
+                + (contentWidth - artworkWidth) / 2
+
+            #expect(abs(
+                contentWidth + NowPlayingLayout.horizontalPadding * 2 - screenWidth
+            ) < 0.001)
+            #expect(artworkWidth <= contentWidth)
+            #expect(abs((artworkOrigin + artworkWidth / 2) - screenWidth / 2) < 0.001)
+        }
     }
 
 }

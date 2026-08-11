@@ -476,52 +476,7 @@ struct PlaylistTrackRow: View {
             .contentShape(Rectangle())
         }
         .contextMenu {
-            InstantMixButton(itemId: track.id, itemName: track.name)
-
-            // Play Next
-            Button {
-                playerManager.playNext(track: track)
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-
-            // Play Last
-            Button {
-                playerManager.playLast(track: track)
-            } label: {
-                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
-
-            // Add to Queue
-            Button {
-                playerManager.addToQueue(track: track)
-            } label: {
-                Label("Add to Queue", systemImage: "text.append")
-            }
-
-            // Download/Delete option
-            if downloadManager.isDownloaded(trackId: track.id) {
-                Button(role: .destructive) {
-                    downloadManager.deleteDownload(trackId: track.id)
-                } label: {
-                    Label("Delete Download", systemImage: "trash")
-                }
-            } else {
-                Button {
-                    downloadManager.downloadTrack(track)
-                } label: {
-                    Label("Download", systemImage: "arrow.down.circle")
-                }
-            }
-
-            // Add to Playlist option
-            if let onAddToPlaylist = onAddToPlaylist {
-                Button {
-                    onAddToPlaylist()
-                } label: {
-                    Label("Add to Playlist", systemImage: "plus.circle")
-                }
-            }
+            TrackContextMenu(track: track, onAddToPlaylist: onAddToPlaylist)
         }
     }
 }

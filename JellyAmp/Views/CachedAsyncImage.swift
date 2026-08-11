@@ -58,6 +58,32 @@ struct CachedAsyncImage<Content: View>: View {
     }
 }
 
+/// A cover-art backdrop that always reports the size proposed by its viewport.
+/// A square image scaled to fill a tall phone must not widen its parent layout.
+struct ViewportBlurredArtwork: View {
+    let url: URL
+    var opacity: Double = 0.35
+
+    var body: some View {
+        GeometryReader { geometry in
+            CachedAsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .scaleEffect(1.3)
+                        .blur(radius: 80)
+                        .saturation(1.5)
+                        .opacity(opacity)
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+        }
+    }
+}
+
 // Convenience: match the AsyncImage(url:) { phase in ... } pattern
 extension AsyncImagePhase {
     var image: Image? {

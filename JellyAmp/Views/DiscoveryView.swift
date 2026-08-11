@@ -8,8 +8,34 @@
 import SwiftUI
 
 struct DiscoveryView: View {
-    @StateObject private var viewModel = DiscoveryViewModel()
+    @StateObject private var viewModel: DiscoveryViewModel
     @ObservedObject private var playerManager = PlayerManager.shared
+
+    init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout") {
+            let seed = Track(
+                id: "ui-layout-seed",
+                name: "Layout Seed",
+                artistName: "Layout Artist",
+                albumName: "Layout Album",
+                duration: 180,
+                artworkURL: nil,
+                albumId: "ui-layout-album",
+                artistId: "ui-layout-artist"
+            )
+            _viewModel = StateObject(
+                wrappedValue: DiscoveryViewModel(
+                    api: PlayerLayoutDiscoveryAPI(),
+                    recentTracksProvider: { [seed] }
+                )
+            )
+            return
+        }
+        #endif
+
+        _viewModel = StateObject(wrappedValue: DiscoveryViewModel())
+    }
 
     var body: some View {
         ZStack {
@@ -29,7 +55,9 @@ struct DiscoveryView: View {
             await viewModel.activate()
         }
         .onChange(of: playerManager.recentlyPlayedTracks) { _, _ in
-            Task { await viewModel.loadIfNeeded() }
+            // Prepare recommendations for the next visit without replacing the
+            // shelf snapshot while Discover is onscreen.
+            Task { await viewModel.loadIfNeeded(publishResult: false) }
         }
     }
 
@@ -128,7 +156,7 @@ struct DiscoveryView: View {
                 }
                 Spacer(minLength: 12)
                 Button {
-                    playerManager.play(tracks: shelf.tracks)
+                    startPlayback(shelf.tracks, startingAt: 0)
                 } label: {
                     Image(systemName: "play.fill")
                         .font(.headline)
@@ -166,24 +194,14 @@ struct DiscoveryView: View {
             LazyHStack(alignment: .top, spacing: 14) {
                 ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                     Button {
-                        playerManager.play(tracks: tracks, startingAt: index)
+                        startPlayback(tracks, startingAt: index)
                     } label: {
                         DiscoveryTrackCard(track: track)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("discovery-track-\(track.id)")
                     .contextMenu {
-                        InstantMixButton(itemId: track.id, itemName: track.name)
-
-                        Button {
-                            playerManager.playNext(track: track)
-                        } label: {
-                            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-                        }
-                        Button {
-                            playerManager.addToQueue(track: track)
-                        } label: {
-                            Label("Add to Queue", systemImage: "text.badge.plus")
-                        }
+                        TrackContextMenu(track: track)
                     }
                 }
             }
@@ -234,6 +252,22 @@ struct DiscoveryView: View {
             .font(.jellyAmpCaption)
             .foregroundColor(.jellyAmpTextSecondary)
             .padding(.horizontal, 20)
+    }
+
+    private func startPlayback(_ tracks: [Track], startingAt index: Int) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout"),
+           tracks.indices.contains(index) {
+            playerManager.queue = tracks
+            playerManager.currentIndex = index
+            playerManager.currentTrack = tracks[index]
+            playerManager.duration = tracks[index].duration
+            NavigationCoordinator.shared.presentNowPlaying()
+            return
+        }
+        #endif
+
+        playerManager.play(tracks: tracks, startingAt: index)
     }
 }
 

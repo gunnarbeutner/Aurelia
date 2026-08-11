@@ -26,10 +26,18 @@ struct AlbumDetailView: View {
     @State private var isUploadingArt = false
     @State private var uploadArtError: String?
     @State private var localArtworkData: Data?
+    private let fetchesTracksOnAppear: Bool
 
-    init(album: Album) {
+    init(album: Album, initialTracks: [Track]? = nil) {
         self.album = album
         _isFavorite = State(initialValue: album.isFavorite)
+        if let initialTracks {
+            _albumTracks = State(initialValue: initialTracks)
+            _isLoadingTracks = State(initialValue: false)
+            fetchesTracksOnAppear = false
+        } else {
+            fetchesTracksOnAppear = true
+        }
     }
 
     // Calculate download state for album
@@ -96,6 +104,7 @@ struct AlbumDetailView: View {
         }
         .ignoresSafeArea(.keyboard)
         .onAppear {
+            guard fetchesTracksOnAppear else { return }
             Task {
                 await fetchAlbumTracks()
             }
@@ -242,17 +251,7 @@ struct AlbumDetailView: View {
 
             // Blurred album art
             if let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
-                CachedAsyncImage(url: url) { phase in
-                    if case .success(let image) = phase {
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .blur(radius: 80)
-                            .scaleEffect(1.3)
-                            .saturation(1.5)
-                            .opacity(0.35)
-                    }
-                }
+                ViewportBlurredArtwork(url: url)
                 .ignoresSafeArea()
             }
 
@@ -334,6 +333,7 @@ struct AlbumDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
                 .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
+                .accessibilityIdentifier("album-detail-artwork")
         } else if let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
             CachedAsyncImage(url: url) { phase in
                 switch phase {
@@ -351,8 +351,10 @@ struct AlbumDetailView: View {
                 }
             }
             .frame(width: 260, height: 260)
+            .accessibilityIdentifier("album-detail-artwork")
         } else {
             placeholderArtwork
+                .accessibilityIdentifier("album-detail-artwork")
         }
     }
 
@@ -450,6 +452,7 @@ struct AlbumDetailView: View {
 
             }
             .accessibilityLabel("Play all tracks")
+            .accessibilityIdentifier("album-play-all")
             .disabled(albumTracks.isEmpty)
 
             // Shuffle Button
@@ -474,6 +477,7 @@ struct AlbumDetailView: View {
 
             }
             .accessibilityLabel("Shuffle album")
+            .accessibilityIdentifier("album-shuffle")
             .disabled(albumTracks.isEmpty)
 
             // Favorite Button
@@ -495,6 +499,7 @@ struct AlbumDetailView: View {
 
             }
             .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+            .accessibilityIdentifier("album-favorite")
 
             // Download Button
             Button {
@@ -536,6 +541,7 @@ struct AlbumDetailView: View {
 
             }
             .accessibilityLabel(albumDownloadState.isDownloaded ? "Delete download" : "Download album")
+            .accessibilityIdentifier("album-download")
             .disabled(albumTracks.isEmpty)
         }
         .padding(.horizontal, 20)
@@ -600,6 +606,7 @@ struct AlbumDetailView: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Track \(index + 1): \(track.name), \(track.durationFormatted)")
                         .accessibilityHint("Double tap to play track")
+                        .accessibilityIdentifier("album-track-\(track.id)")
                         .padding(.horizontal, 20)
 
                         if index < albumTracks.count - 1 {
@@ -693,14 +700,16 @@ struct AlbumTrackRow: View {
                     Text(track.name)
                         .font(.jellyAmpBody)
                         .foregroundColor(isCurrentlyPlaying ? .jellyAmpAccent : Color.jellyAmpText)
-                        .lineLimit(1)
+                        // Album metadata can include a filename-style artist prefix. Keep a
+                        // second line available so the actual song title remains readable.
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
 
                     Text(track.durationFormatted)
                         .font(.jellyAmpCaption)
                         .foregroundColor(.jellyAmpTextSecondary)
                 }
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Play button
                 Image(systemName: "play.circle.fill")
@@ -718,52 +727,7 @@ struct AlbumTrackRow: View {
             .contentShape(Rectangle())
         }
         .contextMenu {
-            InstantMixButton(itemId: track.id, itemName: track.name)
-
-            // Play Next
-            Button {
-                playerManager.playNext(track: track)
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-
-            // Play Last
-            Button {
-                playerManager.playLast(track: track)
-            } label: {
-                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
-
-            // Add to Queue
-            Button {
-                playerManager.addToQueue(track: track)
-            } label: {
-                Label("Add to Queue", systemImage: "text.append")
-            }
-
-            // Download/Delete option
-            if downloadManager.isDownloaded(trackId: track.id) {
-                Button(role: .destructive) {
-                    downloadManager.deleteDownload(trackId: track.id)
-                } label: {
-                    Label("Delete Download", systemImage: "trash")
-                }
-            } else {
-                Button {
-                    downloadManager.downloadTrack(track)
-                } label: {
-                    Label("Download", systemImage: "arrow.down.circle")
-                }
-            }
-
-            // Add to Playlist option
-            if let onAddToPlaylist = onAddToPlaylist {
-                Button {
-                    onAddToPlaylist()
-                } label: {
-                    Label("Add to Playlist", systemImage: "plus.circle")
-                }
-            }
+            TrackContextMenu(track: track, onAddToPlaylist: onAddToPlaylist)
         }
     }
 }
@@ -772,3 +736,52 @@ struct AlbumTrackRow: View {
 #Preview {
     AlbumDetailView(album: Album.mockAlbums[0])
 }
+
+#if DEBUG
+struct AlbumDetailLayoutUITestHost: View {
+    private let artworkURL = "https://ui-test.invalid/Items/ui-layout-album/Images/Primary?maxWidth=300&tag=ui-test"
+
+    private var tracks: [Track] {
+        [
+            Track(
+                id: "ui-album-track-1",
+                name: "01. Layout Artist - A Meaningfully Long Track Name",
+                artistName: "Layout Artist",
+                albumName: "A Long Album Title Used for Layout Testing",
+                duration: 240,
+                artworkURL: artworkURL,
+                indexNumber: 1,
+                albumId: "ui-layout-album",
+                artistId: "ui-layout-artist"
+            ),
+            Track(
+                id: "ui-album-track-2",
+                name: "02. Layout Artist - Another Long Track Name",
+                artistName: "Layout Artist",
+                albumName: "A Long Album Title Used for Layout Testing",
+                duration: 210,
+                artworkURL: artworkURL,
+                indexNumber: 2,
+                albumId: "ui-layout-album",
+                artistId: "ui-layout-artist"
+            )
+        ]
+    }
+
+    var body: some View {
+        NavigationStack {
+            AlbumDetailView(
+                album: Album(
+                    id: "ui-layout-album",
+                    name: "A Long Album Title Used for Layout Testing",
+                    artistName: "Layout Artist",
+                    artistId: "ui-layout-artist",
+                    year: 2026,
+                    artworkURL: artworkURL
+                ),
+                initialTracks: tracks
+            )
+        }
+    }
+}
+#endif
