@@ -67,7 +67,7 @@ struct FavoritesView: View {
             ArtistDetailView(artist: artist)
         }
         .navigationTitle("Favorites")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if isActive {
                 Task { await viewModel.activate() }

@@ -70,7 +70,7 @@ struct SearchView: View {
             ArtistDetailView(artist: artist)
         }
         .navigationTitle("Search")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Filter Tabs

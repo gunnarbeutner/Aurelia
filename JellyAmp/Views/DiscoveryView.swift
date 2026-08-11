@@ -50,7 +50,7 @@ struct DiscoveryView: View {
             }
         }
         .navigationTitle("Discover")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .task {
             await viewModel.activate()
         }

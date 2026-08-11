@@ -174,6 +174,29 @@ final class JellyAmpUITests: XCTestCase {
     }
 
     @MainActor
+    func testRootTabsKeepNavigationTitlesCompact() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-layout"]
+        app.launch()
+
+        for title in ["Discover", "Search", "Favorites", "Settings"] {
+            if title != "Discover" {
+                app.tabBars.buttons[title].tap()
+            }
+
+            let navigationBar = app.navigationBars[title]
+            let titleLabel = navigationBar.staticTexts[title]
+            XCTAssertTrue(navigationBar.waitForExistence(timeout: 5))
+            XCTAssertTrue(titleLabel.waitForExistence(timeout: 5))
+            XCTAssertLessThanOrEqual(
+                titleLabel.frame.midY,
+                navigationBar.frame.minY + 48,
+                "\(title) should use the compact inline title position"
+            )
+        }
+    }
+
+    @MainActor
     private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"),
