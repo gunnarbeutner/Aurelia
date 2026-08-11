@@ -45,6 +45,15 @@ enum SortOption: String, CaseIterable {
     }
 }
 
+func isLibraryLoadCancellation(_ error: Error) -> Bool {
+    if error is CancellationError {
+        return true
+    }
+
+    let nsError = error as NSError
+    return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+}
+
 struct LibraryView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
@@ -799,14 +808,11 @@ struct LibraryView: View {
 
     /// Sync library - force refresh from server
     private func syncLibrary() async {
+        guard !isSyncing else { return }
+
         await MainActor.run {
             isSyncing = true
         }
-
-        // Clear cache to force fresh fetch
-        UserDefaults.standard.removeObject(forKey: "cachedAlbums")
-        UserDefaults.standard.removeObject(forKey: "cachedArtists")
-        UserDefaults.standard.removeObject(forKey: "cachedPlaylists")
 
         // Reset pagination state
         await MainActor.run {
@@ -815,8 +821,9 @@ struct LibraryView: View {
             isLoadingMore = false
         }
 
-        // Fetch fresh data
-        await fetchAndCache()
+        // Keep the current ScrollView mounted while refreshing. Replacing it with
+        // the initial-loading view would cancel the task owned by .refreshable.
+        await fetchAndCache(showLoadingIndicator: false)
 
         await MainActor.run {
             isSyncing = false
@@ -838,23 +845,26 @@ struct LibraryView: View {
                 self.albums = decodedAlbums
                 self.artists = decodedArtists
                 self.playlists = decodedPlaylists
+                self.errorMessage = nil
                 self.isLoading = false
             }
 
             // Then fetch fresh data in background to update cache
             Task {
-                await fetchAndCache()
+                await syncLibrary()
             }
             return
         }
 
         // No cache - fetch with loading indicator
-        await fetchAndCache()
+        await fetchAndCache(showLoadingIndicator: true)
     }
 
-    private func fetchAndCache() async {
+    private func fetchAndCache(showLoadingIndicator: Bool) async {
         await MainActor.run {
-            isLoading = true
+            if showLoadingIndicator {
+                isLoading = true
+            }
             errorMessage = nil
             albumsHasMore = true
             artistsHasMore = true
@@ -893,6 +903,14 @@ struct LibraryView: View {
                 UserDefaults.standard.set(albumsData, forKey: "cachedAlbums")
                 UserDefaults.standard.set(artistsData, forKey: "cachedArtists")
                 UserDefaults.standard.set(playlistsData, forKey: "cachedPlaylists")
+            }
+        } catch where isLibraryLoadCancellation(error) {
+            // Cancellation is expected when the view goes away. It must not
+            // replace a valid library with a user-visible error state.
+            await MainActor.run {
+                if showLoadingIndicator {
+                    isLoading = false
+                }
             }
         } catch {
             await MainActor.run {

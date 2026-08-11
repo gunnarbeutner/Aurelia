@@ -63,6 +63,12 @@ struct JellyAmpTests {
         #expect(KeychainService.shared.retrieve(for: key) == value)
     }
 
+    @Test func recognizesLibraryLoadCancellationErrors() {
+        #expect(isLibraryLoadCancellation(CancellationError()))
+        #expect(isLibraryLoadCancellation(URLError(.cancelled)))
+        #expect(!isLibraryLoadCancellation(URLError(.timedOut)))
+    }
+
 }
 
 @MainActor
