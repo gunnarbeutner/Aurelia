@@ -54,6 +54,41 @@ struct JellyAmpTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test @MainActor func discoveryRestoresCachedMixesWithoutRefetching() async throws {
+        let defaultsName = "DiscoveryCacheTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        let cache = DiscoveryCache(defaults: defaults, key: "snapshot")
+        let recent = Track(
+            id: "recent",
+            name: "Recent",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 1,
+            artworkURL: nil,
+            artistId: "artist"
+        )
+        let initialAPI = FakeDiscoveryAPI()
+        let initial = DiscoveryViewModel(
+            api: initialAPI,
+            recentTracksProvider: { [recent] },
+            cache: cache
+        )
+        await initial.refresh()
+
+        let restoredAPI = FakeDiscoveryAPI()
+        let restored = DiscoveryViewModel(
+            api: restoredAPI,
+            recentTracksProvider: { [recent] },
+            cache: cache
+        )
+        await restored.loadIfNeeded()
+
+        #expect(restored.hasContent)
+        #expect(restored.shelves == initial.shelves)
+        #expect(restoredAPI.requestedMixes.isEmpty)
+    }
+
     @Test @MainActor func signedBuildCanAccessKeychain() {
         let key = "signing-verification-\(UUID().uuidString)"
         let value = UUID().uuidString

@@ -2,17 +2,50 @@
 //  DiscoveryViewModel.swift
 //  JellyAmp
 //
-//  Session-scoped recommendation shelves backed by Jellyfin Instant Mix.
+//  Persisted recommendation shelves backed by Jellyfin Instant Mix.
 //
 
 import Foundation
 import Combine
 
-struct DiscoveryShelf: Identifiable, Equatable {
+struct DiscoveryShelf: Identifiable, Codable, Equatable {
     let seed: Track
     let tracks: [Track]
 
     var id: String { seed.id }
+}
+
+struct DiscoverySnapshot: Codable, Equatable {
+    let shelves: [DiscoveryShelf]
+    let fallbackTracks: [Track]
+    let recentSignature: [String]
+    let refreshedAt: Date
+}
+
+struct DiscoveryCache {
+    private let defaults: UserDefaults
+    private let key: String
+
+    init(defaults: UserDefaults = .standard, key: String) {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    static func key(baseURL: String, userId: String?) -> String {
+        let identity = "\(baseURL.lowercased())|\(userId ?? "")"
+        let encodedIdentity = Data(identity.utf8).base64EncodedString()
+        return "discoverySnapshot.v1.\(encodedIdentity)"
+    }
+
+    func load() -> DiscoverySnapshot? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(DiscoverySnapshot.self, from: data)
+    }
+
+    func save(_ snapshot: DiscoverySnapshot) {
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        defaults.set(data, forKey: key)
+    }
 }
 
 @MainActor
@@ -26,19 +59,41 @@ final class DiscoveryViewModel: ObservableObject {
 
     private let api: any DiscoveryAPI
     private let recentTracksProvider: () -> [Track]
+    private let cache: DiscoveryCache?
     private var loadedRecentSignature: [String] = []
+    private var lastRefreshDate: Date?
     private var observedActiveAnalysis = false
+    private let cacheMaxAge: TimeInterval = 6 * 60 * 60
 
     convenience init() {
+        let service = JellyfinService.shared
         self.init(
-            api: JellyfinService.shared,
-            recentTracksProvider: { PlayerManager.shared.recentlyPlayedTracks }
+            api: service,
+            recentTracksProvider: { PlayerManager.shared.recentlyPlayedTracks },
+            cache: DiscoveryCache(
+                key: DiscoveryCache.key(
+                    baseURL: service.baseURL,
+                    userId: service.currentUserId
+                )
+            )
         )
     }
 
-    init(api: any DiscoveryAPI, recentTracksProvider: @escaping () -> [Track]) {
+    init(
+        api: any DiscoveryAPI,
+        recentTracksProvider: @escaping () -> [Track],
+        cache: DiscoveryCache? = nil
+    ) {
         self.api = api
         self.recentTracksProvider = recentTracksProvider
+        self.cache = cache
+
+        if let snapshot = cache?.load() {
+            shelves = snapshot.shelves
+            fallbackTracks = snapshot.fallbackTracks
+            loadedRecentSignature = snapshot.recentSignature
+            lastRefreshDate = snapshot.refreshedAt
+        }
     }
 
     var hasContent: Bool {
@@ -59,7 +114,10 @@ final class DiscoveryViewModel: ObservableObject {
 
     func loadIfNeeded() async {
         let signature = recentSeedCandidates().prefix(3).map(\.id)
-        guard !hasContent || signature != loadedRecentSignature else { return }
+        let cacheIsStale = lastRefreshDate.map {
+            Date().timeIntervalSince($0) >= cacheMaxAge
+        } ?? true
+        guard !hasContent || signature != loadedRecentSignature || cacheIsStale else { return }
         await refresh(force: true)
     }
 
@@ -112,7 +170,9 @@ final class DiscoveryViewModel: ObservableObject {
             shelves = newShelves
             fallbackTracks = newShelves.isEmpty ? Array(candidates.prefix(12)) : []
             loadedRecentSignature = Array(recent.prefix(3).map(\.id))
+            lastRefreshDate = Date()
             errorMessage = nil
+            saveSnapshot()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -179,6 +239,18 @@ final class DiscoveryViewModel: ObservableObject {
                 ?? track.artistName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return itemIds.insert(track.id).inserted && artistKeys.insert(artistKey).inserted
         }
+    }
+
+    private func saveSnapshot() {
+        guard let lastRefreshDate else { return }
+        cache?.save(
+            DiscoverySnapshot(
+                shelves: shelves,
+                fallbackTracks: fallbackTracks,
+                recentSignature: loadedRecentSignature,
+                refreshedAt: lastRefreshDate
+            )
+        )
     }
 }
 
