@@ -175,15 +175,19 @@ struct AlbumDetailView: View {
         withAnimation(.spring(response: 0.3)) {
             isFavorite.toggle()
         }
+        let updatedFavoriteValue = isFavorite
 
         // Call API in background
         Task {
             do {
-                if isFavorite {
+                if updatedFavoriteValue {
                     try await jellyfinService.markFavorite(itemId: album.id)
                 } else {
                     try await jellyfinService.unmarkFavorite(itemId: album.id)
                 }
+                FavoriteMutationCenter.shared.publish(
+                    .album(album, isFavorite: updatedFavoriteValue)
+                )
             } catch {
                 // Revert on failure
                 await MainActor.run {

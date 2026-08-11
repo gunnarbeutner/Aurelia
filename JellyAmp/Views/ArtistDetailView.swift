@@ -195,15 +195,19 @@ struct ArtistDetailView: View {
         withAnimation(.spring(response: 0.3)) {
             isFavorite.toggle()
         }
+        let updatedFavoriteValue = isFavorite
 
         // Call API in background
         Task {
             do {
-                if isFavorite {
+                if updatedFavoriteValue {
                     try await jellyfinService.markFavorite(itemId: artist.id)
                 } else {
                     try await jellyfinService.unmarkFavorite(itemId: artist.id)
                 }
+                FavoriteMutationCenter.shared.publish(
+                    .artist(artist, isFavorite: updatedFavoriteValue)
+                )
             } catch {
                 // Revert on failure
                 await MainActor.run {

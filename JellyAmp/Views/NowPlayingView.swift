@@ -587,18 +587,22 @@ struct NowPlayingView: View {
         withAnimation(.spring(response: 0.3)) {
             isFavorite.toggle()
         }
+        let updatedFavoriteValue = isFavorite
 
         Task {
             do {
-                if isFavorite {
+                if updatedFavoriteValue {
                     try await jellyfinService.markFavorite(itemId: currentTrack.id)
                 } else {
                     try await jellyfinService.unmarkFavorite(itemId: currentTrack.id)
                 }
                 let currentIndex = playerManager.currentIndex
                 if currentIndex < playerManager.queue.count {
-                    playerManager.queue[currentIndex].isFavorite = isFavorite
+                    playerManager.queue[currentIndex].isFavorite = updatedFavoriteValue
                 }
+                FavoriteMutationCenter.shared.publish(
+                    .track(currentTrack, isFavorite: updatedFavoriteValue)
+                )
             } catch {
                 await MainActor.run {
                     withAnimation(.spring(response: 0.3)) {

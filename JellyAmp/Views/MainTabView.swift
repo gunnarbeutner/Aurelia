@@ -48,7 +48,7 @@ struct MainTabView: View {
                 .tag(2)
                 
                 NavigationStack {
-                    FavoritesView()
+                    FavoritesView(isActive: selectedTab == 3)
                 }
                 .tabItem {
                     Label("Favorites", systemImage: "heart.fill")

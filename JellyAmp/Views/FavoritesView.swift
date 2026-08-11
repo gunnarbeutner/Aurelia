@@ -8,18 +8,21 @@
 import SwiftUI
 
 struct FavoritesView: View {
-    @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject private var mutationCenter = FavoriteMutationCenter.shared
+    @StateObject private var viewModel: FavoritesViewModel
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
 
-    @State private var favoriteTracks: [Track] = []
-    @State private var favoriteAlbums: [Album] = []
-    @State private var favoriteArtists: [Artist] = []
-    @State private var isLoading = true
-    @State private var errorMessage: String?
     @State private var selectedFilter = "All"
+    let isActive: Bool
 
     private let filters = ["All", "Artists", "Albums", "Tracks"]
+
+    init(isActive: Bool = true) {
+        self.isActive = isActive
+        _viewModel = StateObject(wrappedValue: FavoritesViewModel())
+    }
 
     private var columns: [GridItem] {
         sizeClass == .regular
@@ -32,7 +35,7 @@ struct FavoritesView: View {
             Color.jellyAmpBackground
                 .ignoresSafeArea()
 
-            if isLoading {
+            if viewModel.isInitialLoading {
                 VStack(spacing: 16) {
                     ProgressView()
                         .tint(.neonPink)
@@ -41,58 +44,19 @@ struct FavoritesView: View {
                         .font(.jellyAmpBody)
                         .foregroundColor(.jellyAmpTextSecondary)
                 }
-            } else if let error = errorMessage {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundColor(.neonPink)
-                    Text("Error Loading Favorites")
-                        .font(.jellyAmpHeadline)
-                        .foregroundColor(Color.jellyAmpText)
-                    Text(error)
-                        .font(.jellyAmpBody)
-                        .foregroundColor(.jellyAmpTextSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                    Button("Try Again") {
-                        Task { await fetchFavorites() }
-                    }
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.neonPink))
-                }
-            } else if favoriteTracks.isEmpty && favoriteAlbums.isEmpty && favoriteArtists.isEmpty {
-                emptyStateView
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Header
-                        headerSection
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 16)
-
-                        // Filter pills
-                        filterPills
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 24)
-
-                        // Sections
-                        VStack(alignment: .leading, spacing: 32) {
-                            if showArtists {
-                                artistsSection
-                            }
-                            if showAlbums {
-                                albumsSection
-                            }
-                            if showTracks {
-                                tracksSection
-                            }
-                        }
-                        .padding(.horizontal, 20)
-
-                        Color.clear.frame(height: 100)
+                    if let error = viewModel.initialErrorMessage {
+                        errorStateView(error)
+                    } else if viewModel.isEmpty {
+                        emptyStateView
+                    } else {
+                        favoritesContent
                     }
+                }
+                .scrollBounceBehavior(.always)
+                .refreshable {
+                    await viewModel.refresh()
                 }
             }
         }
@@ -105,13 +69,31 @@ struct FavoritesView: View {
         .navigationTitle("Favorites")
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
-            if favoriteTracks.isEmpty && favoriteAlbums.isEmpty && favoriteArtists.isEmpty {
-                Task { await fetchFavorites() }
+            if isActive {
+                Task { await viewModel.activate() }
             }
+        }
+        .onChange(of: isActive) { _, active in
+            guard active else { return }
+            Task { await viewModel.activate() }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                viewModel.markStale()
+            } else if newPhase == .active && isActive {
+                Task { await viewModel.activate() }
+            }
+        }
+        .onReceive(mutationCenter.$latestEvent) { event in
+            guard let event else { return }
+            viewModel.apply(event.mutation)
         }
     }
 
     // MARK: - Computed
+    private var favoriteTracks: [Track] { viewModel.tracks }
+    private var favoriteAlbums: [Album] { viewModel.albums }
+    private var favoriteArtists: [Artist] { viewModel.artists }
     private var showArtists: Bool { selectedFilter == "All" || selectedFilter == "Artists" }
     private var showAlbums: Bool { selectedFilter == "All" || selectedFilter == "Albums" }
     private var showTracks: Bool { selectedFilter == "All" || selectedFilter == "Tracks" }
@@ -119,11 +101,44 @@ struct FavoritesView: View {
     // MARK: - Header
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if !isLoading {
-                Text("\(favoriteArtists.count) artists · \(favoriteAlbums.count) albums · \(favoriteTracks.count) tracks")
-                    .font(.jellyAmpMono)
+            Text("\(favoriteArtists.count) artists · \(favoriteAlbums.count) albums · \(favoriteTracks.count) tracks")
+                .font(.jellyAmpMono)
+                .foregroundColor(.jellyAmpTextSecondary)
+        }
+    }
+
+    private var favoritesContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let revalidationError = viewModel.revalidationErrorMessage {
+                Label(revalidationError, systemImage: "exclamationmark.triangle")
+                    .font(.jellyAmpCaption)
                     .foregroundColor(.jellyAmpTextSecondary)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
             }
+
+            headerSection
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+
+            filterPills
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+
+            VStack(alignment: .leading, spacing: 32) {
+                if showArtists {
+                    artistsSection
+                }
+                if showAlbums {
+                    albumsSection
+                }
+                if showTracks {
+                    tracksSection
+                }
+            }
+            .padding(.horizontal, 20)
+
+            Color.clear.frame(height: 100)
         }
     }
 
@@ -285,46 +300,35 @@ struct FavoritesView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 120)
+        .padding(.bottom, 260)
     }
 
-    // MARK: - Fetch
-    private func fetchFavorites() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            let items = try await jellyfinService.fetchFavorites(includeItemTypes: "Audio,MusicAlbum,MusicArtist")
-            let baseURL = jellyfinService.baseURL
-
-            var tracks: [Track] = []
-            var albums: [Album] = []
-            var artists: [Artist] = []
-
-            for item in items {
-                switch item.Type {
-                case .Audio:
-                    tracks.append(Track(from: item, baseURL: baseURL))
-                case .MusicAlbum:
-                    albums.append(Album(from: item, baseURL: baseURL))
-                case .MusicArtist:
-                    artists.append(Artist(from: item, baseURL: baseURL))
-                default:
-                    break
-                }
+    private func errorStateView(_ error: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundColor(.neonPink)
+            Text("Error Loading Favorites")
+                .font(.jellyAmpHeadline)
+                .foregroundColor(Color.jellyAmpText)
+            Text(error)
+                .font(.jellyAmpBody)
+                .foregroundColor(.jellyAmpTextSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            Button("Try Again") {
+                Task { await viewModel.refresh() }
             }
-
-            await MainActor.run {
-                self.favoriteTracks = tracks.sorted { $0.artistName < $1.artistName }
-                self.favoriteAlbums = albums.sorted { $0.artistName < $1.artistName }
-                self.favoriteArtists = artists.sorted { $0.name < $1.name }
-                self.isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = error.localizedDescription
-                self.isLoading = false
-            }
+            .foregroundColor(.black)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(Capsule().fill(Color.neonPink))
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 120)
+        .padding(.bottom, 260)
     }
 }
 

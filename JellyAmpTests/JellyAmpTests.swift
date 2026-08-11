@@ -184,6 +184,97 @@ struct JellyAmpTests {
         #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
     }
 
+    @Test @MainActor func favoritesRevalidatesWhenStaleOrExpiredAndPTRAlwaysRefreshes() async {
+        var currentDate = Date(timeIntervalSince1970: 1_000)
+        var fetchCount = 0
+        let expected = Self.favoriteSnapshot(id: "one")
+        let viewModel = FavoritesViewModel(
+            revalidationInterval: 300,
+            now: { currentDate },
+            fetcher: {
+                fetchCount += 1
+                return expected
+            }
+        )
+
+        await viewModel.activate()
+        await viewModel.activate()
+        #expect(fetchCount == 1)
+
+        currentDate = currentDate.addingTimeInterval(301)
+        await viewModel.activate()
+        #expect(fetchCount == 2)
+
+        await viewModel.refresh()
+        #expect(fetchCount == 3)
+
+        viewModel.markStale()
+        await viewModel.activate()
+        #expect(fetchCount == 4)
+    }
+
+    @Test @MainActor func favoriteMutationsUpdateTheVisibleSnapshotIncrementally() {
+        let viewModel = FavoritesViewModel(fetcher: { .empty })
+        let track = Track(
+            id: "track",
+            name: "Track",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 1,
+            artworkURL: nil
+        )
+        let album = Album(
+            id: "album",
+            name: "Album",
+            artistName: "Artist",
+            artistId: "artist",
+            year: 2026,
+            artworkURL: nil
+        )
+        let artist = Artist(
+            id: "artist",
+            name: "Artist",
+            bio: nil,
+            albumCount: 1,
+            artworkURL: nil
+        )
+
+        viewModel.apply(.track(track, isFavorite: true))
+        viewModel.apply(.album(album, isFavorite: true))
+        viewModel.apply(.artist(artist, isFavorite: true))
+
+        #expect(viewModel.tracks.map(\.id) == ["track"])
+        #expect(viewModel.albums.map(\.id) == ["album"])
+        #expect(viewModel.artists.map(\.id) == ["artist"])
+        #expect(viewModel.tracks.first?.isFavorite == true)
+
+        viewModel.apply(.track(track, isFavorite: false))
+        viewModel.apply(.album(album, isFavorite: false))
+        viewModel.apply(.artist(artist, isFavorite: false))
+
+        #expect(viewModel.isEmpty)
+    }
+
+    @Test @MainActor func failedFavoritesRevalidationKeepsExistingContent() async {
+        var shouldFail = false
+        let expected = Self.favoriteSnapshot(id: "kept")
+        let viewModel = FavoritesViewModel(fetcher: {
+            if shouldFail {
+                throw FavoritesTestError.failed
+            }
+            return expected
+        })
+
+        await viewModel.activate()
+        shouldFail = true
+        viewModel.markStale()
+        await viewModel.activate()
+
+        #expect(viewModel.snapshot == expected)
+        #expect(viewModel.initialErrorMessage == nil)
+        #expect(viewModel.revalidationErrorMessage != nil)
+    }
+
     @Test @MainActor func signedBuildCanAccessKeychain() {
         let key = "signing-verification-\(UUID().uuidString)"
         let value = UUID().uuidString
@@ -192,6 +283,28 @@ struct JellyAmpTests {
         KeychainService.shared.store(value, for: key)
 
         #expect(KeychainService.shared.retrieve(for: key) == value)
+    }
+
+    private static func favoriteSnapshot(id: String) -> FavoritesSnapshot {
+        FavoritesSnapshot(
+            tracks: [
+                Track(
+                    id: id,
+                    name: "Favorite",
+                    artistName: "Artist",
+                    albumName: "Album",
+                    duration: 1,
+                    artworkURL: nil,
+                    isFavorite: true
+                )
+            ],
+            albums: [],
+            artists: []
+        )
+    }
+
+    private enum FavoritesTestError: Error {
+        case failed
     }
 
     @Test func recognizesLibraryLoadCancellationErrors() {
