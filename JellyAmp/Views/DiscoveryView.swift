@@ -70,6 +70,10 @@ struct DiscoveryView: View {
                     inlineMessage(message)
                 }
 
+                if !viewModel.recentTracks.isEmpty {
+                    recentPlaysShelf
+                }
+
                 if !viewModel.shelves.isEmpty {
                     mixesShelf
                 }
@@ -135,6 +139,17 @@ struct DiscoveryView: View {
                 .font(.jellyAmpCaption)
                 .foregroundColor(.jellyAmpTextSecondary)
                 .padding(.horizontal, 20)
+        }
+    }
+
+    private var recentPlaysShelf: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Recently Played")
+                .font(.jellyAmpTitle)
+                .foregroundColor(.jellyAmpText)
+                .padding(.horizontal, 20)
+
+            trackScroller(viewModel.recentTracks)
         }
     }
 

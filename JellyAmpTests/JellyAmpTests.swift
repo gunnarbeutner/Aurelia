@@ -42,6 +42,7 @@ struct JellyAmpTests {
 
         #expect(viewModel.shelves.map(\.seed.id) == ["recent-a", "recent-b", "favorite-c"])
         #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-a", "recent-a2", "recent-b"])
     }
 
     @Test func discoveryMixUsesTheSeedArtistAndListsOtherArtistsOnce() {
@@ -123,6 +124,7 @@ struct JellyAmpTests {
 
         await viewModel.refresh()
         #expect(viewModel.shelves.first?.seed.id == "recent-a")
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
 
         recent = [
             Track(
@@ -138,10 +140,12 @@ struct JellyAmpTests {
         await viewModel.loadIfNeeded(publishResult: false)
 
         #expect(viewModel.shelves.first?.seed.id == "recent-a")
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
 
         await viewModel.activate()
 
         #expect(viewModel.shelves.first?.seed.id == "recent-b")
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
     }
 
     @Test @MainActor func discoveryExplicitRefreshPublishesStagedChangesImmediately() async {
@@ -177,6 +181,7 @@ struct JellyAmpTests {
         await viewModel.refresh()
 
         #expect(viewModel.shelves.first?.seed.id == "recent-b")
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
     }
 
     @Test @MainActor func signedBuildCanAccessKeychain() {

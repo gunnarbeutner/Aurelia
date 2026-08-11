@@ -40,6 +40,7 @@ struct DiscoveryShelf: Identifiable, Codable, Equatable {
 struct DiscoverySnapshot: Codable, Equatable {
     let shelves: [DiscoveryShelf]
     let fallbackTracks: [Track]
+    let recentTracks: [Track]?
     let recentSignature: [String]
     let refreshedAt: Date
 }
@@ -74,6 +75,7 @@ struct DiscoveryCache {
 final class DiscoveryViewModel: ObservableObject {
     @Published private(set) var shelves: [DiscoveryShelf] = []
     @Published private(set) var fallbackTracks: [Track] = []
+    @Published private(set) var recentTracks: [Track] = []
     @Published private(set) var availability: AudioMuseAvailability = .checking
     @Published private(set) var isLoading = false
     @Published private(set) var isRefreshing = false
@@ -112,10 +114,12 @@ final class DiscoveryViewModel: ObservableObject {
         self.api = api
         self.recentTracksProvider = recentTracksProvider
         self.cache = cache
+        recentTracks = Self.uniqueRecentTracks(recentTracksProvider())
 
         if let snapshot = cache?.load() {
             shelves = snapshot.shelves
             fallbackTracks = snapshot.fallbackTracks
+            recentTracks = snapshot.recentTracks ?? recentTracks
             loadedRecentSignature = snapshot.recentSignature
             lastRefreshDate = snapshot.refreshedAt
         }
@@ -142,7 +146,7 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     func loadIfNeeded(publishResult: Bool = true) async {
-        let signature = recentSeedCandidates().prefix(3).map(\.id)
+        let signature = Self.uniqueRecentTracks(recentTracksProvider()).prefix(12).map(\.id)
         let freshestSignature = pendingSnapshot?.recentSignature ?? loadedRecentSignature
         let freshestRefreshDate = pendingSnapshot?.refreshedAt ?? lastRefreshDate
         let cacheIsStale = freshestRefreshDate.map {
@@ -182,7 +186,8 @@ final class DiscoveryViewModel: ObservableObject {
         }
 
         do {
-            let recent = recentSeedCandidates()
+            let recentTracks = Self.uniqueRecentTracks(recentTracksProvider())
+            let recent = uniqueSeeds(recentTracks)
             async let favoriteTracks = fetchFavoriteSeedTracks()
             async let randomTracks = fetchRandomSeedTracks()
             let fetchedSeeds = await (favoriteTracks, randomTracks)
@@ -215,7 +220,8 @@ final class DiscoveryViewModel: ObservableObject {
             let snapshot = DiscoverySnapshot(
                 shelves: newShelves,
                 fallbackTracks: newShelves.isEmpty ? Array(candidates.prefix(12)) : [],
-                recentSignature: Array(recent.prefix(3).map(\.id)),
+                recentTracks: Array(recentTracks.prefix(12)),
+                recentSignature: Array(recentTracks.prefix(12).map(\.id)),
                 refreshedAt: Date()
             )
 
@@ -270,6 +276,11 @@ final class DiscoveryViewModel: ObservableObject {
         uniqueSeeds(recentTracksProvider())
     }
 
+    private static func uniqueRecentTracks(_ tracks: [Track]) -> [Track] {
+        var itemIds = Set<String>()
+        return tracks.filter { itemIds.insert($0.id).inserted }
+    }
+
     private func fetchFavoriteSeedTracks() async -> [Track] {
         do {
             return try await api.fetchFavoriteTracks(limit: 12)
@@ -309,6 +320,7 @@ final class DiscoveryViewModel: ObservableObject {
     private func apply(_ snapshot: DiscoverySnapshot) {
         shelves = snapshot.shelves
         fallbackTracks = snapshot.fallbackTracks
+        recentTracks = snapshot.recentTracks ?? recentTracks
         loadedRecentSignature = snapshot.recentSignature
         lastRefreshDate = snapshot.refreshedAt
     }
