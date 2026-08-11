@@ -7,6 +7,10 @@
 
 import SwiftUI
 
+enum PlayerPresentationMotion {
+    static let animation = Animation.spring(response: 0.42, dampingFraction: 0.88)
+}
+
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showNowPlaying = false
@@ -15,7 +19,6 @@ struct MainTabView: View {
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var navCoordinator = NavigationCoordinator.shared
     @ObservedObject var instantMixCoordinator = InstantMixCoordinator.shared
-    @Namespace private var playerAnimation
 
     var body: some View {
         ZStack {
@@ -63,33 +66,40 @@ struct MainTabView: View {
             .tint(.jellyAmpAccent)
             #if targetEnvironment(macCatalyst)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if playerManager.currentTrack != nil && !showNowPlaying {
-                    MiniPlayerView(showNowPlaying: $showNowPlaying, namespace: playerAnimation)
+                if playerManager.currentTrack != nil {
+                    MiniPlayerView(showNowPlaying: $showNowPlaying)
                         .padding(.horizontal, 8)
                         .padding(.top, 8)
+                        .allowsHitTesting(!showNowPlaying)
+                        .accessibilityHidden(showNowPlaying)
                 }
             }
             #else
             .overlay(alignment: .bottom) {
                 // Mini Player floats above the iOS tab bar.
-                if playerManager.currentTrack != nil && !showNowPlaying {
-                    MiniPlayerView(showNowPlaying: $showNowPlaying, namespace: playerAnimation)
+                if playerManager.currentTrack != nil {
+                    MiniPlayerView(showNowPlaying: $showNowPlaying)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 56)
+                        .allowsHitTesting(!showNowPlaying)
+                        .accessibilityHidden(showNowPlaying)
                 }
             }
             #endif
             
-            // Now Playing View as overlay with swipe-to-dismiss
-            if showNowPlaying {
-                NowPlayingDismissWrapper {
-                    showNowPlaying = false
-                } content: {
-                    NowPlayingView(namespace: playerAnimation, onDismiss: {
-                        showNowPlaying = false
-                    })
+            // Keep the player mounted and animate one intact layer. Conditional
+            // removal transitions can leave a departing layer intercepting taps.
+            if playerManager.currentTrack != nil {
+                GeometryReader { geometry in
+                    NowPlayingView(onDismiss: dismissNowPlaying)
+                        .offset(
+                            y: showNowPlaying
+                                ? 0
+                                : geometry.size.height + geometry.safeAreaInsets.bottom
+                        )
                 }
-                .transition(.move(edge: .bottom))
+                .allowsHitTesting(showNowPlaying)
+                .accessibilityHidden(!showNowPlaying)
                 .zIndex(1)
             }
 
@@ -109,7 +119,6 @@ struct MainTabView: View {
                 .zIndex(2)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showNowPlaying)
         .alert("Instant Mix", isPresented: instantMixErrorBinding) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -135,7 +144,21 @@ struct MainTabView: View {
         }
         .onChange(of: navCoordinator.nowPlayingPresentationRequest) { _, request in
             guard request != nil else { return }
+            presentNowPlaying()
+        }
+    }
+
+    private func presentNowPlaying() {
+        guard !showNowPlaying else { return }
+        withAnimation(PlayerPresentationMotion.animation) {
             showNowPlaying = true
+        }
+    }
+
+    private func dismissNowPlaying() {
+        guard showNowPlaying else { return }
+        withAnimation(PlayerPresentationMotion.animation) {
+            showNowPlaying = false
         }
     }
 
@@ -148,37 +171,6 @@ struct MainTabView: View {
                 }
             }
         )
-    }
-}
-
-// MARK: - Swipe-to-Dismiss Wrapper
-struct NowPlayingDismissWrapper<Content: View>: View {
-    let onDismiss: () -> Void
-    @ViewBuilder let content: () -> Content
-    @State private var dragOffset: CGFloat = 0
-
-    var body: some View {
-        content()
-            .offset(y: max(0, dragOffset))
-            .gesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        // Only allow downward drag
-                        if value.translation.height > 0 {
-                            dragOffset = value.translation.height
-                        }
-                    }
-                    .onEnded { value in
-                        if value.translation.height > 150 || value.predictedEndTranslation.height > 300 {
-                            // Dismiss
-                            onDismiss()
-                        }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            dragOffset = 0
-                        }
-                    }
-            )
-            .animation(.interactiveSpring(), value: dragOffset)
     }
 }
 

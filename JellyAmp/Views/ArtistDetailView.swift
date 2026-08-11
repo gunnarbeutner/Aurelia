@@ -40,7 +40,6 @@ struct ArtistDetailView: View {
         artist.artworkURL ?? wikiImageURL
     }
     @State private var isFavorite: Bool
-    @Namespace private var playerAnimation
 
     init(artist: Artist) {
         self.artist = artist
@@ -110,7 +109,7 @@ struct ArtistDetailView: View {
             AlbumDetailView(album: album)
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
-            NowPlayingView(namespace: playerAnimation)
+            NowPlayingView()
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
         .onChange(of: selectedPhotoItem) { _, newItem in

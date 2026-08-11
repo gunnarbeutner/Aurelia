@@ -68,6 +68,44 @@ final class JellyAmpUITests: XCTestCase {
     }
 
     @MainActor
+    func testMiniPlayerAndNowPlayingPresentationCycle() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-layout"]
+        app.launch()
+
+        let discoveryTrack = app.buttons["discovery-track-ui-layout-track"]
+        XCTAssertTrue(discoveryTrack.waitForExistence(timeout: 5))
+        discoveryTrack.tap()
+
+        let closeButton = app.buttons["now-playing-close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+        closeButton.tap()
+
+        let miniPlayer = app.buttons["mini-player"]
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+        miniPlayer.tap()
+
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+        let artwork = app.descendants(matching: .any)["now-playing-artwork"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 5))
+        XCTAssertEqual(artwork.frame.midX, app.windows.firstMatch.frame.midX, accuracy: 2)
+
+        closeButton.tap()
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+    }
+
+    @MainActor
+    private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
     func testAlbumDetailWithArtworkStaysInsideViewport() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-album-layout"]

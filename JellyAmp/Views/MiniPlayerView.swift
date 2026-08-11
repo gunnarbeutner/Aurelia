@@ -11,7 +11,6 @@ struct MiniPlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
     @Binding var showNowPlaying: Bool
-    var namespace: Namespace.ID
 
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     @State private var isCollapsed = false
@@ -86,29 +85,39 @@ struct MiniPlayerView: View {
 
             // Main row
             HStack(spacing: 12) {
-                // Artwork
-                miniPlayerArtwork(for: currentTrack)
+                Button(action: presentNowPlaying) {
+                    HStack(spacing: 12) {
+                        // Artwork
+                        miniPlayerArtwork(for: currentTrack)
 
-                // Track info
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(currentTrack.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.jellyAmpText)
-                        .lineLimit(1)
+                        // Track info
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(currentTrack.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.jellyAmpText)
+                                .lineLimit(1)
 
-                    Text(currentTrack.artistName)
-                        .font(.system(size: 13))
-                        .foregroundColor(.jellyAmpTextSecondary)
-                        .lineLimit(1)
+                            Text(currentTrack.artistName)
+                                .font(.system(size: 13))
+                                .foregroundColor(.jellyAmpTextSecondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        // Sleep timer indicator
+                        if sleepTimer.isActive {
+                            Image(systemName: "moon.zzz.fill")
+                                .font(.caption2)
+                                .foregroundColor(.jellyAmpAccent)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Sleep timer indicator
-                if sleepTimer.isActive {
-                    Image(systemName: "moon.zzz.fill")
-                        .font(.caption2)
-                        .foregroundColor(.jellyAmpAccent)
-                }
+                .accessibilityIdentifier("mini-player")
+                .accessibilityLabel("Now playing: \(currentTrack.name) by \(currentTrack.artistName)")
+                .accessibilityHint("Tap for full player")
 
                 // Play/pause — solid gradient circle like PWA
                 Button {
@@ -137,21 +146,13 @@ struct MiniPlayerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(minHeight: 56)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                showNowPlaying = true
-            }
         }
         .background(
             Color(hex: "0C0C12").opacity(0.88)
                 .background(.ultraThinMaterial)
         )
-        .matchedGeometryEffect(id: "playerBg", in: namespace)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Now playing: \(currentTrack.name) by \(currentTrack.artistName)")
-        .accessibilityHint("Tap for full player. Swipe down to minimize.")
         .offset(x: max(0, dragOffset))
-        .gesture(
+        .simultaneousGesture(
             DragGesture(minimumDistance: 15)
                 .onChanged { value in
                     if value.translation.width > 0 {
@@ -171,11 +172,16 @@ struct MiniPlayerView: View {
                     }
                 }
         )
-        .transition(.move(edge: .bottom).combined(with: .opacity))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.currentTrack?.id)
     }
 
     // MARK: - Helpers
+
+    private func presentNowPlaying() {
+        withAnimation(PlayerPresentationMotion.animation) {
+            showNowPlaying = true
+        }
+    }
 
     private var miniPlayerProgress: Double {
         guard playerManager.duration > 0 else { return 0 }
@@ -200,19 +206,16 @@ struct MiniPlayerView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
         .shadow(color: .jellyAmpAccent.opacity(0.08), radius: 10, y: 0)
-        .matchedGeometryEffect(id: "albumArt", in: namespace)
     }
 }
 
 // MARK: - Preview
 #Preview {
     struct PreviewWrapper: View {
-        @Namespace private var namespace
-
         var body: some View {
             VStack {
                 Spacer()
-                MiniPlayerView(showNowPlaying: .constant(false), namespace: namespace)
+                MiniPlayerView(showNowPlaying: .constant(false))
             }
             .background(Color.jellyAmpBackground)
         }

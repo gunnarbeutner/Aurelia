@@ -34,7 +34,6 @@ struct NowPlayingView: View {
     @State private var artworkImage: Image?
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     @State private var dragOffset: CGFloat = 0
-    var namespace: Namespace.ID
     var onDismiss: (() -> Void)?
 
     var body: some View {
@@ -152,7 +151,6 @@ struct NowPlayingView: View {
                     .animation(.easeInOut(duration: 0.8), value: dominantColor != nil)
             }
         }
-        .matchedGeometryEffect(id: "playerBg", in: namespace)
     }
 
     // MARK: - Top Bar
@@ -233,10 +231,8 @@ struct NowPlayingView: View {
                     }
                 }
                 .frame(width: artSize, height: artSize)
-                .matchedGeometryEffect(id: "albumArt", in: namespace)
             } else {
                 placeholderArtwork(size: artSize)
-                    .matchedGeometryEffect(id: "albumArt", in: namespace)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -655,9 +651,8 @@ struct AirPlayButton: UIViewRepresentable {
 // MARK: - Preview
 #Preview {
     struct PreviewWrapper: View {
-        @Namespace private var namespace
         var body: some View {
-            NowPlayingView(namespace: namespace)
+            NowPlayingView()
         }
     }
     return PreviewWrapper()
