@@ -1,0 +1,1523 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		7A1C00012F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		7A1C00042F40000100DB0001 /* GRDB in Frameworks (Watch) */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		7A1C00052F40000100DB0001 /* GRDB in Frameworks (Watch Tests) */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		6D1D0D042F3A7AA100995579 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D032F3A7AA100995579 /* WidgetKit.framework */; };
+		6D1D0D062F3A7AA100995579 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D052F3A7AA100995579 /* SwiftUI.framework */; };
+		6D1D0D112F3A7AA200995579 /* AureliaComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4BEDE7812EA2B834001E8050 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4BEDE7722EA2B830001E8050;
+			remoteInfo = Aurelia;
+		};
+		4BEDE78B2EA2B834001E8050 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4BEDE7722EA2B830001E8050;
+			remoteInfo = Aurelia;
+		};
+		4BEDE7AE2EA2BA6A001E8050 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4BEDE7A12EA2BA6A001E8050;
+			remoteInfo = AureliaKit;
+		};
+		4BEDE7B02EA2BA6A001E8050 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4BEDE7722EA2B830001E8050;
+			remoteInfo = Aurelia;
+		};
+		6D1D0D0F2F3A7AA200995579 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6D1D0D002F3A7AA100995579;
+			remoteInfo = AureliaComplicationExtension;
+		};
+		7A1C00062F40000100DB0001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
+			remoteInfo = "Aurelia Watch";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4BEDE7BC2EA2BA6B001E8050 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7E82EA2BECB001E8050 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6D1D0D122F3A7AA200995579 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				6D1D0D112F3A7AA200995579 /* AureliaComplicationExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		4BEDE7732EA2B830001E8050 /* Aurelia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aurelia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE7802EA2B834001E8050 /* AureliaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE78A2EA2B834001E8050 /* AureliaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE7A22EA2BA6A001E8050 /* AureliaKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AureliaKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE7AC2EA2BA6A001E8050 /* AureliaKitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Aurelia Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE7D02EA2BECB001E8050 /* Aurelia WatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Aurelia WatchTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BEDE7DA2EA2BECB001E8050 /* Aurelia WatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Aurelia WatchUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AureliaComplicationExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		6D1D0D032F3A7AA100995579 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		6D1D0D052F3A7AA100995579 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		6D1D0D172F3A7E7D00995579 /* AureliaComplicationExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AureliaComplicationExtension.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4B9DF7822EA3B70C001F788A /* Exceptions for "Aurelia" folder in "Aurelia" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 4BEDE7722EA2B830001E8050 /* Aurelia */;
+		};
+		6D1D0D162F3A7AA200995579 /* Exceptions for "AureliaComplication" folder in "AureliaComplicationExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6D1D0D002F3A7AA100995579 /* AureliaComplicationExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4BEDE7752EA2B830001E8050 /* Aurelia */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4B9DF7822EA3B70C001F788A /* Exceptions for "Aurelia" folder in "Aurelia" target */,
+			);
+			path = Aurelia;
+			sourceTree = "<group>";
+		};
+		4BEDE7832EA2B834001E8050 /* AureliaTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AureliaTests;
+			sourceTree = "<group>";
+		};
+		4BEDE78D2EA2B834001E8050 /* AureliaUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AureliaUITests;
+			sourceTree = "<group>";
+		};
+		4BEDE7A32EA2BA6A001E8050 /* AureliaKit */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AureliaKit;
+			sourceTree = "<group>";
+		};
+		4BEDE7B22EA2BA6A001E8050 /* AureliaKitTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AureliaKitTests;
+			sourceTree = "<group>";
+		};
+		4BEDE7C52EA2BEC6001E8050 /* Aurelia Watch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Aurelia Watch";
+			sourceTree = "<group>";
+		};
+		4BEDE7D32EA2BECB001E8050 /* Aurelia WatchTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Aurelia WatchTests";
+			sourceTree = "<group>";
+		};
+		4BEDE7DD2EA2BECB001E8050 /* Aurelia WatchUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Aurelia WatchUITests";
+			sourceTree = "<group>";
+		};
+		6D1D0D072F3A7AA100995579 /* AureliaComplication */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6D1D0D162F3A7AA200995579 /* Exceptions for "AureliaComplication" folder in "AureliaComplicationExtension" target */,
+			);
+			path = AureliaComplication;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4BEDE7702EA2B830001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A1C00012F40000100DB0001 /* GRDB in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE77D2EA2B834001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7872EA2B834001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE79F2EA2BA6A001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7A92EA2BA6A001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7C12EA2BEC6001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A1C00042F40000100DB0001 /* GRDB in Frameworks (Watch) */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7CD2EA2BECB001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A1C00052F40000100DB0001 /* GRDB in Frameworks (Watch Tests) */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7D72EA2BECB001E8050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6D1D0CFE2F3A7AA100995579 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6D1D0D062F3A7AA100995579 /* SwiftUI.framework in Frameworks */,
+				6D1D0D042F3A7AA100995579 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4BEDE76A2EA2B830001E8050 = {
+			isa = PBXGroup;
+			children = (
+				6D1D0D172F3A7E7D00995579 /* AureliaComplicationExtension.entitlements */,
+				4BEDE7752EA2B830001E8050 /* Aurelia */,
+				4BEDE7832EA2B834001E8050 /* AureliaTests */,
+				4BEDE78D2EA2B834001E8050 /* AureliaUITests */,
+				4BEDE7A32EA2BA6A001E8050 /* AureliaKit */,
+				4BEDE7B22EA2BA6A001E8050 /* AureliaKitTests */,
+				4BEDE7C52EA2BEC6001E8050 /* Aurelia Watch */,
+				4BEDE7D32EA2BECB001E8050 /* Aurelia WatchTests */,
+				4BEDE7DD2EA2BECB001E8050 /* Aurelia WatchUITests */,
+				6D1D0D072F3A7AA100995579 /* AureliaComplication */,
+				6D1D0D022F3A7AA100995579 /* Frameworks */,
+				4BEDE7742EA2B830001E8050 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4BEDE7742EA2B830001E8050 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4BEDE7732EA2B830001E8050 /* Aurelia.app */,
+				4BEDE7802EA2B834001E8050 /* AureliaTests.xctest */,
+				4BEDE78A2EA2B834001E8050 /* AureliaUITests.xctest */,
+				4BEDE7A22EA2BA6A001E8050 /* AureliaKit.framework */,
+				4BEDE7AC2EA2BA6A001E8050 /* AureliaKitTests.xctest */,
+				4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */,
+				4BEDE7D02EA2BECB001E8050 /* Aurelia WatchTests.xctest */,
+				4BEDE7DA2EA2BECB001E8050 /* Aurelia WatchUITests.xctest */,
+				6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6D1D0D022F3A7AA100995579 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				6D1D0D032F3A7AA100995579 /* WidgetKit.framework */,
+				6D1D0D052F3A7AA100995579 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		4BEDE79D2EA2BA6A001E8050 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		4BEDE7722EA2B830001E8050 /* Aurelia */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7942EA2B834001E8050 /* Build configuration list for PBXNativeTarget "Aurelia" */;
+			buildPhases = (
+				4BEDE76F2EA2B830001E8050 /* Sources */,
+				4BEDE7702EA2B830001E8050 /* Frameworks */,
+				4BEDE7712EA2B830001E8050 /* Resources */,
+				4BEDE7BC2EA2BA6B001E8050 /* Embed Frameworks */,
+				4BEDE7E82EA2BECB001E8050 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7752EA2B830001E8050 /* Aurelia */,
+			);
+			name = Aurelia;
+			packageProductDependencies = (
+				7A1C00032F40000100DB0001 /* GRDB */,
+			);
+			productName = Aurelia;
+			productReference = 4BEDE7732EA2B830001E8050 /* Aurelia.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4BEDE77F2EA2B834001E8050 /* AureliaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7972EA2B834001E8050 /* Build configuration list for PBXNativeTarget "AureliaTests" */;
+			buildPhases = (
+				4BEDE77C2EA2B834001E8050 /* Sources */,
+				4BEDE77D2EA2B834001E8050 /* Frameworks */,
+				4BEDE77E2EA2B834001E8050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4BEDE7822EA2B834001E8050 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7832EA2B834001E8050 /* AureliaTests */,
+			);
+			name = AureliaTests;
+			packageProductDependencies = (
+				7A1C00032F40000100DB0001 /* GRDB */,
+			);
+			productName = AureliaTests;
+			productReference = 4BEDE7802EA2B834001E8050 /* AureliaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		4BEDE7892EA2B834001E8050 /* AureliaUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE79A2EA2B834001E8050 /* Build configuration list for PBXNativeTarget "AureliaUITests" */;
+			buildPhases = (
+				4BEDE7862EA2B834001E8050 /* Sources */,
+				4BEDE7872EA2B834001E8050 /* Frameworks */,
+				4BEDE7882EA2B834001E8050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4BEDE78C2EA2B834001E8050 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE78D2EA2B834001E8050 /* AureliaUITests */,
+			);
+			name = AureliaUITests;
+			packageProductDependencies = (
+			);
+			productName = AureliaUITests;
+			productReference = 4BEDE78A2EA2B834001E8050 /* AureliaUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		4BEDE7A12EA2BA6A001E8050 /* AureliaKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7B92EA2BA6B001E8050 /* Build configuration list for PBXNativeTarget "AureliaKit" */;
+			buildPhases = (
+				4BEDE79D2EA2BA6A001E8050 /* Headers */,
+				4BEDE79E2EA2BA6A001E8050 /* Sources */,
+				4BEDE79F2EA2BA6A001E8050 /* Frameworks */,
+				4BEDE7A02EA2BA6A001E8050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7A32EA2BA6A001E8050 /* AureliaKit */,
+			);
+			name = AureliaKit;
+			packageProductDependencies = (
+			);
+			productName = AureliaKit;
+			productReference = 4BEDE7A22EA2BA6A001E8050 /* AureliaKit.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		4BEDE7AB2EA2BA6A001E8050 /* AureliaKitTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7BD2EA2BA6B001E8050 /* Build configuration list for PBXNativeTarget "AureliaKitTests" */;
+			buildPhases = (
+				4BEDE7A82EA2BA6A001E8050 /* Sources */,
+				4BEDE7A92EA2BA6A001E8050 /* Frameworks */,
+				4BEDE7AA2EA2BA6A001E8050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4BEDE7AF2EA2BA6A001E8050 /* PBXTargetDependency */,
+				4BEDE7B12EA2BA6A001E8050 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7B22EA2BA6A001E8050 /* AureliaKitTests */,
+			);
+			name = AureliaKitTests;
+			packageProductDependencies = (
+			);
+			productName = AureliaKitTests;
+			productReference = 4BEDE7AC2EA2BA6A001E8050 /* AureliaKitTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		4BEDE7C32EA2BEC6001E8050 /* Aurelia Watch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7E52EA2BECB001E8050 /* Build configuration list for PBXNativeTarget "Aurelia Watch" */;
+			buildPhases = (
+				4BEDE7C02EA2BEC6001E8050 /* Sources */,
+				4BEDE7C12EA2BEC6001E8050 /* Frameworks */,
+				4BEDE7C22EA2BEC6001E8050 /* Resources */,
+				6D1D0D122F3A7AA200995579 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6D1D0D102F3A7AA200995579 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7C52EA2BEC6001E8050 /* Aurelia Watch */,
+			);
+			name = "Aurelia Watch";
+			packageProductDependencies = (
+				7A1C00032F40000100DB0001 /* GRDB */,
+			);
+			productName = "Aurelia Watch";
+			productReference = 4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4BEDE7CF2EA2BECB001E8050 /* Aurelia WatchTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7E92EA2BECB001E8050 /* Build configuration list for PBXNativeTarget "Aurelia WatchTests" */;
+			buildPhases = (
+				4BEDE7CC2EA2BECB001E8050 /* Sources */,
+				4BEDE7CD2EA2BECB001E8050 /* Frameworks */,
+				4BEDE7CE2EA2BECB001E8050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7A1C00072F40000100DB0001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7D32EA2BECB001E8050 /* Aurelia WatchTests */,
+			);
+			name = "Aurelia WatchTests";
+			packageProductDependencies = (
+				7A1C00032F40000100DB0001 /* GRDB */,
+			);
+			productName = "Aurelia WatchTests";
+			productReference = 4BEDE7D02EA2BECB001E8050 /* Aurelia WatchTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		4BEDE7D92EA2BECB001E8050 /* Aurelia WatchUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BEDE7EC2EA2BECB001E8050 /* Build configuration list for PBXNativeTarget "Aurelia WatchUITests" */;
+			buildPhases = (
+				4BEDE7D62EA2BECB001E8050 /* Sources */,
+				4BEDE7D72EA2BECB001E8050 /* Frameworks */,
+				4BEDE7D82EA2BECB001E8050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4BEDE7DD2EA2BECB001E8050 /* Aurelia WatchUITests */,
+			);
+			name = "Aurelia WatchUITests";
+			packageProductDependencies = (
+			);
+			productName = "Aurelia WatchUITests";
+			productReference = 4BEDE7DA2EA2BECB001E8050 /* Aurelia WatchUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		6D1D0D002F3A7AA100995579 /* AureliaComplicationExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6D1D0D152F3A7AA200995579 /* Build configuration list for PBXNativeTarget "AureliaComplicationExtension" */;
+			buildPhases = (
+				6D1D0CFD2F3A7AA100995579 /* Sources */,
+				6D1D0CFE2F3A7AA100995579 /* Frameworks */,
+				6D1D0CFF2F3A7AA100995579 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				6D1D0D072F3A7AA100995579 /* AureliaComplication */,
+			);
+			name = AureliaComplicationExtension;
+			packageProductDependencies = (
+			);
+			productName = AureliaComplicationExtension;
+			productReference = 6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4BEDE76B2EA2B830001E8050 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					4BEDE7722EA2B830001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					4BEDE77F2EA2B834001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = 4BEDE7722EA2B830001E8050;
+					};
+					4BEDE7892EA2B834001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = 4BEDE7722EA2B830001E8050;
+					};
+					4BEDE7A12EA2BA6A001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					4BEDE7AB2EA2BA6A001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = 4BEDE7722EA2B830001E8050;
+					};
+					4BEDE7C32EA2BEC6001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					4BEDE7CF2EA2BECB001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = 4BEDE7C32EA2BEC6001E8050;
+					};
+					4BEDE7D92EA2BECB001E8050 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = 4BEDE7C32EA2BEC6001E8050;
+					};
+					6D1D0D002F3A7AA100995579 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+				};
+			};
+			buildConfigurationList = 4BEDE76E2EA2B830001E8050 /* Build configuration list for PBXProject "Aurelia" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4BEDE76A2EA2B830001E8050;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4BEDE7742EA2B830001E8050 /* Products */;
+			packageReferences = (
+				7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4BEDE7722EA2B830001E8050 /* Aurelia */,
+				4BEDE77F2EA2B834001E8050 /* AureliaTests */,
+				4BEDE7892EA2B834001E8050 /* AureliaUITests */,
+				4BEDE7A12EA2BA6A001E8050 /* AureliaKit */,
+				4BEDE7AB2EA2BA6A001E8050 /* AureliaKitTests */,
+				4BEDE7C32EA2BEC6001E8050 /* Aurelia Watch */,
+				4BEDE7CF2EA2BECB001E8050 /* Aurelia WatchTests */,
+				4BEDE7D92EA2BECB001E8050 /* Aurelia WatchUITests */,
+				6D1D0D002F3A7AA100995579 /* AureliaComplicationExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4BEDE7712EA2B830001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE77E2EA2B834001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7882EA2B834001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7A02EA2BA6A001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7AA2EA2BA6A001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7C22EA2BEC6001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7CE2EA2BECB001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7D82EA2BECB001E8050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6D1D0CFF2F3A7AA100995579 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4BEDE76F2EA2B830001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE77C2EA2B834001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7862EA2B834001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE79E2EA2BA6A001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7A82EA2BA6A001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7C02EA2BEC6001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7CC2EA2BECB001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4BEDE7D62EA2BECB001E8050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6D1D0CFD2F3A7AA100995579 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4BEDE7822EA2B834001E8050 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4BEDE7722EA2B830001E8050 /* Aurelia */;
+			targetProxy = 4BEDE7812EA2B834001E8050 /* PBXContainerItemProxy */;
+		};
+		4BEDE78C2EA2B834001E8050 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4BEDE7722EA2B830001E8050 /* Aurelia */;
+			targetProxy = 4BEDE78B2EA2B834001E8050 /* PBXContainerItemProxy */;
+		};
+		4BEDE7AF2EA2BA6A001E8050 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4BEDE7A12EA2BA6A001E8050 /* AureliaKit */;
+			targetProxy = 4BEDE7AE2EA2BA6A001E8050 /* PBXContainerItemProxy */;
+		};
+		4BEDE7B12EA2BA6A001E8050 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4BEDE7722EA2B830001E8050 /* Aurelia */;
+			targetProxy = 4BEDE7B02EA2BA6A001E8050 /* PBXContainerItemProxy */;
+		};
+		6D1D0D102F3A7AA200995579 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6D1D0D002F3A7AA100995579 /* AureliaComplicationExtension */;
+			targetProxy = 6D1D0D0F2F3A7AA200995579 /* PBXContainerItemProxy */;
+		};
+		7A1C00072F40000100DB0001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4BEDE7C32EA2BEC6001E8050 /* Aurelia Watch */;
+			targetProxy = 7A1C00062F40000100DB0001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4BEDE7922EA2B834001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		4BEDE7932EA2B834001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		4BEDE7952EA2B834001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Aurelia/Aurelia.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Aurelia/Aurelia.macOS.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Aurelia/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = audio;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				MACCATALYST_DEPLOYMENT_TARGET = 14.0;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 2;
+			};
+			name = Debug;
+		};
+		4BEDE7962EA2B834001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Aurelia/Aurelia.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Aurelia/Aurelia.macOS.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Aurelia/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = audio;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				MACCATALYST_DEPLOYMENT_TARGET = 14.0;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 2;
+			};
+			name = Release;
+		};
+		4BEDE7982EA2B834001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aurelia.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aurelia";
+			};
+			name = Debug;
+		};
+		4BEDE7992EA2B834001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aurelia.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aurelia";
+			};
+			name = Release;
+		};
+		4BEDE79B2EA2B834001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Aurelia;
+			};
+			name = Debug;
+		};
+		4BEDE79C2EA2B834001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Aurelia;
+			};
+			name = Release;
+		};
+		4BEDE7BA2EA2BA6B001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 14;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaKit;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator watchos watchsimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,4";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		4BEDE7BB2EA2BA6B001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 14;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaKit;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator watchos watchsimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,4";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		4BEDE7BE2EA2BA6B001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaKitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aurelia.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aurelia";
+			};
+			name = Debug;
+		};
+		4BEDE7BF2EA2BA6B001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.AureliaKitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aurelia.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aurelia";
+			};
+			name = Release;
+		};
+		4BEDE7E62EA2BECB001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Aurelia Watch/AureliaWatch.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Aurelia-Watch-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Aurelia Watch";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKBackgroundModes = audio;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = de.beutner.Aurelia;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		4BEDE7E72EA2BECB001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Aurelia Watch/AureliaWatch.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Aurelia-Watch-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Aurelia Watch";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKBackgroundModes = audio;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = de.beutner.Aurelia;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		4BEDE7EA2EA2BECB001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "de.beutner.Aurelia-WatchTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aurelia Watch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aurelia Watch";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		4BEDE7EB2EA2BECB001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "de.beutner.Aurelia-WatchTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aurelia Watch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aurelia Watch";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		4BEDE7ED2EA2BECB001E8050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "de.beutner.Aurelia-WatchUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "Aurelia Watch";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		4BEDE7EE2EA2BECB001E8050 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "de.beutner.Aurelia-WatchUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "Aurelia Watch";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		6D1D0D132F3A7AA200995579 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = AureliaComplicationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AureliaComplication/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AureliaComplication;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia.watchkitapp.AureliaComplication;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		6D1D0D142F3A7AA200995579 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = AureliaComplicationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AureliaComplication/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AureliaComplication;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia.watchkitapp.AureliaComplication;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4BEDE76E2EA2B830001E8050 /* Build configuration list for PBXProject "Aurelia" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7922EA2B834001E8050 /* Debug */,
+				4BEDE7932EA2B834001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7942EA2B834001E8050 /* Build configuration list for PBXNativeTarget "Aurelia" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7952EA2B834001E8050 /* Debug */,
+				4BEDE7962EA2B834001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7972EA2B834001E8050 /* Build configuration list for PBXNativeTarget "AureliaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7982EA2B834001E8050 /* Debug */,
+				4BEDE7992EA2B834001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE79A2EA2B834001E8050 /* Build configuration list for PBXNativeTarget "AureliaUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE79B2EA2B834001E8050 /* Debug */,
+				4BEDE79C2EA2B834001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7B92EA2BA6B001E8050 /* Build configuration list for PBXNativeTarget "AureliaKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7BA2EA2BA6B001E8050 /* Debug */,
+				4BEDE7BB2EA2BA6B001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7BD2EA2BA6B001E8050 /* Build configuration list for PBXNativeTarget "AureliaKitTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7BE2EA2BA6B001E8050 /* Debug */,
+				4BEDE7BF2EA2BA6B001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7E52EA2BECB001E8050 /* Build configuration list for PBXNativeTarget "Aurelia Watch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7E62EA2BECB001E8050 /* Debug */,
+				4BEDE7E72EA2BECB001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7E92EA2BECB001E8050 /* Build configuration list for PBXNativeTarget "Aurelia WatchTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7EA2EA2BECB001E8050 /* Debug */,
+				4BEDE7EB2EA2BECB001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BEDE7EC2EA2BECB001E8050 /* Build configuration list for PBXNativeTarget "Aurelia WatchUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BEDE7ED2EA2BECB001E8050 /* Debug */,
+				4BEDE7EE2EA2BECB001E8050 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6D1D0D152F3A7AA200995579 /* Build configuration list for PBXNativeTarget "AureliaComplicationExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D1D0D132F3A7AA200995579 /* Debug */,
+				6D1D0D142F3A7AA200995579 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7A1C00032F40000100DB0001 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4BEDE76B2EA2B830001E8050 /* Project object */;
+}

@@ -1,4 +1,4 @@
-# JellyAmp
+# Aurelia
 
 A modern music streaming client for Jellyfin servers, built for iOS, macOS, and Apple Watch.
 
@@ -50,48 +50,47 @@ A modern music streaming client for Jellyfin servers, built for iOS, macOS, and 
 ## Installation
 
 ### TestFlight (Recommended)
-*Coming soon!* JellyAmp will be available for beta testing via TestFlight.
+*Coming soon!* Aurelia will be available for beta testing via TestFlight.
 
 ### Building from Source
 1. Clone this repository
-2. Open `JellyAmp.xcodeproj` in Xcode
+2. Open `Aurelia.xcodeproj` in Xcode
 3. Select your development team in the project settings
 4. Build and run on your iPhone, Apple Watch, or Mac
 
-For macOS, select the shared `JellyAmp macOS` scheme and the `My Mac (Mac Catalyst)` destination. Make sure your Apple Developer account is signed in under Xcode Settings > Accounts and Automatic Signing is enabled for the `JellyAmp` target. Xcode may ask to create a Mac Catalyst development provisioning profile for the app's bundle identifier the first time you run it.
+For macOS, select the shared `Aurelia macOS` scheme and the `My Mac (Mac Catalyst)` destination. Make sure your Apple Developer account is signed in under Xcode Settings > Accounts and Automatic Signing is enabled for the `Aurelia` target. Xcode may ask to create a Mac Catalyst development provisioning profile for the app's bundle identifier the first time you run it.
 
 You can also verify compilation with an unsigned local build from Terminal:
 
 ```bash
-xcodebuild -project JellyAmp.xcodeproj \
-  -scheme "JellyAmp macOS" \
+xcodebuild -project Aurelia.xcodeproj \
+  -scheme "Aurelia macOS" \
   -destination "platform=macOS,variant=Mac Catalyst" \
-  -derivedDataPath /tmp/JellyAmpDerived \
+  -derivedDataPath /tmp/AureliaDerived \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
 The unsigned artifact is for compile verification only. macOS can launch its linker-signed executable, but Keychain access is unavailable without a development provisioning profile, so it cannot securely retain Jellyfin credentials.
 
 ```bash
-git clone https://github.com/satsdisco/JellyAmp.git
-cd JellyAmp
-open JellyAmp.xcodeproj
+cd Aurelia
+open Aurelia.xcodeproj
 ```
 
 ## Usage
 
 ### First Launch
-1. Open JellyAmp on your iPhone
+1. Open Aurelia on your iPhone
 2. Choose **Quick Connect** or **Manual Setup**
 3. Enter your Jellyfin server details
 4. Start streaming!
 
 ### Apple Watch
-The watch app automatically syncs credentials from your iPhone. Just open JellyAmp on your watch and start browsing your library.
+The watch app automatically syncs credentials from your iPhone. Just open Aurelia on your watch and start browsing your library.
 
 ## Architecture
 
-JellyAmp uses a service-oriented architecture with singleton services:
+Aurelia uses a service-oriented architecture with singleton services:
 
 - **JellyfinService** - API client for all Jellyfin server communication
 - **PlayerManager** - Audio playback engine with gapless queue management
@@ -102,9 +101,9 @@ See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
 
 ## Privacy
 
-JellyAmp is a local-first app. Your credentials and data stay on your devices. We don't collect anything. We don't have servers. It's just you and your Jellyfin server.
+Aurelia is a local-first app. Your credentials and data stay on your devices. We don't collect anything. We don't have servers. It's just you and your Jellyfin server.
 
-Read our full [Privacy Policy](https://satsdisco.github.io/JellyAmp/PRIVACY_POLICY).
+Read our full [Privacy Policy](PRIVACY_POLICY.md).
 
 ## Contributing
 
@@ -112,7 +111,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-JellyAmp is available under the MIT license. See the LICENSE file for more info.
+Aurelia is available under the MIT license. See the LICENSE file for more info.
+
+## Credits
+
+Aurelia began as a fork of [JellyAmp](https://github.com/satsdisco/JellyAmp) and
+owes its foundation to that project and its contributors. The name is the genus
+of the moon jellyfish — a nod to the Jellyfin server it speaks to.
 
 ## Acknowledgments
 
@@ -123,7 +128,6 @@ JellyAmp is available under the MIT license. See the LICENSE file for more info.
 ## Support
 
 For questions, issues, or feature requests:
-- Open an issue on [GitHub](https://github.com/satsdisco/JellyAmp/issues)
 - Check the [Jellyfin documentation](https://jellyfin.org/docs/)
 
 ---

@@ -1,16 +1,16 @@
-# Privacy Policy for JellyAmp
+# Privacy Policy for Aurelia
 
 **Last Updated: October 18, 2024**
 
 ## Overview
 
-JellyAmp is a personal music streaming client for Jellyfin media servers. This privacy policy explains how JellyAmp handles your data.
+Aurelia is a personal music streaming client for Jellyfin media servers. This privacy policy explains how Aurelia handles your data.
 
 ## Data Collection and Storage
 
-### What JellyAmp Collects
+### What Aurelia Collects
 
-JellyAmp stores the following information locally on your device:
+Aurelia stores the following information locally on your device:
 
 - **Jellyfin Server URL**: The web address of your personal Jellyfin server
 - **Authentication Token**: A secure access token provided by your Jellyfin server
@@ -29,13 +29,13 @@ When using the Apple Watch companion app, credentials are synced between your iP
 
 ## Data Usage
 
-### What JellyAmp Does With Your Data
+### What Aurelia Does With Your Data
 
 - Connects to **YOUR** Jellyfin server using the credentials you provide
 - Streams music directly from **YOUR** Jellyfin server to your device
 - Caches library metadata to improve performance
 
-### What JellyAmp Does NOT Do
+### What Aurelia Does NOT Do
 
 - ❌ We do **NOT** collect any analytics or telemetry
 - ❌ We do **NOT** store your data on our servers (we don't have servers)
@@ -45,9 +45,9 @@ When using the Apple Watch companion app, credentials are synced between your iP
 
 ## Third-Party Services
 
-JellyAmp connects directly to **your** Jellyfin server. Your Jellyfin server handles all media content, user management, and data storage. Please refer to your Jellyfin server administrator for information about how your media server handles data.
+Aurelia connects directly to **your** Jellyfin server. Your Jellyfin server handles all media content, user management, and data storage. Please refer to your Jellyfin server administrator for information about how your media server handles data.
 
-JellyAmp does not use any third-party analytics, advertising, or tracking services.
+Aurelia does not use any third-party analytics, advertising, or tracking services.
 
 ## Data Security
 
@@ -57,9 +57,9 @@ JellyAmp does not use any third-party analytics, advertising, or tracking servic
 
 ## Data Deletion
 
-You can delete all JellyAmp data at any time by:
+You can delete all Aurelia data at any time by:
 
-1. Opening JellyAmp Settings
+1. Opening Aurelia Settings
 2. Tapping "Sign Out"
 3. Deleting the app from your device
 
@@ -67,7 +67,7 @@ This removes all stored credentials, server URLs, and cached data.
 
 ## Children's Privacy
 
-JellyAmp does not knowingly collect any information from anyone, including children under 13. The app is a personal media player that connects only to your own Jellyfin server.
+Aurelia does not knowingly collect any information from anyone, including children under 13. The app is a personal media player that connects only to your own Jellyfin server.
 
 ## Changes to This Privacy Policy
 
@@ -75,14 +75,13 @@ We may update this privacy policy from time to time. Changes will be posted in t
 
 ## Your Rights
 
-Since JellyAmp stores all data locally on your device and does not collect or transmit data to us, you have complete control over your data at all times. You can view, modify, or delete your data by managing the app on your device.
+Since Aurelia stores all data locally on your device and does not collect or transmit data to us, you have complete control over your data at all times. You can view, modify, or delete your data by managing the app on your device.
 
 ## Contact
 
-If you have questions about this privacy policy, please open an issue on our GitHub repository:
-
-https://github.com/satsdisco/JellyAmp
+If you have questions about this privacy policy, please open an issue on the
+project's issue tracker.
 
 ---
 
-**Summary**: JellyAmp is a local-first app. Your credentials and data stay on your devices. We don't collect anything. We don't have servers. It's just you and your Jellyfin server.
+**Summary**: Aurelia is a local-first app. Your credentials and data stay on your devices. We don't collect anything. We don't have servers. It's just you and your Jellyfin server.

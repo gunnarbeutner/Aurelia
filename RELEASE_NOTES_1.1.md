@@ -1,4 +1,4 @@
-# JellyAmp Version 1.1 (Build 2) - Release Notes
+# Aurelia Version 1.1 (Build 2) - Release Notes
 
 ## TestFlight Update - Major Stability & Feature Release
 
@@ -50,7 +50,7 @@
 - Fixed mid-song restart issue (time jump detection now track-aware)
 - Resolved text cutoff in Watch player
 - Fixed Library view spacing and overlap issues
-- Improved framework build configuration (JellyAmpKit)
+- Improved framework build configuration (AureliaKit)
 - Better error handling for streaming failures
 
 ### 🔧 Technical Improvements
