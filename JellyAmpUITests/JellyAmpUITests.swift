@@ -46,6 +46,13 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
         let closeButton = app.buttons["now-playing-close"]
         XCTAssertFalse(closeButton.exists)
+
+        let nextButton = app.buttons["mini-player-next"]
+        XCTAssertTrue(nextButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(nextButton.isEnabled)
+        nextButton.tap()
+        XCTAssertTrue(waitForLabel(miniPlayer, containing: "Next Test Track", timeout: 5))
+
         miniPlayer.tap()
         let artwork = app.descendants(matching: .any)["now-playing-artwork"]
         let waveform = app.descendants(matching: .any)["now-playing-waveform"]
@@ -112,6 +119,19 @@ final class JellyAmpUITests: XCTestCase {
     private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForLabel(
+        _ element: XCUIElement,
+        containing text: String,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", text),
             object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed

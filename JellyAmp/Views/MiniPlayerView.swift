@@ -142,6 +142,19 @@ struct MiniPlayerView: View {
                 }
                 .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
                 .contentTransition(.symbolEffect(.replace))
+
+                Button {
+                    playerManager.playNext()
+                } label: {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(canPlayNext ? .white.opacity(0.8) : .white.opacity(0.25))
+                        .frame(width: 36, height: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canPlayNext)
+                .accessibilityIdentifier("mini-player-next")
+                .accessibilityLabel("Next track")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -186,6 +199,11 @@ struct MiniPlayerView: View {
     private var miniPlayerProgress: Double {
         guard playerManager.duration > 0 else { return 0 }
         return min(max(playbackProgress.currentTime / playerManager.duration, 0), 1)
+    }
+
+    private var canPlayNext: Bool {
+        playerManager.repeatMode != .off
+            || playerManager.currentIndex < playerManager.queue.count - 1
     }
 
     private func miniPlayerArtwork(for track: Track) -> some View {
