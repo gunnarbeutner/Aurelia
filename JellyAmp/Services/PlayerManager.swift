@@ -113,7 +113,10 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Recently played tracks (track-level, not just album IDs)
     @Published var recentlyPlayedTracks: [Track] = []
+    /// Tracks actually left during this app session, newest first.
+    @Published private(set) var playbackHistory: [Track] = []
     private var recentPlayRevision: UInt64 = 0
+    private var activePlaybackTrack: Track?
 
     // MARK: - Initialization
 
@@ -187,6 +190,17 @@ class PlayerManager: NSObject, ObservableObject {
                 await LibraryRepository.shared.recordLocalPlay(track, in: scope)
             }
         }
+    }
+
+    func recordPlaybackTransition(to track: Track) {
+        if let outgoingTrack = activePlaybackTrack, outgoingTrack.id != track.id {
+            playbackHistory.removeAll { $0.id == outgoingTrack.id }
+            playbackHistory.insert(outgoingTrack, at: 0)
+            if playbackHistory.count > 100 {
+                playbackHistory = Array(playbackHistory.prefix(100))
+            }
+        }
+        activePlaybackTrack = track
     }
 
     private func loadRecentHistoryFromDatabase() async {
@@ -690,10 +704,40 @@ class PlayerManager: NSObject, ObservableObject {
         queue.removeAll()
         currentIndex = 0
         currentTrack = nil
+        activePlaybackTrack = nil
+        playbackHistory.removeAll()
         player?.pause()
         isPlaying = false
         cleanupPlayer()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    /// Removes every queued track after the current one without interrupting playback.
+    func clearUpcomingQueue() {
+        guard queue.indices.contains(currentIndex) else { return }
+        let firstUpcomingIndex = currentIndex + 1
+        guard firstUpcomingIndex < queue.count else { return }
+
+        queue.removeSubrange(firstUpcomingIndex..<queue.endIndex)
+
+        // Do not let disabling shuffle resurrect tracks the user explicitly cleared.
+        if shuffleEnabled {
+            originalQueue = queue
+            originalIndex = currentIndex
+        }
+
+        // Keep the current AVPlayerItem and remove only its preloaded successors.
+        if let player, let currentItem = player.currentItem {
+            for item in playerItems where item !== currentItem {
+                player.remove(item)
+            }
+            playerItems = [currentItem]
+        } else {
+            playerItems.removeAll()
+        }
+
+        savePlaybackState()
+        updateNowPlayingInfo()
     }
 
     /// Jump to track at index in queue
@@ -701,6 +745,18 @@ class PlayerManager: NSObject, ObservableObject {
         guard index >= 0 && index < queue.count else { return }
         currentIndex = index
         playCurrentTrack()
+    }
+
+    /// Replays a session-history item without discarding the existing queue.
+    func playFromHistory(_ track: Track) {
+        let earlierMatch = currentIndex > 0
+            ? (0..<min(currentIndex, queue.count)).last { queue[$0].id == track.id }
+            : nil
+        if let index = earlierMatch ?? queue.firstIndex(where: { $0.id == track.id }) {
+            jumpToTrack(at: index)
+        } else {
+            play(track)
+        }
     }
 
     // MARK: - Private Playback Methods
@@ -772,6 +828,9 @@ class PlayerManager: NSObject, ObservableObject {
 
         // Ensure remote controls are set up
         setupRemoteControls()
+
+        // Only transitions that actually reach playback belong in session history.
+        recordPlaybackTransition(to: track)
 
         // Start playback
         player?.play()
@@ -934,6 +993,7 @@ class PlayerManager: NSObject, ObservableObject {
         if currentIndex < queue.count {
             let newTrack = queue[currentIndex]
             let previousTrack: Track? = currentTrack
+            recordPlaybackTransition(to: newTrack)
             self.currentTrack = newTrack
             self.currentTime = 0
             self.lastValidPlaybackTime = 0

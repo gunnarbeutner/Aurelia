@@ -730,6 +730,67 @@ struct JellyAmpTests {
         #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: false) == 64)
     }
 
+    @Test @MainActor func nowPlayingQueueSeparatesHistoryFromUpcomingTracks() {
+        let current = Track(
+            id: "current",
+            name: "Current",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 0,
+            artworkURL: nil
+        )
+        let played = Track(
+            id: "played",
+            name: "Played",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 0,
+            artworkURL: nil
+        )
+        #expect(NowPlayingQueueProjection.visibleHistory(
+            [current, played],
+            currentTrackID: current.id
+        ).map(\.id) == [played.id])
+        #expect(NowPlayingQueueProjection.visibleHistory(
+            [],
+            currentTrackID: current.id
+        ).isEmpty)
+        #expect(NowPlayingQueueProjection.upNextIndices(
+            currentIndex: 3,
+            queueCount: 7
+        ) == [4, 5, 6])
+        #expect(NowPlayingQueueProjection.upNextIndices(
+            currentIndex: 6,
+            queueCount: 7
+        ).isEmpty)
+    }
+
+    @Test @MainActor func playbackHistoryRecordsTransitionsNotRestoredQueuePositions() {
+        let playerManager = PlayerManager()
+        let first = Track(
+            id: "first",
+            name: "First",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 0,
+            artworkURL: nil
+        )
+        let second = Track(
+            id: "second",
+            name: "Second",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 0,
+            artworkURL: nil
+        )
+
+        playerManager.recordPlaybackTransition(to: first)
+        #expect(playerManager.playbackHistory.isEmpty)
+
+        playerManager.recordPlaybackTransition(to: second)
+        #expect(playerManager.playbackHistory.map(\.id) == [first.id])
+    }
+
     @Test @MainActor func upNextReorderingUsesInsertionSemanticsInBothDirections() {
         #expect(UpNextQueueInteraction.moveDestination(from: 2, onto: 5) == 6)
         #expect(UpNextQueueInteraction.moveDestination(from: 5, onto: 2) == 2)

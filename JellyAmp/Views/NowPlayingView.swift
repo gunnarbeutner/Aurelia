@@ -46,6 +46,28 @@ enum NowPlayingLayout {
     }
 }
 
+enum NowPlayingQueueTab: String, CaseIterable, Identifiable {
+    case history = "History"
+    case upNext = "Up Next"
+
+    var id: Self { self }
+}
+
+enum NowPlayingQueueProjection {
+    static func visibleHistory(
+        _ history: [Track],
+        currentTrackID: String?
+    ) -> [Track] {
+        history.filter { $0.id != currentTrackID }
+    }
+
+    static func upNextIndices(currentIndex: Int, queueCount: Int) -> [Int] {
+        let start = max(currentIndex + 1, 0)
+        guard start < queueCount else { return [] }
+        return Array(start..<queueCount)
+    }
+}
+
 enum UpNextQueueInteraction {
     static let rowStride: CGFloat = 62
 
@@ -118,7 +140,8 @@ struct NowPlayingView: View {
     @ObservedObject var themeManager = ThemeManager.shared
     @Environment(\.dismiss) var dismiss
     // Slider state removed — using WaveformView now
-    @State private var showQueue = false
+    @State private var selectedQueueTab: NowPlayingQueueTab = .upNext
+    @State private var showClearUpcomingConfirmation = false
     @State private var isFavorite = false
     @State private var showSleepTimer = false
     @State private var dominantColor: Color?
@@ -182,7 +205,7 @@ struct NowPlayingView: View {
                 secondaryActionsSection
                     .padding(.top, 16)
 
-                upNextSection(limit: horizontalSizeClass == .compact ? 2 : nil)
+                queueSection
                     .padding(.top, 24)
 
                 Spacer().frame(height: 40)
@@ -229,7 +252,7 @@ struct NowPlayingView: View {
                 .accessibilityIdentifier("now-playing-player-column")
 
                 ScrollView(.vertical, showsIndicators: false) {
-                    upNextSection(limit: nil)
+                    queueSection
                         .padding(.top, 12)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
@@ -308,22 +331,9 @@ struct NowPlayingView: View {
                 AirPlayButton()
                     .frame(width: 44, height: 44)
             } else {
-                Color.clear.frame(width: 44, height: 44)
-            }
-
-            // Queue Button
-            Button {
-                showQueue = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.body.weight(.medium))
-                    .foregroundColor(.white.opacity(0.6))
+                Color.clear
                     .frame(width: 44, height: 44)
             }
-            .accessibilityLabel("View queue")
-        }
-        .sheet(isPresented: $showQueue) {
-            QueueView()
         }
     }
 
@@ -622,58 +632,174 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Up Next Section
-    private func upNextSection(limit: Int?) -> some View {
-        let entries = nextTrackEntries(limit: limit)
+    // MARK: - Queue Section
+    private var queueSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            queueTabPicker
 
-        return Group {
-            if !entries.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Up Next")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .textCase(.uppercase)
-                        .tracking(1.2)
-                        .foregroundColor(.white.opacity(0.3))
-                        .padding(.horizontal, 4)
+            switch selectedQueueTab {
+            case .history:
+                historyQueueContent
+            case .upNext:
+                upNextQueueContent
+            }
+        }
+        .coordinateSpace(name: UpNextQueueRow.coordinateSpaceName)
+        .confirmationDialog(
+            "Clear Up Next?",
+            isPresented: $showClearUpcomingConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Up Next", role: .destructive) {
+                playerManager.clearUpcomingQueue()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The current song and listening history will be kept.")
+        }
+    }
 
-                    ForEach(entries) { entry in
-                        UpNextQueueRow(
-                            track: entry.track,
-                            verticalOffset: queueRowOffset(for: entry),
-                            isBeingReordered: draggedQueueEntryID == entry.id,
-                            isQueueReordering: draggedQueueEntryID != nil,
-                            onPlay: {
-                                playerManager.jumpToTrack(at: entry.index)
-                            },
-                            onDelete: {
-                                playerManager.removeFromQueue(at: entry.index)
-                            },
-                            onReorder: { translation, ended in
-                                reorderUpNext(
-                                    initialIndex: entry.index,
-                                    entryID: entry.id,
-                                    translation: translation,
-                                    ended: ended,
-                                    upperBound: entries.last?.index ?? entry.index
-                                )
-                            }
+    private var queueTabPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(NowPlayingQueueTab.allCases) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedQueueTab = tab
+                    }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(
+                            selectedQueueTab == tab
+                                ? Color.jellyAmpText
+                                : Color.jellyAmpTextSecondary
                         )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                        .background {
+                            if selectedQueueTab == tab {
+                                Capsule().fill(Color.white.opacity(0.1))
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedQueueTab == tab ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.black.opacity(0.18)))
+        .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .accessibilityIdentifier("now-playing-queue-tabs")
+    }
+
+    @ViewBuilder
+    private var historyQueueContent: some View {
+        let tracks = NowPlayingQueueProjection.visibleHistory(
+            playerManager.playbackHistory,
+            currentTrackID: playerManager.currentTrack?.id
+        )
+
+        if tracks.isEmpty {
+            queueEmptyState(
+                icon: "clock.arrow.circlepath",
+                title: "No listening history",
+                message: "Tracks you finish will appear here."
+            )
+        } else {
+            LazyVStack(spacing: 10) {
+                ForEach(tracks, id: \.id) { track in
+                    HistoryQueueRow(track: track) {
+                        playerManager.playFromHistory(track)
                     }
                 }
-                .coordinateSpace(name: UpNextQueueRow.coordinateSpaceName)
             }
         }
     }
 
-    private func nextTrackEntries(limit: Int?) -> [UpNextTrackEntry] {
-        let startIdx = playerManager.currentIndex + 1
-        let endIdx = min(
-            startIdx + (limit ?? playerManager.queue.count),
-            playerManager.queue.count
-        )
-        guard startIdx < playerManager.queue.count else { return [] }
-        return (startIdx..<endIdx).map {
-            UpNextTrackEntry(index: $0, track: playerManager.queue[$0])
+    @ViewBuilder
+    private var upNextQueueContent: some View {
+        let entries = nextTrackEntries()
+
+        if entries.isEmpty {
+            queueEmptyState(
+                icon: "text.line.last.and.arrowtriangle.forward",
+                title: "Nothing up next",
+                message: "Add or play more music to extend the queue."
+            )
+        } else {
+            HStack {
+                Text("\(entries.count) track\(entries.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.jellyAmpTextSecondary)
+
+                Spacer()
+
+                Button("Clear") {
+                    showClearUpcomingConfirmation = true
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.neonPink)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear Up Next")
+            }
+            .padding(.horizontal, 4)
+
+            LazyVStack(spacing: 10) {
+                ForEach(entries) { entry in
+                    UpNextQueueRow(
+                        track: entry.track,
+                        verticalOffset: queueRowOffset(for: entry),
+                        isBeingReordered: draggedQueueEntryID == entry.id,
+                        isQueueReordering: draggedQueueEntryID != nil,
+                        onPlay: {
+                            playerManager.jumpToTrack(at: entry.index)
+                        },
+                        onDelete: {
+                            playerManager.removeFromQueue(at: entry.index)
+                        },
+                        onReorder: { translation, ended in
+                            reorderUpNext(
+                                initialIndex: entry.index,
+                                entryID: entry.id,
+                                translation: translation,
+                                ended: ended,
+                                upperBound: entries.last?.index ?? entry.index
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private func queueEmptyState(
+        icon: String,
+        title: String,
+        message: String
+    ) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(.white.opacity(0.25))
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.white.opacity(0.55))
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.3))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+
+    private func nextTrackEntries() -> [QueueTrackEntry] {
+        NowPlayingQueueProjection.upNextIndices(
+            currentIndex: playerManager.currentIndex,
+            queueCount: playerManager.queue.count
+        ).map {
+            QueueTrackEntry(index: $0, track: playerManager.queue[$0])
         }
     }
 
@@ -721,7 +847,7 @@ struct NowPlayingView: View {
         }
     }
 
-    private func queueRowOffset(for entry: UpNextTrackEntry) -> CGFloat {
+    private func queueRowOffset(for entry: QueueTrackEntry) -> CGFloat {
         guard let origin = reorderOriginIndex,
               let target = reorderTargetIndex else { return 0 }
         return UpNextQueueInteraction.visualOffset(
@@ -812,11 +938,66 @@ struct NowPlayingView: View {
     }
 }
 
-private struct UpNextTrackEntry: Identifiable {
+private struct QueueTrackEntry: Identifiable {
     let index: Int
     let track: Track
 
     var id: String { "\(index):\(track.id)" }
+}
+
+private struct HistoryQueueRow: View {
+    let track: Track
+    let onPlay: () -> Void
+
+    var body: some View {
+        Button(action: onPlay) {
+            HStack(spacing: 12) {
+                CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    default:
+                        Rectangle().fill(Color.jellyAmpMidBackground)
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.3))
+                            )
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.name)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineLimit(1)
+                    Text(track.artistName)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.35))
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(track.durationFormatted)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.3))
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color.jellyAmpBackground.opacity(0.001))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Play \(track.name) again")
+        .accessibilityIdentifier("now-playing-history-\(track.id)")
+    }
 }
 
 private struct UpNextQueueRow: View {
