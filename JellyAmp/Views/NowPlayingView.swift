@@ -14,6 +14,11 @@ enum NowPlayingLayout {
     static let regularColumnSpacing: CGFloat = 28
     static let minimumTwoColumnAspectRatio: CGFloat = 1.25
 
+    static func airPlayTrailingPadding(usesTwoColumns: Bool) -> CGFloat {
+        let contentPadding = usesTwoColumns ? regularHorizontalPadding : horizontalPadding
+        return contentPadding + 44
+    }
+
     static func contentWidth(for screenWidth: CGFloat) -> CGFloat {
         max(0, screenWidth - horizontalPadding * 2)
     }
@@ -41,6 +46,70 @@ enum NowPlayingLayout {
     }
 }
 
+enum UpNextQueueInteraction {
+    static let rowStride: CGFloat = 62
+
+    static func moveDestination(from source: Int, onto target: Int) -> Int {
+        source < target ? target + 1 : target
+    }
+
+    static func hystereticTargetIndex(
+        origin: Int,
+        current: Int,
+        translation: CGFloat,
+        lowerBound: Int,
+        upperBound: Int
+    ) -> Int {
+        guard lowerBound <= upperBound else { return current }
+        let translatedRows = translation / rowStride
+        let threshold: CGFloat = 0.65
+        var target = min(max(current, lowerBound), upperBound)
+
+        while target < upperBound,
+              translatedRows > CGFloat(target - origin) + threshold {
+            target += 1
+        }
+        while target > lowerBound,
+              translatedRows < CGFloat(target - origin) - threshold {
+            target -= 1
+        }
+        return target
+    }
+
+    static func visualOffset(
+        for index: Int,
+        origin: Int,
+        target: Int,
+        translation: CGFloat
+    ) -> CGFloat {
+        if index == origin { return translation }
+        if origin < target, index > origin, index <= target { return -rowStride }
+        if origin > target, index >= target, index < origin { return rowStride }
+        return 0
+    }
+
+    static func swipeOffset(
+        startOffset: CGFloat,
+        translation: CGFloat,
+        revealWidth: CGFloat
+    ) -> CGFloat {
+        min(0, max(-revealWidth, startOffset + translation))
+    }
+
+    static func settledSwipeOffset(
+        startOffset: CGFloat,
+        predictedTranslation: CGFloat,
+        revealWidth: CGFloat
+    ) -> CGFloat {
+        let projectedOffset = swipeOffset(
+            startOffset: startOffset,
+            translation: predictedTranslation,
+            revealWidth: revealWidth
+        )
+        return projectedOffset < -revealWidth / 2 ? -revealWidth : 0
+    }
+}
+
 struct NowPlayingView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var playerManager = PlayerManager.shared
@@ -54,8 +123,13 @@ struct NowPlayingView: View {
     @State private var showSleepTimer = false
     @State private var dominantColor: Color?
     @State private var artworkImage: Image?
+    @State private var draggedQueueEntryID: String?
+    @State private var reorderOriginIndex: Int?
+    @State private var reorderTargetIndex: Int?
+    @State private var reorderTranslation: CGFloat = 0
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     var onDismiss: (() -> Void)?
+    var embedsAirPlayButton = true
 
     var body: some View {
         GeometryReader { geo in
@@ -230,17 +304,12 @@ struct NowPlayingView: View {
 
             Spacer()
 
-            Text("Now Playing")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .textCase(.uppercase)
-                .tracking(1.5)
-                .foregroundColor(.white.opacity(0.4))
-
-            Spacer()
-
-            // AirPlay Button
-            AirPlayButton()
-                .frame(width: 44, height: 44)
+            if embedsAirPlayButton {
+                AirPlayButton()
+                    .frame(width: 44, height: 44)
+            } else {
+                Color.clear.frame(width: 44, height: 44)
+            }
 
             // Queue Button
             Button {
@@ -555,8 +624,10 @@ struct NowPlayingView: View {
 
     // MARK: - Up Next Section
     private func upNextSection(limit: Int?) -> some View {
-        Group {
-            if playerManager.currentIndex < playerManager.queue.count - 1 {
+        let entries = nextTrackEntries(limit: limit)
+
+        return Group {
+            if !entries.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Up Next")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -565,57 +636,100 @@ struct NowPlayingView: View {
                         .foregroundColor(.white.opacity(0.3))
                         .padding(.horizontal, 4)
 
-                    ForEach(nextTracks(limit: limit), id: \.id) { track in
-                        HStack(spacing: 12) {
-                            CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                default:
-                                    Rectangle().fill(Color.jellyAmpMidBackground)
-                                        .overlay(Image(systemName: "music.note").font(.caption).foregroundColor(.white.opacity(0.3)))
-                                }
+                    ForEach(entries) { entry in
+                        UpNextQueueRow(
+                            track: entry.track,
+                            verticalOffset: queueRowOffset(for: entry),
+                            isBeingReordered: draggedQueueEntryID == entry.id,
+                            isQueueReordering: draggedQueueEntryID != nil,
+                            onPlay: {
+                                playerManager.jumpToTrack(at: entry.index)
+                            },
+                            onDelete: {
+                                playerManager.removeFromQueue(at: entry.index)
+                            },
+                            onReorder: { translation, ended in
+                                reorderUpNext(
+                                    initialIndex: entry.index,
+                                    entryID: entry.id,
+                                    translation: translation,
+                                    ended: ended,
+                                    upperBound: entries.last?.index ?? entry.index
+                                )
                             }
-                            .frame(width: 40, height: 40)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                            )
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(track.name)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .lineLimit(1)
-                                Text(track.artistName)
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.35))
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Text(track.durationFormatted)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.3))
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        )
                     }
                 }
+                .coordinateSpace(name: UpNextQueueRow.coordinateSpaceName)
             }
         }
     }
 
-    private func nextTracks(limit: Int?) -> [Track] {
+    private func nextTrackEntries(limit: Int?) -> [UpNextTrackEntry] {
         let startIdx = playerManager.currentIndex + 1
         let endIdx = min(
             startIdx + (limit ?? playerManager.queue.count),
             playerManager.queue.count
         )
         guard startIdx < playerManager.queue.count else { return [] }
-        return Array(playerManager.queue[startIdx..<endIdx])
+        return (startIdx..<endIdx).map {
+            UpNextTrackEntry(index: $0, track: playerManager.queue[$0])
+        }
+    }
+
+    private func reorderUpNext(
+        initialIndex: Int,
+        entryID: String,
+        translation: CGFloat,
+        ended: Bool,
+        upperBound: Int
+    ) {
+        if reorderOriginIndex == nil {
+            reorderOriginIndex = initialIndex
+            reorderTargetIndex = initialIndex
+            draggedQueueEntryID = entryID
+        }
+
+        guard draggedQueueEntryID == entryID,
+              let origin = reorderOriginIndex else { return }
+        let currentTarget = reorderTargetIndex ?? origin
+        let target = UpNextQueueInteraction.hystereticTargetIndex(
+            origin: origin,
+            current: currentTarget,
+            translation: translation,
+            lowerBound: playerManager.currentIndex + 1,
+            upperBound: upperBound
+        )
+        reorderTranslation = translation
+        reorderTargetIndex = target
+
+        guard ended else { return }
+
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            if target != origin {
+                playerManager.moveInQueue(
+                    from: origin,
+                    to: UpNextQueueInteraction.moveDestination(from: origin, onto: target)
+                )
+            }
+            reorderOriginIndex = nil
+            reorderTargetIndex = nil
+            reorderTranslation = 0
+            draggedQueueEntryID = nil
+        }
+    }
+
+    private func queueRowOffset(for entry: UpNextTrackEntry) -> CGFloat {
+        guard let origin = reorderOriginIndex,
+              let target = reorderTargetIndex else { return 0 }
+        return UpNextQueueInteraction.visualOffset(
+            for: entry.index,
+            origin: origin,
+            target: target,
+            translation: reorderTranslation
+        )
     }
 
     // MARK: - Dominant Color Extraction
@@ -695,6 +809,189 @@ struct NowPlayingView: View {
                 }
             }
         }
+    }
+}
+
+private struct UpNextTrackEntry: Identifiable {
+    let index: Int
+    let track: Track
+
+    var id: String { "\(index):\(track.id)" }
+}
+
+private struct UpNextQueueRow: View {
+    static let coordinateSpaceName = "now-playing-up-next-queue"
+
+    let track: Track
+    let verticalOffset: CGFloat
+    let isBeingReordered: Bool
+    let isQueueReordering: Bool
+    let onPlay: () -> Void
+    let onDelete: () -> Void
+    let onReorder: (_ translation: CGFloat, _ ended: Bool) -> Void
+    @State private var swipeOffset: CGFloat = 0
+    @State private var swipeStartOffset: CGFloat?
+    @State private var swipeAxis: Axis?
+    @State private var isReorderGestureActive = false
+
+    private let deleteWidth: CGFloat = 88
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            if swipeOffset < 0, !isQueueReordering, !isReorderGestureActive {
+                Button(role: .destructive) {
+                    swipeOffset = 0
+                    onDelete()
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "trash.fill")
+                        Text("Delete")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: deleteWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.red.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Delete \(track.name) from queue")
+                .zIndex(1)
+            }
+
+            HStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        default:
+                            Rectangle().fill(Color.jellyAmpMidBackground)
+                                .overlay(
+                                    Image(systemName: "music.note")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.3))
+                                )
+                        }
+                    }
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.name)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .lineLimit(1)
+                        Text(track.artistName)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.35))
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Text(track.durationFormatted)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 6)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onPlay)
+                .highPriorityGesture(horizontalSwipe)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Play \(track.name) next")
+                .accessibilityIdentifier("now-playing-up-next-\(track.id)")
+                .accessibilityAction(named: "Delete") { onDelete() }
+
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(width: 44, height: 52)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel("Reorder \(track.name)")
+                    .highPriorityGesture(reorderGesture)
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color.jellyAmpBackground.opacity(0.001))
+            .offset(x: swipeOffset)
+            .zIndex(0)
+        }
+        .contentShape(Rectangle())
+        .clipped()
+        .frame(height: 52)
+        .offset(y: verticalOffset)
+        .zIndex(isBeingReordered ? 1 : 0)
+        .animation(isBeingReordered ? nil : .easeOut(duration: 0.1), value: verticalOffset)
+    }
+
+    private var horizontalSwipe: some Gesture {
+        DragGesture(
+            minimumDistance: 12,
+            coordinateSpace: .named(Self.coordinateSpaceName)
+        )
+            .onChanged { value in
+                guard !isQueueReordering,
+                      !isReorderGestureActive else { return }
+                if swipeAxis == nil {
+                    swipeAxis = abs(value.translation.width) > abs(value.translation.height)
+                        ? .horizontal
+                        : .vertical
+                    if swipeAxis == .horizontal {
+                        swipeStartOffset = swipeOffset
+                    }
+                }
+                guard swipeAxis == .horizontal,
+                      let startOffset = swipeStartOffset else { return }
+                swipeOffset = UpNextQueueInteraction.swipeOffset(
+                    startOffset: startOffset,
+                    translation: value.translation.width,
+                    revealWidth: deleteWidth
+                )
+            }
+            .onEnded { value in
+                defer {
+                    swipeAxis = nil
+                    swipeStartOffset = nil
+                }
+                guard !isQueueReordering,
+                      !isReorderGestureActive,
+                      swipeAxis == .horizontal,
+                      let startOffset = swipeStartOffset else { return }
+                let settledOffset = UpNextQueueInteraction.settledSwipeOffset(
+                    startOffset: startOffset,
+                    predictedTranslation: value.predictedEndTranslation.width,
+                    revealWidth: deleteWidth
+                )
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                    swipeOffset = settledOffset
+                }
+            }
+    }
+
+    private var reorderGesture: some Gesture {
+        DragGesture(
+            minimumDistance: 4,
+            coordinateSpace: .named(Self.coordinateSpaceName)
+        )
+            .onChanged { value in
+                isReorderGestureActive = true
+                swipeOffset = 0
+                swipeStartOffset = nil
+                swipeAxis = nil
+                onReorder(value.translation.height, false)
+            }
+            .onEnded { value in
+                onReorder(value.translation.height, true)
+                DispatchQueue.main.async {
+                    isReorderGestureActive = false
+                }
+            }
     }
 }
 

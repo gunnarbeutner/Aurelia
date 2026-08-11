@@ -116,7 +116,8 @@ struct PlayerLayoutDiscoveryAPI: DiscoveryAPI {
                 id: "ui-layout-track",
                 name: "The Age Of Love (Extended Live Version) (Live)"
             ),
-            audio(id: "ui-layout-next", name: "Next Test Track")
+            audio(id: "ui-layout-next", name: "Next Test Track"),
+            audio(id: "ui-layout-after-next", name: "After Delete Test Track")
         ]
     }
 

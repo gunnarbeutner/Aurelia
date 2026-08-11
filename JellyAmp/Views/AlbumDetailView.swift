@@ -91,10 +91,9 @@ struct AlbumDetailView: View {
                         // Track Listing
                         trackListingSection
 
-                        #if !targetEnvironment(macCatalyst)
-                        // The iOS mini player overlays the tab content.
+                        // The mini player overlays detail content on both iOS and
+                        // Catalyst, so preserve enough scroll extent for the last row.
                         Color.clear.frame(height: 100)
-                        #endif
                     }
                 }
 

@@ -20,6 +20,9 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var selectedFilter: SearchFilter = .all
     @State private var searchTask: Task<Void, Never>?
+    #if targetEnvironment(macCatalyst)
+    @FocusState private var isCatalystSearchFocused: Bool
+    #endif
     // Navigation handled by NavigationStack
 
     enum SearchFilter: String, CaseIterable {
@@ -44,6 +47,10 @@ struct SearchView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                #if targetEnvironment(macCatalyst)
+                catalystSearchField
+                #endif
+
                 // Filter Tabs
                 filterTabs
 
@@ -59,7 +66,9 @@ struct SearchView: View {
                 }
             }
         }
+        #if !targetEnvironment(macCatalyst)
         .searchable(text: $searchText, prompt: "Search artists, albums, tracks...")
+        #endif
         .onChange(of: searchText) { _, newValue in
             performSearch(query: newValue)
         }
@@ -72,6 +81,49 @@ struct SearchView: View {
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
     }
+
+    #if targetEnvironment(macCatalyst)
+    private var catalystSearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.jellyAmpTextSecondary)
+
+            TextField("Search artists, albums, tracks…", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .focused($isCatalystSearchFocused)
+                .focusEffectDisabled()
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.jellyAmpTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(
+            Capsule()
+                .fill(Color.jellyAmpElevated)
+                .overlay(
+                    Capsule().stroke(
+                        isCatalystSearchFocused
+                            ? Color.jellyAmpAccent.opacity(0.45)
+                            : Color.white.opacity(0.12),
+                        lineWidth: 1
+                    )
+                )
+        )
+        .frame(maxWidth: 720)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+    }
+    #endif
 
     // MARK: - Filter Tabs
     private var filterTabs: some View {

@@ -205,6 +205,39 @@ struct JellyAmpTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test @MainActor func discoveryDoesNotRepeatRecentHistoryAsStartListeningFallback() async {
+        let recent = Track(
+            id: "recent",
+            name: "Recent",
+            artistName: "Recent Artist",
+            albumName: "Recent Album",
+            duration: 1,
+            artworkURL: nil,
+            artistId: "recent-artist"
+        )
+        let api = FakeDiscoveryAPI()
+        api.shouldFailMixes = true
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [recent] })
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.recentTracks.map(\.id) == ["recent"])
+        #expect(viewModel.fallbackTracks.isEmpty)
+    }
+
+    @Test @MainActor func discoveryOffersStartListeningFallbackWithoutHistory() async {
+        let api = FakeDiscoveryAPI()
+        api.shouldFailMixes = true
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] })
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.recentTracks.isEmpty)
+        #expect(viewModel.fallbackTracks.map(\.id) == ["favorite-c", "random-d"])
+    }
+
     @Test @MainActor func discoveryRestoresCachedMixesWithoutRefetching() async throws {
         let defaultsName = "DiscoveryCacheTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: defaultsName))
@@ -692,6 +725,88 @@ struct JellyAmpTests {
         ))
     }
 
+    @Test @MainActor func airPlayAnchorTracksTheVisibleTopBarButton() {
+        #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: true) == 72)
+        #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: false) == 64)
+    }
+
+    @Test @MainActor func upNextReorderingUsesInsertionSemanticsInBothDirections() {
+        #expect(UpNextQueueInteraction.moveDestination(from: 2, onto: 5) == 6)
+        #expect(UpNextQueueInteraction.moveDestination(from: 5, onto: 2) == 2)
+        #expect(UpNextQueueInteraction.hystereticTargetIndex(
+            origin: 3,
+            current: 3,
+            translation: 40,
+            lowerBound: 1,
+            upperBound: 6
+        ) == 3)
+        #expect(UpNextQueueInteraction.hystereticTargetIndex(
+            origin: 3,
+            current: 3,
+            translation: 41,
+            lowerBound: 1,
+            upperBound: 6
+        ) == 4)
+        #expect(UpNextQueueInteraction.hystereticTargetIndex(
+            origin: 3,
+            current: 4,
+            translation: 40,
+            lowerBound: 1,
+            upperBound: 6
+        ) == 4)
+        #expect(UpNextQueueInteraction.hystereticTargetIndex(
+            origin: 3,
+            current: 4,
+            translation: 20,
+            lowerBound: 1,
+            upperBound: 6
+        ) == 3)
+        #expect(UpNextQueueInteraction.visualOffset(
+            for: 3,
+            origin: 3,
+            target: 5,
+            translation: 97
+        ) == 97)
+        #expect(UpNextQueueInteraction.visualOffset(
+            for: 4,
+            origin: 3,
+            target: 5,
+            translation: 97
+        ) == -UpNextQueueInteraction.rowStride)
+        #expect(UpNextQueueInteraction.visualOffset(
+            for: 5,
+            origin: 5,
+            target: 3,
+            translation: -97
+        ) == -97)
+        #expect(UpNextQueueInteraction.visualOffset(
+            for: 4,
+            origin: 5,
+            target: 3,
+            translation: -97
+        ) == UpNextQueueInteraction.rowStride)
+        #expect(UpNextQueueInteraction.swipeOffset(
+            startOffset: -88,
+            translation: 20,
+            revealWidth: 88
+        ) == -68)
+        #expect(UpNextQueueInteraction.swipeOffset(
+            startOffset: -88,
+            translation: 88,
+            revealWidth: 88
+        ) == 0)
+        #expect(UpNextQueueInteraction.swipeOffset(
+            startOffset: -88,
+            translation: 120,
+            revealWidth: 88
+        ) == 0)
+        #expect(UpNextQueueInteraction.settledSwipeOffset(
+            startOffset: -88,
+            predictedTranslation: 60,
+            revealWidth: 88
+        ) == 0)
+    }
+
     @Test @MainActor func playerDismissalTracksOnlyDownwardVerticalDragsOneToOne() {
         #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: 96)) == 96)
         #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: -96)) == 0)
@@ -719,12 +834,14 @@ struct JellyAmpTests {
 private final class FakeDiscoveryAPI: DiscoveryAPI {
     let baseURL = "https://jellyfin.test"
     var requestedMixes: [String] = []
+    var shouldFailMixes = false
     var shouldFailFavorites = false
     var shouldFailRecent = true
     var serverRecentTracks: [BaseItemDto] = []
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
         requestedMixes.append(itemId)
+        if shouldFailMixes { throw FakeError.unavailable }
         return [audio(id: "mix-\(itemId)", artist: "Mix \(itemId)")]
     }
 

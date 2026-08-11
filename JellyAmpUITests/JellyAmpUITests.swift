@@ -132,6 +132,44 @@ final class JellyAmpUITests: XCTestCase {
     }
 
     @MainActor
+    func testUpNextTrackCanBeSelected() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-player-layout"]
+        app.launch()
+
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
+        discoveryMix.tap()
+
+        let miniPlayer = app.buttons["mini-player"]
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+        miniPlayer.tap()
+
+        let nextTrack = app.buttons["now-playing-up-next-ui-layout-next"]
+        XCTAssertTrue(waitForHittable(nextTrack, timeout: 5))
+        let delete = app.buttons["Delete Next Test Track from queue"]
+        XCTAssertFalse(delete.exists)
+        let swipeStart = nextTrack.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+        )
+        let swipeEnd = swipeStart.withOffset(CGVector(dx: -160, dy: 0))
+        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+        XCTAssertTrue(waitForHittable(delete, timeout: 5))
+        delete.tap()
+
+        let title = app.staticTexts["now-playing-title"]
+        XCTAssertTrue(waitForLabel(
+            title,
+            containing: "The Age Of Love",
+            timeout: 5
+        ))
+        let remainingTrack = app.buttons["now-playing-up-next-ui-layout-after-next"]
+        XCTAssertTrue(waitForHittable(remainingTrack, timeout: 5))
+        remainingTrack.tap()
+        XCTAssertTrue(waitForLabel(title, containing: "After Delete Test Track", timeout: 5))
+    }
+
+    @MainActor
     func testSwitchingTabsDismissesNowPlaying() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-player-layout"]
@@ -152,6 +190,8 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(libraryTab, timeout: 5))
         libraryTab.tap()
 
+        XCTAssertTrue(waitForSelected(libraryTab, timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons["Discover"].isSelected)
         XCTAssertTrue(closeButton.waitForNonExistence(timeout: 5))
         XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
     }
@@ -263,6 +303,15 @@ final class JellyAmpUITests: XCTestCase {
     private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForSelected(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "selected == true"),
             object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed

@@ -22,7 +22,7 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
-            TabView(selection: selectedTabBinding) {
+            TabView(selection: $selectedTab) {
                 tabContent(for: 0) {
                     NavigationStack {
                         DiscoveryView()
@@ -121,7 +121,12 @@ struct MainTabView: View {
             Text(instantMixCoordinator.errorMessage ?? "Unable to create an Instant Mix.")
         }
         .onChange(of: selectedTab) { oldTab, newTab in
-            if oldTab != newTab {
+            guard oldTab != newTab, showNowPlaying else { return }
+
+            // Let the native tab control finish committing its selection before
+            // removing the player layer. Mutating the hierarchy inside the tab
+            // selection callback makes Catalyst restore focus to the first tab.
+            DispatchQueue.main.async {
                 dismissNowPlaying()
             }
         }
@@ -152,17 +157,6 @@ struct MainTabView: View {
         }
     }
 
-    private var selectedTabBinding: Binding<Int> {
-        Binding(
-            get: { selectedTab },
-            set: { newTab in
-                guard newTab != selectedTab else { return }
-                dismissNowPlaying()
-                selectedTab = newTab
-            }
-        )
-    }
-
     private func tabContent<Content: View>(
         for tab: Int,
         @ViewBuilder content: () -> Content
@@ -181,12 +175,39 @@ struct MainTabView: View {
         // to the selected tab's content leaves the system tab controls usable.
         if playerManager.currentTrack != nil {
             GeometryReader { geometry in
-                SwipeToDismissPlayer(
-                    isPresented: showNowPlaying,
-                    hiddenOffset: geometry.size.height + geometry.safeAreaInsets.bottom,
-                    onDismiss: dismissNowPlaying
-                ) {
-                    NowPlayingView(onDismiss: dismissNowPlaying)
+                ZStack(alignment: .topTrailing) {
+                    SwipeToDismissPlayer(
+                        isPresented: showNowPlaying,
+                        hiddenOffset: geometry.size.height + geometry.safeAreaInsets.bottom,
+                        onDismiss: dismissNowPlaying
+                    ) {
+                        #if targetEnvironment(macCatalyst)
+                        NowPlayingView(
+                            onDismiss: dismissNowPlaying,
+                            embedsAirPlayButton: false
+                        )
+                        #else
+                        NowPlayingView(onDismiss: dismissNowPlaying)
+                        #endif
+                    }
+
+                    #if targetEnvironment(macCatalyst)
+                    if showNowPlaying {
+                        AirPlayButton()
+                            .frame(width: 44, height: 44)
+                            .padding(.top, 8)
+                            .padding(
+                                .trailing,
+                                NowPlayingLayout.airPlayTrailingPadding(
+                                    usesTwoColumns: NowPlayingLayout.usesTwoColumns(
+                                        isCompactWidth: false,
+                                        screenWidth: geometry.size.width,
+                                        screenHeight: geometry.size.height
+                                    )
+                                )
+                            )
+                    }
+                    #endif
                 }
             }
             .allowsHitTesting(showNowPlaying)

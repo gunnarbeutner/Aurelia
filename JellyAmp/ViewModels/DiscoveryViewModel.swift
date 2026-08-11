@@ -126,8 +126,8 @@ final class DiscoveryViewModel: ObservableObject {
 
         if let snapshot = cache?.load() {
             shelves = snapshot.shelves
-            fallbackTracks = snapshot.fallbackTracks
             recentTracks = snapshot.recentTracks ?? recentTracks
+            fallbackTracks = recentTracks.isEmpty ? snapshot.fallbackTracks : []
             loadedRecentSignature = snapshot.recentSignature
             lastRefreshDate = snapshot.refreshedAt
         }
@@ -227,7 +227,9 @@ final class DiscoveryViewModel: ObservableObject {
 
             let snapshot = DiscoverySnapshot(
                 shelves: newShelves,
-                fallbackTracks: newShelves.isEmpty ? Array(candidates.prefix(12)) : [],
+                fallbackTracks: newShelves.isEmpty && recentTracks.isEmpty
+                    ? Array(candidates.prefix(12))
+                    : [],
                 recentTracks: Array(recentTracks.prefix(12)),
                 recentSignature: Array(recentTracks.prefix(12).map(\.id)),
                 refreshedAt: Date()
@@ -352,8 +354,8 @@ final class DiscoveryViewModel: ObservableObject {
 
     private func apply(_ snapshot: DiscoverySnapshot) {
         shelves = snapshot.shelves
-        fallbackTracks = snapshot.fallbackTracks
         recentTracks = snapshot.recentTracks ?? recentTracks
+        fallbackTracks = recentTracks.isEmpty ? snapshot.fallbackTracks : []
         loadedRecentSignature = snapshot.recentSignature
         lastRefreshDate = snapshot.refreshedAt
     }
