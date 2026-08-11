@@ -44,6 +44,15 @@ class JellyfinService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let session: URLSession
 
+    /// Metadata needed to fully reconstruct the local library and its
+    /// relationships without issuing follow-up requests from individual views.
+    private static let libraryMetadataFields = [
+        "BasicSyncInfo", "MediaSources", "Path", "UserData", "Overview",
+        "Genres", "SortName", "ParentId", "AlbumId", "ArtistItems",
+        "AlbumArtists", "GenreItems", "DateCreated", "PrimaryImageAspectRatio",
+        "ChildCount", "CumulativeRunTimeTicks"
+    ].joined(separator: ",")
+
     // MARK: - Quick Connect Properties
     struct QuickConnectResponse: Codable {
         let Code: String
@@ -313,7 +322,7 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "Recursive", value: "true"),
             URLQueryItem(name: "SortBy", value: "SortName"),
             URLQueryItem(name: "SortOrder", value: "Ascending"),
-            URLQueryItem(name: "Fields", value: "BasicSyncInfo,MediaSources,Path,UserData")
+            URLQueryItem(name: "Fields", value: Self.libraryMetadataFields)
         ]
 
         // Add pagination if specified
@@ -351,14 +360,7 @@ class JellyfinService: ObservableObject {
             throw JellyfinError.invalidResponse
         }
 
-        // Try to decode the response with error handling
-        do {
-            let itemsResponse = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-            return itemsResponse.Items
-        } catch {
-            logger.error("Failed to decode music items: \(error.localizedDescription)")
-            return []
-        }
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
     }
 
     /// Fetches all artists in the music library
@@ -377,7 +379,7 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "Recursive", value: "true"),
             URLQueryItem(name: "SortBy", value: "SortName"),
             URLQueryItem(name: "SortOrder", value: "Ascending"),
-            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,BasicSyncInfo,UserData,AlbumCount,Overview"),
+            URLQueryItem(name: "Fields", value: Self.libraryMetadataFields + ",AlbumCount,SongCount"),
             URLQueryItem(name: "EnableImageTypes", value: "Primary,Backdrop,Banner,Thumb")
         ]
 
@@ -414,7 +416,7 @@ class JellyfinService: ObservableObject {
     }
 
     /// Fetches tracks for an album or playlist
-    func fetchTracks(parentId: String) async throws -> [BaseItemDto] {
+    func fetchTracks(parentId: String, limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -426,8 +428,15 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
             URLQueryItem(name: "SortBy", value: "IndexNumber,SortName"),
             URLQueryItem(name: "SortOrder", value: "Ascending"),
-            URLQueryItem(name: "Fields", value: "BasicSyncInfo")
+            URLQueryItem(name: "Fields", value: Self.libraryMetadataFields)
         ]
+
+        if let limit {
+            components.queryItems?.append(URLQueryItem(name: "Limit", value: String(limit)))
+        }
+        if let startIndex {
+            components.queryItems?.append(URLQueryItem(name: "StartIndex", value: String(startIndex)))
+        }
 
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
@@ -441,14 +450,7 @@ class JellyfinService: ObservableObject {
             throw JellyfinError.invalidResponse
         }
 
-        // Decode the response with error handling
-        do {
-            let itemsResponse = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-            return itemsResponse.Items
-        } catch {
-            logger.error("Failed to decode tracks: \(error.localizedDescription)")
-            return []
-        }
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
     }
 
     /// Get tracks from an album
@@ -738,7 +740,7 @@ class JellyfinService: ObservableObject {
     }
 
     /// Fetch playlists for the authenticated user
-    func fetchPlaylists() async throws -> [BaseItemDto] {
+    func fetchPlaylists(limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -752,8 +754,15 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "Recursive", value: "true"),
             URLQueryItem(name: "SortBy", value: "IsFolder,SortName"),
             URLQueryItem(name: "SortOrder", value: "Ascending"),
-            URLQueryItem(name: "Fields", value: "BasicSyncInfo,ChildCount,UserData"),
+            URLQueryItem(name: "Fields", value: Self.libraryMetadataFields),
         ]
+
+        if let limit {
+            components.queryItems?.append(URLQueryItem(name: "Limit", value: String(limit)))
+        }
+        if let startIndex {
+            components.queryItems?.append(URLQueryItem(name: "StartIndex", value: String(startIndex)))
+        }
 
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
@@ -776,7 +785,7 @@ class JellyfinService: ObservableObject {
 
     // MARK: - Genres
 
-    func fetchGenres() async throws -> [BaseItemDto] {
+    func fetchGenres(limit: Int? = nil, startIndex: Int? = nil) async throws -> [BaseItemDto] {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw URLError(.userAuthenticationRequired)
@@ -789,7 +798,15 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "sortOrder", value: "Ascending"),
             URLQueryItem(name: "includeItemTypes", value: "MusicAlbum"),
             URLQueryItem(name: "recursive", value: "true"),
+            URLQueryItem(name: "fields", value: Self.libraryMetadataFields),
         ]
+
+        if let limit {
+            components.queryItems?.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        if let startIndex {
+            components.queryItems?.append(URLQueryItem(name: "startIndex", value: String(startIndex)))
+        }
 
         var request = URLRequest(url: components.url!)
         request.setValue("MediaBrowser Token=\"\(token)\", Client=\"\(clientName)\", Device=\"iPhone\", DeviceId=\"\(deviceId)\", Version=\"\(clientVersion)\"", forHTTPHeaderField: "X-Emby-Authorization")
@@ -800,7 +817,7 @@ class JellyfinService: ObservableObject {
         }
 
         let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-        return decoded.Items ?? []
+        return decoded.Items
     }
 
     func fetchAlbumsByGenre(genreId: String) async throws -> [BaseItemDto] {
@@ -832,7 +849,7 @@ class JellyfinService: ObservableObject {
         }
 
         let decoded = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-        return decoded.Items ?? []
+        return decoded.Items
     }
 
     // MARK: - Favorites Management

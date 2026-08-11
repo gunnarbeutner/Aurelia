@@ -20,6 +20,9 @@ struct ContentView: View {
                         // Restore last playback state on launch (queue, track, position)
                         PlayerManager.shared.restorePlaybackState()
                     }
+                    .task(id: jellyfinService.libraryScope) {
+                        await LibraryStore.shared.activate()
+                    }
             } else {
                 // User not authenticated - show onboarding
                 OnboardingView()
