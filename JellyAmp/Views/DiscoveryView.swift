@@ -70,12 +70,12 @@ struct DiscoveryView: View {
                     inlineMessage(message)
                 }
 
-                if !viewModel.recentTracks.isEmpty {
-                    recentPlaysShelf
-                }
-
                 if !viewModel.shelves.isEmpty {
                     mixesShelf
+                }
+
+                if !viewModel.recentTracks.isEmpty {
+                    recentPlaysShelf
                 }
 
                 if !viewModel.fallbackTracks.isEmpty {
@@ -148,6 +148,7 @@ struct DiscoveryView: View {
                 .font(.jellyAmpTitle)
                 .foregroundColor(.jellyAmpText)
                 .padding(.horizontal, 20)
+                .accessibilityIdentifier("discovery-recent-title")
 
             trackScroller(viewModel.recentTracks)
         }
@@ -159,6 +160,7 @@ struct DiscoveryView: View {
                 .font(.jellyAmpTitle)
                 .foregroundColor(.jellyAmpText)
                 .padding(.horizontal, 20)
+                .accessibilityIdentifier("discovery-mixes-title")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {

@@ -37,6 +37,12 @@ final class JellyAmpUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
+        let mixesTitle = app.staticTexts["discovery-mixes-title"]
+        let recentTitle = app.staticTexts["discovery-recent-title"]
+        XCTAssertTrue(mixesTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(recentTitle.waitForExistence(timeout: 5))
+        XCTAssertLessThan(mixesTitle.frame.minY, recentTitle.frame.minY)
+
         let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
         XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
         discoveryMix.tap()
