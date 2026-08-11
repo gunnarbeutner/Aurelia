@@ -127,6 +127,118 @@ struct JellyAmpTests {
         #expect(favorites.tracks.first?.isFavorite == true)
     }
 
+    @Test func completeCatalogPersistsRelationshipsAndReplacesOldRows() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let artist = Artist(id: "artist", name: "Björk", bio: nil, albumCount: 1, artworkURL: nil)
+        let album = Album(
+            id: "album",
+            name: "Homogenic",
+            artistName: artist.name,
+            artistId: artist.id,
+            year: 1997,
+            artworkURL: nil,
+            genreIDs: ["electronic"]
+        )
+        let track = Track(
+            id: "track",
+            name: "Jóga",
+            artistName: artist.name,
+            albumName: album.name,
+            duration: 300,
+            artworkURL: nil,
+            indexNumber: 2,
+            albumId: album.id,
+            artistId: artist.id,
+            artistIDs: [artist.id],
+            genreIDs: ["electronic"]
+        )
+        let playlist = Playlist(
+            id: "playlist",
+            name: "Iceland",
+            trackCount: 1,
+            artworkURL: nil,
+            dateCreated: nil
+        )
+
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [album],
+                artists: [artist],
+                tracks: [track],
+                playlists: [playlist],
+                genres: [Genre(id: "electronic", name: "Electronic", albumCount: 1)],
+                playlistEntries: [LibraryPlaylistEntry(playlistID: playlist.id, track: track, position: 0)]
+            ),
+            in: scope
+        )
+
+        #expect(try await repository.tracks(inAlbum: album.id, in: scope).map(\.id) == [track.id])
+        #expect(try await repository.tracks(forArtist: artist.id, in: scope).map(\.id) == [track.id])
+        #expect(try await repository.albums(forArtist: artist.id, in: scope).map(\.id) == [album.id])
+        #expect(try await repository.albums(inGenre: "electronic", in: scope).map(\.id) == [album.id])
+        #expect(try await repository.tracks(inPlaylist: playlist.id, in: scope).map(\.id) == [track.id])
+
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: []
+            ),
+            in: scope
+        )
+        let empty = try await repository.librarySnapshot(in: scope)
+        #expect(empty.albums.isEmpty)
+        #expect(empty.artists.isEmpty)
+        #expect(empty.tracks.isEmpty)
+        #expect(empty.playlists.isEmpty)
+        #expect(empty.genres.isEmpty)
+        #expect(empty.hasCachedLibrary)
+    }
+
+    @Test func sqliteFTSSupportsPrefixesDiacriticsFiltersAndScopes() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "one"))
+        let otherScope = try #require(LibraryScope(baseURL: "https://music.example", userID: "two"))
+        let artist = Artist(id: "artist", name: "Björk", bio: nil, albumCount: 1, artworkURL: nil)
+        let album = Album(id: "album", name: "Homogenic", artistName: "Björk", artistId: "artist", year: 1997, artworkURL: nil)
+        let track = Track(id: "track", name: "Jóga", artistName: "Björk", albumName: "Homogenic", duration: 1, artworkURL: nil, albumId: "album", artistId: "artist")
+        let catalog = LibraryCatalog(albums: [album], artists: [artist], tracks: [track], playlists: [], genres: [], playlistEntries: [])
+        try await repository.replaceCompleteLibrary(catalog, in: scope)
+        try await repository.replaceCompleteLibrary(catalog, in: otherScope)
+
+        #expect(try await repository.search("bjork", filter: .artists, in: scope).map(\.id) == ["artist:artist"])
+        #expect(try await repository.search("hom", filter: .albums, in: scope).map(\.id) == ["album:album"])
+        #expect(try await repository.search("jog", filter: .tracks, in: scope).map(\.id) == ["track:track"])
+        #expect(try await repository.search("hom", filter: .tracks, in: scope).map(\.id) == ["track:track"])
+        #expect(try await repository.search("hom", filter: .all, in: scope).count == 2)
+    }
+
+    @Test func discoverySnapshotPersistsPerLibraryScope() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "one"))
+        let otherScope = try #require(LibraryScope(baseURL: "https://music.example", userID: "two"))
+        let track = Track(id: "seed", name: "Seed", artistName: "Artist", albumName: "Album", duration: 1, artworkURL: nil)
+        let snapshot = DiscoverySnapshot(
+            shelves: [DiscoveryShelf(seed: track, tracks: [track])],
+            fallbackTracks: [],
+            recentTracks: [track],
+            recentSignature: [track.id],
+            refreshedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        await repository.saveDiscoverySnapshot(snapshot, in: scope)
+        #expect(await repository.discoverySnapshot(in: scope) == snapshot)
+        #expect(await repository.discoverySnapshot(in: otherScope) == nil)
+    }
+
     @Test func decodesAudioMusePluginInfo() throws {
         let data = Data(#"{"Version":"1.4.2","AvailableEndpoints":["GET /AudioMuseAI/health"]}"#.utf8)
         let info = try JSONDecoder().decode(AudioMusePluginInfo.self, from: data)
@@ -1012,11 +1124,12 @@ struct JellyAmpTests {
             (id: "unknown", year: nil)
         ])
 
-        #expect(alphabetical == [
-            LibraryScrollIndexEntry(label: "#", targetID: "numeric"),
-            LibraryScrollIndexEntry(label: "A", targetID: "alpha"),
-            LibraryScrollIndexEntry(label: "B", targetID: "beta")
-        ])
+        #expect(alphabetical.count == 37)
+        #expect(alphabetical.first == LibraryScrollIndexEntry(label: "#", targetID: nil))
+        #expect(alphabetical.first { $0.label == "1" }?.targetID == "numeric")
+        #expect(alphabetical.first { $0.label == "A" }?.targetID == "alpha")
+        #expect(alphabetical.first { $0.label == "B" }?.targetID == "beta")
+        #expect(alphabetical.first { $0.label == "Z" }?.targetID == nil)
         #expect(decades == [
             LibraryScrollIndexEntry(label: "2020s", targetID: "new"),
             LibraryScrollIndexEntry(label: "1990s", targetID: "old"),
