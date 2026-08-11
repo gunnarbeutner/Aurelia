@@ -941,6 +941,22 @@ class JellyfinService: ObservableObject {
         Array(try await fetchFavorites(includeItemTypes: "Audio").prefix(limit))
     }
 
+    /// Fetch the signed-in user's cross-client playback state. Jellyfin stores
+    /// DatePlayed per user and item, so this is shared by every client reporting
+    /// playback for the same account rather than being local to this device.
+    func fetchRecentlyPlayedTracks(limit: Int) async throws -> [BaseItemDto] {
+        guard let token = authToken, let userId = currentUserId else {
+            throw JellyfinError.notAuthenticated
+        }
+
+        var components = try buildURLComponents(path: "Users/\(userId)/Items")
+        components.queryItems = Self.recentlyPlayedQueryItems(userId: userId, limit: limit)
+        let request = try authenticatedRequest(from: components, token: token)
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response)
+        return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
+    }
+
     func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] {
         guard let token = authToken, let userId = currentUserId else {
             throw JellyfinError.notAuthenticated
@@ -1015,6 +1031,24 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "ImageTypeLimit", value: "1"),
             URLQueryItem(name: "EnableImageTypes", value: "Primary"),
             URLQueryItem(name: "EnableUserData", value: "true")
+        ]
+    }
+
+    static func recentlyPlayedQueryItems(userId: String, limit: Int) -> [URLQueryItem] {
+        [
+            URLQueryItem(name: "UserId", value: userId),
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "DatePlayed"),
+            URLQueryItem(name: "SortOrder", value: "Descending"),
+            URLQueryItem(name: "IsPlayed", value: "true"),
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,BasicSyncInfo,MediaSources,AlbumPrimaryImageTag,UserData"),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+            URLQueryItem(name: "EnableImageTypes", value: "Primary"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+            URLQueryItem(name: "EnableTotalRecordCount", value: "false")
         ]
     }
 
@@ -1256,6 +1290,10 @@ class JellyfinService: ObservableObject {
     /// Current user ID from UserDefaults
     var currentUserId: String? {
         UserDefaults.standard.string(forKey: "jellyfinUserId")
+    }
+
+    var libraryScope: LibraryScope? {
+        LibraryScope(baseURL: baseURL, userID: currentUserId)
     }
 
     /// Access token from Keychain

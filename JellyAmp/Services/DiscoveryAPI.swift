@@ -11,6 +11,7 @@ protocol DiscoveryAPI {
     var baseURL: String { get }
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto]
+    func fetchRecentlyPlayedTracks(limit: Int) async throws -> [BaseItemDto]
     func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto]
     func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto]
     func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo
@@ -119,6 +120,9 @@ struct PlayerLayoutDiscoveryAPI: DiscoveryAPI {
         ]
     }
 
+    func fetchRecentlyPlayedTracks(limit: Int) async throws -> [BaseItemDto] {
+        [audio(id: "ui-layout-seed", name: "Layout Seed")]
+    }
     func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] { [] }
     func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] { [] }
     func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo { throw JellyfinError.notFound }

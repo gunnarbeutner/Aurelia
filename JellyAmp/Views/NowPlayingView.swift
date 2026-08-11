@@ -34,6 +34,7 @@ struct NowPlayingView: View {
     @State private var artworkImage: Image?
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     var onDismiss: (() -> Void)?
+    var isDismissGestureActive = false
 
     var body: some View {
         GeometryReader { geo in
@@ -80,6 +81,7 @@ struct NowPlayingView: View {
                     .frame(width: NowPlayingLayout.contentWidth(for: geo.size.width))
                     .padding(.horizontal, NowPlayingLayout.horizontalPadding)
                 }
+                .scrollDisabled(isDismissGestureActive)
             }
         }
         .onChange(of: playerManager.currentTrack) { _, newTrack in

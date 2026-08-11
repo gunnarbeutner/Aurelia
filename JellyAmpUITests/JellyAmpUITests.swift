@@ -54,7 +54,9 @@ final class JellyAmpUITests: XCTestCase {
         XCTAssertFalse(closeButton.exists)
 
         let nextButton = app.buttons["mini-player-next"]
+        let playbackButton = app.buttons["mini-player-playback"]
         XCTAssertTrue(nextButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(playbackButton.waitForExistence(timeout: 5))
         XCTAssertTrue(nextButton.isEnabled)
         nextButton.tap()
         XCTAssertTrue(waitForLabel(miniPlayer, containing: "Next Test Track", timeout: 5))
@@ -193,6 +195,34 @@ final class JellyAmpUITests: XCTestCase {
                 navigationBar.frame.minY + 48,
                 "\(title) should use the compact inline title position"
             )
+        }
+    }
+
+    @MainActor
+    func testDownloadsUseLiteralYearAndExposeLongPressActions() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-downloads"]
+        app.launch()
+
+        let album = app.buttons["downloaded-album-ui-download-album"]
+        let year = app.staticTexts["downloaded-album-year-ui-download-album"]
+        XCTAssertTrue(album.waitForExistence(timeout: 5))
+        XCTAssertTrue(year.waitForExistence(timeout: 5))
+        XCTAssertEqual(year.label, "2026")
+
+        album.press(forDuration: 0.8)
+        for action in ["Play", "Shuffle", "Play Next", "Add to Queue", "Go to Artist", "Delete Download"] {
+            XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 5), "Missing album action: \(action)")
+        }
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.1)).tap()
+        album.tap()
+
+        let track = app.buttons["downloaded-track-ui-download-track"]
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        track.press(forDuration: 0.8)
+        for action in ["Go to Album", "Go to Artist", "Play Next", "Play Last", "Add to Queue", "Delete Download"] {
+            XCTAssertTrue(app.buttons[action].waitForExistence(timeout: 5), "Missing track action: \(action)")
         }
     }
 

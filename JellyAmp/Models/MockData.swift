@@ -8,7 +8,7 @@
 import Foundation
 
 // MARK: - Track Model
-struct Track: Identifiable, Codable, Equatable, Hashable {
+nonisolated struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     let id: String
     let name: String
     let artistName: String
@@ -99,7 +99,7 @@ extension Track {
 }
 
 // MARK: - Album Model
-struct Album: Identifiable, Codable, Hashable {
+nonisolated struct Album: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     let artistName: String
@@ -148,7 +148,7 @@ extension Album {
 }
 
 // MARK: - Artist Model
-struct Artist: Identifiable, Codable, Hashable {
+nonisolated struct Artist: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     let bio: String?
@@ -219,7 +219,7 @@ extension Artist {
 }
 
 // MARK: - Playlist Model
-struct Playlist: Identifiable, Codable, Hashable {
+nonisolated struct Playlist: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     var trackCount: Int
@@ -257,7 +257,7 @@ struct Playlist: Identifiable, Codable, Hashable {
 }
 
 // MARK: - Genre Model
-struct Genre: Identifiable, Codable, Hashable {
+nonisolated struct Genre: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     let albumCount: Int?

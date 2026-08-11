@@ -13,6 +13,119 @@ import UIKit
 
 struct JellyAmpTests {
 
+    @Test func sqliteLibraryCachePersistsTypedMetadataAndScopesUsers() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let firstScope = try #require(LibraryScope(baseURL: "HTTPS://Music.example/", userID: "one"))
+        let secondScope = try #require(LibraryScope(baseURL: "https://music.example", userID: "two"))
+        let album = Album(
+            id: "album",
+            name: "Stored Album",
+            artistName: "Stored Artist",
+            artistId: "artist",
+            year: 2026,
+            trackCount: 9,
+            artworkURL: "https://music.example/art",
+            isFavorite: true
+        )
+        let artist = Artist(
+            id: "artist",
+            name: "Stored Artist",
+            bio: "Biography",
+            albumCount: 1,
+            artworkURL: nil,
+            isFavorite: true
+        )
+        let playlist = Playlist(
+            id: "playlist",
+            name: "Stored Playlist",
+            trackCount: 4,
+            artworkURL: nil,
+            dateCreated: Date(timeIntervalSince1970: 123),
+            isFavorite: false
+        )
+
+        try await repository.replaceLibrary(
+            albums: [album],
+            artists: [artist],
+            playlists: [playlist],
+            in: firstScope,
+            syncedAt: Date(timeIntervalSince1970: 456)
+        )
+
+        let stored = try await repository.librarySnapshot(in: firstScope)
+        let otherUser = try await repository.librarySnapshot(in: secondScope)
+        #expect(stored.albums == [album])
+        #expect(stored.artists == [artist])
+        #expect(stored.playlists == [playlist])
+        #expect(stored.lastSyncedAt == Date(timeIntervalSince1970: 456))
+        #expect(!otherUser.hasCachedLibrary)
+        #expect(otherUser.albums.isEmpty)
+    }
+
+    @Test func sqliteRecentlyPlayedUsesTimestampOrderingWithoutAnIDList() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let first = Track(
+            id: "first",
+            name: "First",
+            artistName: "Artist",
+            albumName: "One",
+            duration: 1,
+            artworkURL: nil,
+            albumId: "album-one"
+        )
+        let second = Track(
+            id: "second",
+            name: "Second",
+            artistName: "Artist",
+            albumName: "Two",
+            duration: 1,
+            artworkURL: nil,
+            albumId: "album-two"
+        )
+
+        await repository.recordLocalPlay(first, in: scope, playedAt: Date(timeIntervalSince1970: 10))
+        await repository.recordLocalPlay(second, in: scope, playedAt: Date(timeIntervalSince1970: 20))
+        await repository.recordLocalPlay(first, in: scope, playedAt: Date(timeIntervalSince1970: 30))
+
+        #expect(await repository.cachedRecentTracks(in: scope, limit: 20).map(\.id) == ["first", "second"])
+
+        await repository.replaceRecentlyPlayed(
+            [RecentTrackEntry(track: second, playedAt: Date(timeIntervalSince1970: 40))],
+            in: scope
+        )
+        #expect(await repository.cachedRecentTracks(in: scope, limit: 20).map(\.id) == ["second"])
+    }
+
+    @Test func localPlaybackDoesNotOverwriteCachedFavoriteState() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let track = Track(
+            id: "favorite",
+            name: "Favorite",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 1,
+            artworkURL: nil
+        )
+
+        await repository.setFavorite(true, for: track, in: scope)
+        await repository.recordLocalPlay(track, in: scope)
+
+        let favorites = await repository.favoriteSnapshot(in: scope)
+        #expect(favorites.tracks.map(\.id) == ["favorite"])
+        #expect(favorites.tracks.first?.isFavorite == true)
+    }
+
     @Test func decodesAudioMusePluginInfo() throws {
         let data = Data(#"{"Version":"1.4.2","AvailableEndpoints":["GET /AudioMuseAI/health"]}"#.utf8)
         let info = try JSONDecoder().decode(AudioMusePluginInfo.self, from: data)
@@ -43,6 +156,26 @@ struct JellyAmpTests {
         #expect(viewModel.shelves.map(\.seed.id) == ["recent-a", "recent-b", "favorite-c"])
         #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
         #expect(viewModel.recentTracks.map(\.id) == ["recent-a", "recent-a2", "recent-b"])
+    }
+
+    @Test @MainActor func discoveryUsesJellyfinRecentlyPlayedStateWhenAvailable() async {
+        let local = Track(
+            id: "local",
+            name: "Local",
+            artistName: "Local Artist",
+            albumName: "Local Album",
+            duration: 1,
+            artworkURL: nil
+        )
+        let api = FakeDiscoveryAPI()
+        api.shouldFailRecent = false
+        api.serverRecentTracks = [api.audio(id: "server", artist: "Server Artist")]
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [local] })
+
+        await viewModel.refresh()
+
+        #expect(viewModel.recentTracks.map(\.id) == ["server"])
+        #expect(api.requestedMixes.first == "server")
     }
 
     @Test func discoveryMixUsesTheSeedArtistAndListsOtherArtistsOnce() {
@@ -302,6 +435,36 @@ struct JellyAmpTests {
         #expect(coordinator.pendingArtistNavigation?.name == "Band")
     }
 
+    @Test func downloadedAlbumFormatsItsYearWithoutLocaleGrouping() {
+        let track = DownloadedTrack(
+            trackId: "track",
+            fileName: "track.m4a",
+            fileSize: 1,
+            downloadDate: Date(timeIntervalSince1970: 0),
+            trackName: "Track",
+            artistName: "Band",
+            albumName: "Album",
+            duration: 1,
+            albumId: "album",
+            trackNumber: 1,
+            discNumber: 1,
+            artistId: "band",
+            productionYear: 2026,
+            artworkURL: nil
+        )
+        let album = DownloadedAlbum(
+            albumId: "album",
+            albumName: "Album",
+            artistName: "Band",
+            artistId: "band",
+            productionYear: 2026,
+            tracks: [track]
+        )
+
+        #expect(album.productionYearText == "2026")
+        #expect(album.toAlbum().artistId == "band")
+    }
+
     private static func favoriteSnapshot(id: String) -> FavoritesSnapshot {
         FavoritesSnapshot(
             tracks: [
@@ -371,6 +534,56 @@ struct JellyAmpTests {
         #expect(queryItems.contains(URLQueryItem(name: "EnableUserData", value: "true")))
     }
 
+    @Test func recentlyPlayedRequestsServerUserHistory() {
+        let queryItems = JellyfinService.recentlyPlayedQueryItems(userId: "user", limit: 20)
+
+        #expect(queryItems.contains(URLQueryItem(name: "UserId", value: "user")))
+        #expect(queryItems.contains(URLQueryItem(name: "IncludeItemTypes", value: "Audio")))
+        #expect(queryItems.contains(URLQueryItem(name: "SortBy", value: "DatePlayed")))
+        #expect(queryItems.contains(URLQueryItem(name: "SortOrder", value: "Descending")))
+        #expect(queryItems.contains(URLQueryItem(name: "IsPlayed", value: "true")))
+        #expect(queryItems.contains(URLQueryItem(name: "EnableUserData", value: "true")))
+    }
+
+    @Test func recentlyPlayedTracksBecomeDistinctAlbumsInServerOrder() {
+        let first = BaseItemDto(
+            Id: "track-a1",
+            Name: "A1",
+            Type: .Audio,
+            Album: "Album A",
+            AlbumArtist: "Artist A",
+            AlbumId: "album-a",
+            AlbumPrimaryImageTag: "tag-a",
+            ArtistItems: [NameIdPair(Name: "Artist A", Id: "artist-a")],
+            ProductionYear: 2026
+        )
+        let duplicateAlbum = BaseItemDto(
+            Id: "track-a2",
+            Name: "A2",
+            Type: .Audio,
+            Album: "Album A",
+            AlbumArtist: "Artist A",
+            AlbumId: "album-a"
+        )
+        let second = BaseItemDto(
+            Id: "track-b",
+            Name: "B",
+            Type: .Audio,
+            Album: "Album B",
+            AlbumArtist: "Artist B",
+            AlbumId: "album-b"
+        )
+
+        let albums = recentlyPlayedAlbums(
+            from: [first, duplicateAlbum, second],
+            baseURL: "https://jellyfin.test"
+        )
+
+        #expect(albums.map(\.id) == ["album-a", "album-b"])
+        #expect(albums.first?.artistId == "artist-a")
+        #expect(albums.first?.artworkURL?.contains("/Items/album-a/Images/Primary") == true)
+    }
+
     @Test @MainActor func mediaNavigationUsesKnownTrackAndArtistIdentifiers() {
         let coordinator = NavigationCoordinator()
         let track = Track(
@@ -437,6 +650,27 @@ struct JellyAmpTests {
         }
     }
 
+    @Test @MainActor func playerDismissalTracksOnlyDownwardVerticalDragsOneToOne() {
+        #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: 96)) == 96)
+        #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: -96)) == 0)
+        #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 96, height: 48)) == 0)
+    }
+
+    @Test @MainActor func playerDismissalUsesDistanceOrProjectedVelocity() {
+        #expect(PlayerDismissalInteraction.shouldDismiss(
+            translation: CGSize(width: 0, height: 151),
+            predictedEndTranslation: CGSize(width: 0, height: 151)
+        ))
+        #expect(PlayerDismissalInteraction.shouldDismiss(
+            translation: CGSize(width: 0, height: 80),
+            predictedEndTranslation: CGSize(width: 0, height: 301)
+        ))
+        #expect(!PlayerDismissalInteraction.shouldDismiss(
+            translation: CGSize(width: 0, height: 80),
+            predictedEndTranslation: CGSize(width: 0, height: 250)
+        ))
+    }
+
 }
 
 @MainActor
@@ -444,6 +678,8 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     let baseURL = "https://jellyfin.test"
     var requestedMixes: [String] = []
     var shouldFailFavorites = false
+    var shouldFailRecent = true
+    var serverRecentTracks: [BaseItemDto] = []
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
         requestedMixes.append(itemId)
@@ -453,6 +689,11 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] {
         if shouldFailFavorites { throw FakeError.unavailable }
         return [audio(id: "favorite-c", artist: "Artist C")]
+    }
+
+    func fetchRecentlyPlayedTracks(limit: Int) async throws -> [BaseItemDto] {
+        if shouldFailRecent { throw FakeError.unavailable }
+        return Array(serverRecentTracks.prefix(limit))
     }
 
     func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] {
@@ -466,7 +707,7 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     func checkAudioMuseHealth() async throws -> Bool { true }
     func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { nil }
 
-    private func audio(id: String, artist: String) -> BaseItemDto {
+    func audio(id: String, artist: String) -> BaseItemDto {
         BaseItemDto(
             Id: id,
             Name: id,

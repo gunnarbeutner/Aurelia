@@ -10,7 +10,7 @@ import Foundation
 
 /// Base model for all Jellyfin media items
 /// Conforms to Jellyfin's BaseItemDto structure
-struct BaseItemDto: Codable, Identifiable, Equatable {
+nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     let Id: String
     let Name: String
     let ServerId: String?
@@ -279,7 +279,7 @@ struct BaseItemDto: Codable, Identifiable, Equatable {
 }
 
 /// Jellyfin item types
-enum ItemType: String, Codable {
+nonisolated enum ItemType: String, Codable, Sendable {
     case Audio = "Audio"
     case MusicAlbum = "MusicAlbum"
     case Playlist = "Playlist"
@@ -298,7 +298,7 @@ enum ItemType: String, Codable {
 }
 
 /// Wrapper to handle ImageTags that might come as string, object, number, or boolean
-enum ImageTagsWrapper: Codable, Equatable {
+nonisolated enum ImageTagsWrapper: Codable, Equatable, Sendable {
     case tags(JellyfinImageTags)
     case string(String)
     case none
@@ -371,7 +371,7 @@ enum ImageTagsWrapper: Codable, Equatable {
 }
 
 /// Image tags for different image types
-struct JellyfinImageTags: Codable, Equatable {
+nonisolated struct JellyfinImageTags: Codable, Equatable, Sendable {
     let Primary: String?
     let Art: String?
     let Backdrop: String?
@@ -407,12 +407,13 @@ struct JellyfinImageTags: Codable, Equatable {
 }
 
 /// User-specific data for items
-struct UserItemData: Codable, Equatable {
+nonisolated struct UserItemData: Codable, Equatable, Sendable {
     let PlaybackPositionTicks: Int64?
     let PlayCount: Int?
     let IsFavorite: Bool?
     let Played: Bool?
     let Key: String?
+    let LastPlayedDate: String?
 
     // Custom decoder to handle type mismatches
     init(from decoder: Decoder) throws {
@@ -423,6 +424,7 @@ struct UserItemData: Codable, Equatable {
         IsFavorite = try? container.decode(Bool.self, forKey: .IsFavorite)
         Played = try? container.decode(Bool.self, forKey: .Played)
         Key = try? container.decode(String.self, forKey: .Key)
+        LastPlayedDate = try? container.decode(String.self, forKey: .LastPlayedDate)
     }
 
     // Custom encoder
@@ -434,19 +436,28 @@ struct UserItemData: Codable, Equatable {
         try container.encodeIfPresent(IsFavorite, forKey: .IsFavorite)
         try container.encodeIfPresent(Played, forKey: .Played)
         try container.encodeIfPresent(Key, forKey: .Key)
+        try container.encodeIfPresent(LastPlayedDate, forKey: .LastPlayedDate)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case PlaybackPositionTicks, PlayCount, IsFavorite, Played, Key
+        case PlaybackPositionTicks, PlayCount, IsFavorite, Played, Key, LastPlayedDate
     }
 
     // Memberwise initializer
-    init(PlaybackPositionTicks: Int64? = nil, PlayCount: Int? = nil, IsFavorite: Bool? = nil, Played: Bool? = nil, Key: String? = nil) {
+    init(PlaybackPositionTicks: Int64? = nil, PlayCount: Int? = nil, IsFavorite: Bool? = nil, Played: Bool? = nil, Key: String? = nil, LastPlayedDate: String? = nil) {
         self.PlaybackPositionTicks = PlaybackPositionTicks
         self.PlayCount = PlayCount
         self.IsFavorite = IsFavorite
         self.Played = Played
         self.Key = Key
+        self.LastPlayedDate = LastPlayedDate
+    }
+
+    var lastPlayedDate: Date? {
+        guard let LastPlayedDate else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: LastPlayedDate) ?? ISO8601DateFormatter().date(from: LastPlayedDate)
     }
 }
 
@@ -473,7 +484,7 @@ extension Array where Element == BaseItemDto {
 }
 
 // MARK: - Name/Id Pair (for ArtistItems)
-struct NameIdPair: Codable, Equatable {
+nonisolated struct NameIdPair: Codable, Equatable, Sendable {
     let Name: String
     let Id: String
 }

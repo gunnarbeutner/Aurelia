@@ -29,7 +29,6 @@ struct ArtistDetailView: View {
     @State private var viewMode: ArtistViewMode = .allAlbums
     @State private var selectedYear: Int?
     @State private var isShuffling = false
-    @State private var showNowPlaying = false
     @State private var wikiImageURL: String?
     @State private var showPhotoPicker = false
     @State private var isUploadingImage = false
@@ -107,11 +106,6 @@ struct ArtistDetailView: View {
         }
         .navigationDestination(for: Album.self) { album in
             AlbumDetailView(album: album)
-        }
-        .fullScreenCover(isPresented: $showNowPlaying) {
-            SwipeToDismissPlayer(onDismiss: { showNowPlaying = false }) {
-                NowPlayingView(onDismiss: { showNowPlaying = false })
-            }
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
         .onChange(of: selectedPhotoItem) { _, newItem in

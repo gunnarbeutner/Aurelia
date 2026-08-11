@@ -17,6 +17,7 @@ struct JellyAmpApp: App {
     #if DEBUG
     private let isPlayerLayoutUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout")
     private let isAlbumLayoutUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-album-layout")
+    private let isDownloadsUITest = ProcessInfo.processInfo.arguments.contains("--ui-test-downloads")
     #endif
 
     // Initialize Watch Connectivity
@@ -27,7 +28,8 @@ struct JellyAmpApp: App {
         // Request notification permissions for download completion alerts
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout")
-            || ProcessInfo.processInfo.arguments.contains("--ui-test-album-layout") {
+            || ProcessInfo.processInfo.arguments.contains("--ui-test-album-layout")
+            || ProcessInfo.processInfo.arguments.contains("--ui-test-downloads") {
             cachePlayerLayoutTestArtwork()
             return
         }
@@ -65,6 +67,10 @@ struct JellyAmpApp: App {
                 MainTabView()
             } else if isAlbumLayoutUITest {
                 AlbumDetailLayoutUITestHost()
+            } else if isDownloadsUITest {
+                NavigationStack {
+                    DownloadsView()
+                }
             } else {
                 ContentView()
             }

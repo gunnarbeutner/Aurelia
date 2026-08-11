@@ -54,7 +54,6 @@ class PlayerManager: NSObject, ObservableObject {
     @Published var currentIndex: Int = 0
     @Published var shuffleEnabled = false
     @Published var repeatMode: RepeatMode = .off
-    @Published var recentlyPlayedAlbumIds: [String] = []
     @Published var playbackRate: Float = 1.0
 
     enum RepeatMode: String {
@@ -110,21 +109,22 @@ class PlayerManager: NSObject, ObservableObject {
         static let currentTime = "playerState_currentTime"
         static let shuffleEnabled = "playerState_shuffleEnabled"
         static let repeatMode = "playerState_repeatMode"
-        static let recentTracks = "playerState_recentTracks"
     }
 
     /// Recently played tracks (track-level, not just album IDs)
     @Published var recentlyPlayedTracks: [Track] = []
+    private var recentPlayRevision: UInt64 = 0
 
     // MARK: - Initialization
 
     override init() {
         super.init()
-        recentlyPlayedAlbumIds = UserDefaults.standard.stringArray(forKey: "recentlyPlayedAlbumIds") ?? []
-        recentlyPlayedTracks = Self.loadRecentTracks()
         setupNotifications()
         // Configure audio session immediately when PlayerManager is created
         configureAudioSession()
+        Task { [weak self] in
+            await self?.loadRecentHistoryFromDatabase()
+        }
     }
 
     // MARK: - State Persistence
@@ -175,25 +175,27 @@ class PlayerManager: NSObject, ObservableObject {
     /// Pending seek time — applied when playback starts after state restore
     private var pendingSeekTime: Double = 0
 
-    private static func loadRecentTracks() -> [Track] {
-        guard let data = UserDefaults.standard.data(forKey: StateKey.recentTracks),
-              let tracks = try? JSONDecoder().decode([Track].self, from: data) else { return [] }
-        return tracks
-    }
-
-    private func saveRecentTracks() {
-        if let data = try? JSONEncoder().encode(Array(recentlyPlayedTracks.prefix(20))) {
-            UserDefaults.standard.set(data, forKey: StateKey.recentTracks)
-        }
-    }
-
     private func addToRecentTracks(_ track: Track) {
+        recentPlayRevision &+= 1
         recentlyPlayedTracks.removeAll { $0.id == track.id }
         recentlyPlayedTracks.insert(track, at: 0)
         if recentlyPlayedTracks.count > 20 {
             recentlyPlayedTracks = Array(recentlyPlayedTracks.prefix(20))
         }
-        saveRecentTracks()
+        if let scope = jellyfinService.libraryScope {
+            Task {
+                await LibraryRepository.shared.recordLocalPlay(track, in: scope)
+            }
+        }
+    }
+
+    private func loadRecentHistoryFromDatabase() async {
+        guard let scope = jellyfinService.libraryScope else { return }
+        let startingRevision = recentPlayRevision
+        await LibraryRepository.shared.importLegacyCacheIfNeeded(in: scope)
+        let tracks = await LibraryRepository.shared.cachedRecentTracks(in: scope, limit: 20)
+        guard recentPlayRevision == startingRevision else { return }
+        recentlyPlayedTracks = tracks
     }
 
     // MARK: - Audio Session Configuration
@@ -721,7 +723,6 @@ class PlayerManager: NSObject, ObservableObject {
         }
 
         currentTrack = track
-        trackRecentPlay()
         addToRecentTracks(track)
 
         // Reset time BEFORE saving state — so we don't persist the previous track's
@@ -1311,18 +1312,6 @@ class PlayerManager: NSObject, ObservableObject {
                 break
             }
         }
-    }
-
-    // MARK: - Recently Played Tracking
-
-    private func trackRecentPlay() {
-        guard let track = currentTrack, let albumId = track.albumId, !albumId.isEmpty else { return }
-        recentlyPlayedAlbumIds.removeAll { $0 == albumId }
-        recentlyPlayedAlbumIds.insert(albumId, at: 0)
-        if recentlyPlayedAlbumIds.count > 20 {
-            recentlyPlayedAlbumIds = Array(recentlyPlayedAlbumIds.prefix(20))
-        }
-        UserDefaults.standard.set(recentlyPlayedAlbumIds, forKey: "recentlyPlayedAlbumIds")
     }
 
     // MARK: - Notifications

@@ -57,7 +57,7 @@ struct DiscoveryCache {
     static func key(baseURL: String, userId: String?) -> String {
         let identity = "\(baseURL.lowercased())|\(userId ?? "")"
         let encodedIdentity = Data(identity.utf8).base64EncodedString()
-        return "discoverySnapshot.v1.\(encodedIdentity)"
+        return "discoverySnapshot.v2.\(encodedIdentity)"
     }
 
     func load() -> DiscoverySnapshot? {
@@ -83,6 +83,8 @@ final class DiscoveryViewModel: ObservableObject {
 
     private let api: any DiscoveryAPI
     private let recentTracksProvider: () -> [Track]
+    private let recentCache: (any RecentTrackCaching)?
+    private let recentScope: LibraryScope?
     private let cache: DiscoveryCache?
     private var loadedRecentSignature: [String] = []
     private var lastRefreshDate: Date?
@@ -90,13 +92,15 @@ final class DiscoveryViewModel: ObservableObject {
     private var isPreparingRefresh = false
     private var refreshGeneration: UInt64 = 0
     private var observedActiveAnalysis = false
-    private let cacheMaxAge: TimeInterval = 6 * 60 * 60
+    private let cacheMaxAge: TimeInterval = 5 * 60
 
     convenience init() {
         let service = JellyfinService.shared
         self.init(
             api: service,
             recentTracksProvider: { PlayerManager.shared.recentlyPlayedTracks },
+            recentCache: LibraryRepository.shared,
+            recentScope: service.libraryScope,
             cache: DiscoveryCache(
                 key: DiscoveryCache.key(
                     baseURL: service.baseURL,
@@ -109,10 +113,14 @@ final class DiscoveryViewModel: ObservableObject {
     init(
         api: any DiscoveryAPI,
         recentTracksProvider: @escaping () -> [Track],
+        recentCache: (any RecentTrackCaching)? = nil,
+        recentScope: LibraryScope? = nil,
         cache: DiscoveryCache? = nil
     ) {
         self.api = api
         self.recentTracksProvider = recentTracksProvider
+        self.recentCache = recentCache
+        self.recentScope = recentScope
         self.cache = cache
         recentTracks = Self.uniqueRecentTracks(recentTracksProvider())
 
@@ -186,7 +194,7 @@ final class DiscoveryViewModel: ObservableObject {
         }
 
         do {
-            let recentTracks = Self.uniqueRecentTracks(recentTracksProvider())
+            let recentTracks = await fetchRecentlyPlayedTracks()
             let recent = uniqueSeeds(recentTracks)
             async let favoriteTracks = fetchFavoriteSeedTracks()
             async let randomTracks = fetchRandomSeedTracks()
@@ -272,13 +280,38 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
-    private func recentSeedCandidates() -> [Track] {
-        uniqueSeeds(recentTracksProvider())
-    }
-
     private static func uniqueRecentTracks(_ tracks: [Track]) -> [Track] {
         var itemIds = Set<String>()
         return tracks.filter { itemIds.insert($0.id).inserted }
+    }
+
+    private func fetchRecentlyPlayedTracks() async -> [Track] {
+        do {
+            let items = try await api.fetchRecentlyPlayedTracks(limit: 20)
+            let tracks = Self.uniqueRecentTracks(
+                items
+                    .filter { $0.Type == .Audio }
+                    .map { Track(from: $0, baseURL: api.baseURL) }
+            )
+            if let recentCache, let recentScope {
+                await recentCache.replaceRecentlyPlayed(
+                    recentTrackEntries(from: items, baseURL: api.baseURL),
+                    in: recentScope
+                )
+            }
+            return tracks
+        } catch {
+            // Preserve useful offline behavior without treating one device's
+            // local history as authoritative when Jellyfin is reachable.
+            let local = Self.uniqueRecentTracks(recentTracksProvider())
+            if !local.isEmpty { return local }
+            if let recentCache, let recentScope {
+                return Self.uniqueRecentTracks(
+                    await recentCache.cachedRecentTracks(in: recentScope, limit: 20)
+                )
+            }
+            return []
+        }
     }
 
     private func fetchFavoriteSeedTracks() async -> [Track] {

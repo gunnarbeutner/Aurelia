@@ -54,12 +54,36 @@ func isLibraryLoadCancellation(_ error: Error) -> Bool {
     return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
 }
 
+func recentlyPlayedAlbums(from items: [BaseItemDto], baseURL: String) -> [Album] {
+    var albumIds = Set<String>()
+
+    return items.compactMap { item in
+        guard item.Type == .Audio,
+              let albumId = item.AlbumId,
+              !albumId.isEmpty,
+              albumIds.insert(albumId).inserted else {
+            return nil
+        }
+
+        return Album(
+            id: albumId,
+            name: item.Album ?? "Unknown Album",
+            artistName: item.AlbumArtist ?? item.artistName,
+            artistId: item.ArtistItems?.first?.Id,
+            year: item.ProductionYear,
+            artworkURL: item.albumArtworkURL(baseURL: baseURL)?.absoluteString
+        )
+    }
+}
+
 struct LibraryView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
+    private let repository = LibraryRepository.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var albums: [Album] = []
+    @State private var serverRecentAlbums: [Album]?
     @State private var artists: [Artist] = []
     @State private var playlists: [Playlist] = []
     @State private var searchText = ""
@@ -111,21 +135,34 @@ struct LibraryView: View {
     }
 
     var filteredAndSortedAlbums: [Album] {
+        let sourceAlbums: [Album]
+        if selectedFilter == "Recent" {
+            if let serverRecentAlbums {
+                sourceAlbums = serverRecentAlbums
+            } else {
+                var seen = Set<String>()
+                sourceAlbums = playerManager.recentlyPlayedTracks.compactMap { track in
+                    guard let albumID = track.albumId,
+                          seen.insert(albumID).inserted else { return nil }
+                    return albums.first { $0.id == albumID }
+                }
+            }
+        } else {
+            sourceAlbums = albums
+        }
+
         let filtered: [Album]
         if searchText.isEmpty {
-            filtered = albums
+            filtered = sourceAlbums
         } else {
-            filtered = albums.filter { album in
+            filtered = sourceAlbums.filter { album in
                 album.name.localizedCaseInsensitiveContains(searchText) ||
                 album.artistName.localizedCaseInsensitiveContains(searchText)
             }
         }
 
-        // Recently played ordering
         if selectedFilter == "Recent" {
-            let recentIds = playerManager.recentlyPlayedAlbumIds
-            let recentAlbums = recentIds.compactMap { id in filtered.first { $0.id == id } }
-            return recentAlbums
+            return filtered
         }
 
         return sortOption.sort(filtered)
@@ -634,6 +671,9 @@ struct LibraryView: View {
                     }
                 }
             }
+            if newFilter == "Recent" {
+                Task { await refreshRecentlyPlayedAlbums() }
+            }
         }
         // Search moved inline to filterSection
         .onChange(of: searchText) { _, newValue in
@@ -767,6 +807,9 @@ struct LibraryView: View {
                 self.albumsHasMore = convertedAlbums.count >= 300
                 self.isLoadingMore = false
             }
+            if let scope = jellyfinService.libraryScope {
+                try? await repository.appendAlbums(convertedAlbums, in: scope)
+            }
         } catch {
             await MainActor.run {
                 self.isLoadingMore = false
@@ -796,6 +839,9 @@ struct LibraryView: View {
                 self.artists.append(contentsOf: convertedArtists)
                 self.artistsHasMore = convertedArtists.count >= 200
                 self.isLoadingMore = false
+            }
+            if let scope = jellyfinService.libraryScope {
+                try? await repository.appendArtists(convertedArtists, in: scope)
             }
         } catch {
             await MainActor.run {
@@ -832,28 +878,22 @@ struct LibraryView: View {
 
     // MARK: - Fetch Library
     private func fetchLibrary() async {
-        // Check cache first for instant loading
-        if let cachedAlbums = UserDefaults.standard.data(forKey: "cachedAlbums"),
-           let cachedArtists = UserDefaults.standard.data(forKey: "cachedArtists"),
-           let cachedPlaylists = UserDefaults.standard.data(forKey: "cachedPlaylists"),
-           let decodedAlbums = try? JSONDecoder().decode([Album].self, from: cachedAlbums),
-           let decodedArtists = try? JSONDecoder().decode([Artist].self, from: cachedArtists),
-           let decodedPlaylists = try? JSONDecoder().decode([Playlist].self, from: cachedPlaylists) {
+        if let scope = jellyfinService.libraryScope {
+            await repository.importLegacyCacheIfNeeded(in: scope)
+            if let snapshot = try? await repository.librarySnapshot(in: scope),
+               snapshot.hasCachedLibrary {
+                await MainActor.run {
+                    self.albums = snapshot.albums
+                    self.artists = snapshot.artists
+                    self.playlists = snapshot.playlists
+                    self.errorMessage = nil
+                    self.isLoading = false
+                }
 
-            // Load cached data immediately
-            await MainActor.run {
-                self.albums = decodedAlbums
-                self.artists = decodedArtists
-                self.playlists = decodedPlaylists
-                self.errorMessage = nil
-                self.isLoading = false
+                // Render SQLite immediately, then revalidate it in the background.
+                Task { await syncLibrary() }
+                return
             }
-
-            // Then fetch fresh data in background to update cache
-            Task {
-                await syncLibrary()
-            }
-            return
         }
 
         // No cache - fetch with loading indicator
@@ -876,8 +916,10 @@ struct LibraryView: View {
             async let albumsResult = jellyfinService.fetchMusicItems(includeItemTypes: "MusicAlbum", limit: 300, startIndex: 0)
             async let artistsResult = jellyfinService.fetchArtists(limit: 200, startIndex: 0)
             async let playlistsResult = jellyfinService.fetchPlaylists()
+            async let recentAlbumsResult = fetchRecentlyPlayedAlbums()
 
             let (fetchedAlbums, fetchedArtists, fetchedPlaylists) = try await (albumsResult, artistsResult, playlistsResult)
+            let fetchedRecentAlbums = await recentAlbumsResult
 
             // Convert BaseItemDto to our UI models
             let baseURL = jellyfinService.baseURL
@@ -889,6 +931,9 @@ struct LibraryView: View {
                 self.albums = newAlbums
                 self.artists = newArtists
                 self.playlists = newPlaylists
+                if let fetchedRecentAlbums {
+                    self.serverRecentAlbums = fetchedRecentAlbums
+                }
                 self.isLoading = false
                 
                 // Update pagination state
@@ -896,13 +941,13 @@ struct LibraryView: View {
                 self.artistsHasMore = newArtists.count >= 200
             }
 
-            // Cache the results for next launch
-            if let albumsData = try? JSONEncoder().encode(newAlbums),
-               let artistsData = try? JSONEncoder().encode(newArtists),
-               let playlistsData = try? JSONEncoder().encode(newPlaylists) {
-                UserDefaults.standard.set(albumsData, forKey: "cachedAlbums")
-                UserDefaults.standard.set(artistsData, forKey: "cachedArtists")
-                UserDefaults.standard.set(playlistsData, forKey: "cachedPlaylists")
+            if let scope = jellyfinService.libraryScope {
+                try await repository.replaceLibrary(
+                    albums: newAlbums,
+                    artists: newArtists,
+                    playlists: newPlaylists,
+                    in: scope
+                )
             }
         } catch where isLibraryLoadCancellation(error) {
             // Cancellation is expected when the view goes away. It must not
@@ -917,6 +962,30 @@ struct LibraryView: View {
                 errorMessage = userFriendlyError(error)
                 isLoading = false
             }
+        }
+    }
+
+    private func refreshRecentlyPlayedAlbums() async {
+        guard let fetchedAlbums = await fetchRecentlyPlayedAlbums() else { return }
+        await MainActor.run {
+            serverRecentAlbums = fetchedAlbums
+        }
+    }
+
+    private func fetchRecentlyPlayedAlbums() async -> [Album]? {
+        do {
+            let items = try await jellyfinService.fetchRecentlyPlayedTracks(limit: 50)
+            if let scope = jellyfinService.libraryScope {
+                await repository.replaceRecentlyPlayed(
+                    recentTrackEntries(from: items, baseURL: jellyfinService.baseURL),
+                    in: scope
+                )
+            }
+            return recentlyPlayedAlbums(from: items, baseURL: jellyfinService.baseURL)
+        } catch {
+            guard let scope = jellyfinService.libraryScope else { return nil }
+            let cached = await repository.cachedRecentAlbums(in: scope, limit: 20)
+            return cached.isEmpty ? nil : cached
         }
     }
 

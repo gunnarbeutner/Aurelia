@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-struct FavoritesSnapshot: Equatable {
+nonisolated struct FavoritesSnapshot: Equatable, Sendable {
     var tracks: [Track]
     var albums: [Album]
     var artists: [Artist]
@@ -13,7 +13,7 @@ struct FavoritesSnapshot: Equatable {
     }
 }
 
-enum FavoriteMutation {
+nonisolated enum FavoriteMutation: Sendable {
     case track(Track, isFavorite: Bool)
     case album(Album, isFavorite: Bool)
     case artist(Artist, isFavorite: Bool)
@@ -34,6 +34,18 @@ final class FavoriteMutationCenter: ObservableObject {
     func publish(_ mutation: FavoriteMutation) {
         revision &+= 1
         latestEvent = Event(mutation: mutation)
+
+        guard let scope = JellyfinService.shared.libraryScope else { return }
+        Task {
+            switch mutation {
+            case .track(let track, let isFavorite):
+                await LibraryRepository.shared.setFavorite(isFavorite, for: track, in: scope)
+            case .album(let album, let isFavorite):
+                await LibraryRepository.shared.setFavorite(isFavorite, for: album, in: scope)
+            case .artist(let artist, let isFavorite):
+                await LibraryRepository.shared.setFavorite(isFavorite, for: artist, in: scope)
+            }
+        }
     }
 }
 
@@ -45,19 +57,32 @@ final class FavoritesViewModel: ObservableObject {
     @Published private(set) var revalidationErrorMessage: String?
 
     private let fetcher: () async throws -> FavoritesSnapshot
+    private let cachedSnapshotProvider: () async -> FavoritesSnapshot
+    private let cacheSnapshot: (FavoritesSnapshot) async -> Void
     private let now: () -> Date
     private let revisionProvider: () -> UInt64
     private let revalidationInterval: TimeInterval
 
     private var hasLoaded = false
+    private var hasLoadedCache = false
     private var isStale = true
     private var lastValidatedAt: Date?
     private var fetchTask: Task<FavoritesSnapshot, Error>?
 
     convenience init() {
         let service = JellyfinService.shared
+        let scope = service.libraryScope
         self.init(
             revisionProvider: { FavoriteMutationCenter.shared.revision },
+            cachedSnapshotProvider: {
+                guard let scope else { return .empty }
+                await LibraryRepository.shared.importLegacyCacheIfNeeded(in: scope)
+                return await LibraryRepository.shared.favoriteSnapshot(in: scope)
+            },
+            cacheSnapshot: { snapshot in
+                guard let scope else { return }
+                await LibraryRepository.shared.replaceFavorites(snapshot, in: scope)
+            },
             fetcher: {
                 let items = try await service.fetchFavorites(
                     includeItemTypes: "Audio,MusicAlbum,MusicArtist"
@@ -71,11 +96,15 @@ final class FavoritesViewModel: ObservableObject {
         revalidationInterval: TimeInterval = 5 * 60,
         now: @escaping () -> Date = Date.init,
         revisionProvider: @escaping () -> UInt64 = { 0 },
+        cachedSnapshotProvider: @escaping () async -> FavoritesSnapshot = { .empty },
+        cacheSnapshot: @escaping (FavoritesSnapshot) async -> Void = { _ in },
         fetcher: @escaping () async throws -> FavoritesSnapshot
     ) {
         self.revalidationInterval = revalidationInterval
         self.now = now
         self.revisionProvider = revisionProvider
+        self.cachedSnapshotProvider = cachedSnapshotProvider
+        self.cacheSnapshot = cacheSnapshot
         self.fetcher = fetcher
     }
 
@@ -85,6 +114,15 @@ final class FavoritesViewModel: ObservableObject {
     var isEmpty: Bool { snapshot.isEmpty }
 
     func activate() async {
+        if !hasLoadedCache {
+            hasLoadedCache = true
+            let cached = await cachedSnapshotProvider()
+            if !cached.isEmpty {
+                snapshot = cached
+                hasLoaded = true
+                isInitialLoading = false
+            }
+        }
         guard shouldRevalidate else { return }
         await load()
     }
@@ -156,6 +194,7 @@ final class FavoritesViewModel: ObservableObject {
                 snapshot = fetchedSnapshot
                 lastValidatedAt = now()
                 isStale = false
+                await cacheSnapshot(fetchedSnapshot)
             } else {
                 // A successful local mutation landed while this request was in
                 // flight. Keep the incrementally updated state instead of

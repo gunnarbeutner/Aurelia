@@ -125,28 +125,18 @@ struct MiniPlayerView: View {
                 .accessibilityLabel("Now playing: \(currentTrack.name) by \(currentTrack.artistName)")
                 .accessibilityHint("Tap for full player")
 
-                // Play/pause — solid gradient circle like PWA
+                // Keep transport controls visually consistent and flat.
                 Button {
                     playerManager.togglePlayPause()
                 } label: {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [.jellyAmpAccent, .jellyAmpSecondary],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.black)
-                            .offset(x: playerManager.isPlaying ? 0 : 1)
-                    }
+                    Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(width: 36, height: 44)
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
+                .accessibilityIdentifier("mini-player-playback")
                 .contentTransition(.symbolEffect(.replace))
 
                 Button {

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7A1C00012F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
 		6D1D0D042F3A7AA100995579 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D032F3A7AA100995579 /* WidgetKit.framework */; };
 		6D1D0D062F3A7AA100995579 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D052F3A7AA100995579 /* SwiftUI.framework */; };
 		6D1D0D112F3A7AA200995579 /* JellyAmpComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D1D0D012F3A7AA100995579 /* JellyAmpComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -175,6 +176,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A1C00012F40000100DB0001 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -314,6 +316,7 @@
 			);
 			name = JellyAmp;
 			packageProductDependencies = (
+				7A1C00032F40000100DB0001 /* GRDB */,
 			);
 			productName = JellyAmp;
 			productReference = 4BEDE7732EA2B830001E8050 /* JellyAmp.app */;
@@ -557,6 +560,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4BEDE7742EA2B830001E8050 /* Products */;
+			packageReferences = (
+				7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -1473,6 +1479,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7A1C00032F40000100DB0001 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4BEDE76B2EA2B830001E8050 /* Project object */;
 }

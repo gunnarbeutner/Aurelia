@@ -86,6 +86,25 @@ struct DownloadedAlbum: Identifiable {
         tracks.compactMap { $0.duration }.reduce(0, +)
     }
 
+    /// Release years are identifiers, not quantities. Returning a String keeps
+    /// SwiftUI from applying locale-specific thousands separators (for example
+    /// rendering 2026 as "2.026").
+    var productionYearText: String? {
+        productionYear.map(String.init)
+    }
+
+    func toAlbum() -> Album {
+        Album(
+            id: albumId,
+            name: albumName,
+            artistName: artistName,
+            artistId: artistId,
+            year: productionYear,
+            trackCount: trackCount,
+            artworkURL: nil
+        )
+    }
+
     var formattedDuration: String {
         let totalSeconds = Int(totalDuration)
         let hours = totalSeconds / 3600
@@ -378,6 +397,14 @@ class DownloadManager: NSObject, ObservableObject {
         calculateStorageUsed()
     }
 
+    /// Delete every downloaded track and cached artwork belonging to an album.
+    func deleteDownloads(for album: DownloadedAlbum) {
+        for track in album.tracks {
+            deleteDownload(trackId: track.trackId)
+        }
+        deleteCachedArtwork(for: album.albumId)
+    }
+
     // MARK: - Playback Support
 
     /// Get local file URL for a track if downloaded, nil otherwise
@@ -409,6 +436,30 @@ class DownloadManager: NSObject, ObservableObject {
     // MARK: - Metadata Persistence
 
     private func loadDownloadedTracks() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-downloads") {
+            let fixture = DownloadedTrack(
+                trackId: "ui-download-track",
+                fileName: "ui-download-track.m4a",
+                fileSize: 12_345_678,
+                downloadDate: Date(timeIntervalSince1970: 0),
+                trackName: "Downloaded Test Track",
+                artistName: "Downloaded Test Artist",
+                albumName: "Downloaded Test Album",
+                duration: 245,
+                albumId: "ui-download-album",
+                trackNumber: 1,
+                discNumber: 1,
+                artistId: "ui-download-artist",
+                productionYear: 2026,
+                artworkURL: nil
+            )
+            downloadedTracks = [fixture]
+            downloadStates[fixture.trackId] = .downloaded
+            return
+        }
+        #endif
+
         guard let data = UserDefaults.standard.data(forKey: downloadedTracksKey),
               let tracks = try? JSONDecoder().decode([DownloadedTrack].self, from: data) else {
             return

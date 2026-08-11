@@ -132,6 +132,10 @@ struct DownloadsView: View {
                         DownloadedAlbumRow(album: album)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("downloaded-album-\(album.id)")
+                    .contextMenu {
+                        DownloadedAlbumContextMenu(album: album)
+                    }
                 }
             }
         }
@@ -290,10 +294,11 @@ struct DownloadedAlbumRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    if let year = album.productionYear {
-                        Text("\(year)")
+                    if let year = album.productionYearText {
+                        Text(year)
                             .font(.jellyAmpCaption)
                             .foregroundColor(.secondary)
+                            .accessibilityIdentifier("downloaded-album-year-\(album.id)")
 
                         Text("•")
                             .foregroundColor(.secondary)
@@ -341,6 +346,62 @@ struct DownloadedAlbumRow: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Downloaded Album Context Menu
+struct DownloadedAlbumContextMenu: View {
+    let album: DownloadedAlbum
+
+    private let playerManager = PlayerManager.shared
+    private let downloadManager = DownloadManager.shared
+
+    private var tracks: [Track] {
+        album.tracks.map { $0.toTrack() }
+    }
+
+    var body: some View {
+        Button {
+            playerManager.play(tracks: tracks)
+        } label: {
+            Label("Play", systemImage: "play.fill")
+        }
+
+        Button {
+            playerManager.play(tracks: tracks.shuffled())
+        } label: {
+            Label("Shuffle", systemImage: "shuffle")
+        }
+
+        InstantMixButton(itemId: album.albumId, itemName: album.albumName)
+
+        Divider()
+
+        Button {
+            playerManager.playNext(tracks: tracks)
+        } label: {
+            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+        }
+
+        Button {
+            playerManager.addToQueue(tracks: tracks)
+        } label: {
+            Label("Add to Queue", systemImage: "text.append")
+        }
+
+        Button {
+            NavigationCoordinator.shared.navigateToArtist(for: album.toAlbum())
+        } label: {
+            Label("Go to Artist", systemImage: "person.fill")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            downloadManager.deleteDownloads(for: album)
+        } label: {
+            Label("Delete Download", systemImage: "trash")
         }
     }
 }
@@ -430,8 +491,8 @@ struct DownloadedAlbumDetailView: View {
                     .foregroundColor(.secondary)
 
                 HStack(spacing: 8) {
-                    if let year = album.productionYear {
-                        Text("\(year)")
+                    if let year = album.productionYearText {
+                        Text(year)
                     }
                     Text("•")
                     Text("\(album.trackCount) tracks")
@@ -536,14 +597,7 @@ struct DownloadedAlbumDetailView: View {
     }
 
     private func deleteAlbum() {
-        // Delete all tracks in album
-        for track in album.tracks {
-            downloadManager.deleteDownload(trackId: track.trackId)
-        }
-
-        // Delete cached artwork
-        downloadManager.deleteCachedArtwork(for: album.albumId)
-
+        downloadManager.deleteDownloads(for: album)
         dismiss()
     }
 
@@ -613,6 +667,10 @@ struct DownloadedTrackRowInAlbum: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("downloaded-track-\(track.trackId)")
+        .contextMenu {
+            TrackContextMenu(track: track.toTrack())
+        }
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

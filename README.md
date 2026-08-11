@@ -34,6 +34,7 @@ A modern music streaming client for Jellyfin servers, built for iOS, macOS, and 
 
 - **SwiftUI** - Modern declarative UI framework
 - **Combine** - Reactive state management
+- **SQLite + GRDB** - Indexed, transactional local library metadata and user-state cache
 - **AVFoundation** - High-quality audio playback with gapless support
 - **Keychain** - Secure credential storage
 - **WatchConnectivity** - Seamless iPhone ↔ Watch credential sync

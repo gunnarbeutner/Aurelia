@@ -91,14 +91,16 @@ struct MainTabView: View {
             // removal transitions can leave a departing layer intercepting taps.
             if playerManager.currentTrack != nil {
                 GeometryReader { geometry in
-                    SwipeToDismissPlayer(onDismiss: dismissNowPlaying) {
-                        NowPlayingView(onDismiss: dismissNowPlaying)
+                    SwipeToDismissPlayer(
+                        isPresented: showNowPlaying,
+                        hiddenOffset: geometry.size.height + geometry.safeAreaInsets.bottom,
+                        onDismiss: dismissNowPlaying
+                    ) { isDismissGestureActive in
+                        NowPlayingView(
+                            onDismiss: dismissNowPlaying,
+                            isDismissGestureActive: isDismissGestureActive
+                        )
                     }
-                    .offset(
-                        y: showNowPlaying
-                            ? 0
-                            : geometry.size.height + geometry.safeAreaInsets.bottom
-                    )
                 }
                 .allowsHitTesting(showNowPlaying)
                 .accessibilityHidden(!showNowPlaying)
@@ -166,30 +168,32 @@ struct MainTabView: View {
 }
 
 struct SwipeToDismissPlayer<Content: View>: View {
+    let isPresented: Bool
+    let hiddenOffset: CGFloat
     let onDismiss: () -> Void
-    @ViewBuilder let content: () -> Content
+    @ViewBuilder let content: (Bool) -> Content
     @State private var dragOffset: CGFloat = 0
+    @State private var isDismissGestureActive = false
 
     var body: some View {
-        content()
-            .offset(y: dragOffset)
-            .opacity(max(0, 1.0 - Double(dragOffset) / 500.0))
+        content(isDismissGestureActive)
+            .offset(y: isPresented ? dragOffset : hiddenOffset)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
-                        let isDownward = value.translation.height > 0
-                        let isVertical = abs(value.translation.height) > abs(value.translation.width)
-                        dragOffset = isDownward && isVertical ? value.translation.height : 0
+                        dragOffset = PlayerDismissalInteraction.offset(
+                            for: value.translation
+                        )
+                        isDismissGestureActive = dragOffset > 0
                     }
                     .onEnded { value in
-                        let shouldDismiss = value.translation.height > 150
-                            || value.predictedEndTranslation.height > 300
+                        isDismissGestureActive = false
 
-                        if shouldDismiss {
-                            withAnimation(PlayerPresentationMotion.animation) {
-                                dragOffset = 0
-                                onDismiss()
-                            }
+                        if PlayerDismissalInteraction.shouldDismiss(
+                            translation: value.translation,
+                            predictedEndTranslation: value.predictedEndTranslation
+                        ) {
+                            onDismiss()
                         } else {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                                 dragOffset = 0
@@ -197,6 +201,25 @@ struct SwipeToDismissPlayer<Content: View>: View {
                         }
                     }
             )
+            .onChange(of: isPresented) { _, _ in
+                dragOffset = 0
+                isDismissGestureActive = false
+            }
+    }
+}
+
+enum PlayerDismissalInteraction {
+    static func offset(for translation: CGSize) -> CGFloat {
+        let isDownward = translation.height > 0
+        let isVertical = abs(translation.height) > abs(translation.width)
+        return isDownward && isVertical ? translation.height : 0
+    }
+
+    static func shouldDismiss(
+        translation: CGSize,
+        predictedEndTranslation: CGSize
+    ) -> Bool {
+        translation.height > 150 || predictedEndTranslation.height > 300
     }
 }
 
