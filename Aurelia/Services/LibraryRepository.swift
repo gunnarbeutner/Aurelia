@@ -246,12 +246,23 @@ nonisolated protocol RecentTrackCaching: Sendable {
     func replaceRecentlyPlayed(_ entries: [RecentTrackEntry], in scope: LibraryScope) async
 }
 
+nonisolated struct DiscoveryCandidate: Sendable, Equatable {
+    let track: Track
+    let lastPlayedAt: Date?
+    let playCount: Int
+    let isFavorite: Bool
+}
+
+nonisolated protocol DiscoveryCandidateProviding: Sendable {
+    func discoveryCandidates(in scope: LibraryScope) async -> [DiscoveryCandidate]
+}
+
 /// SQLite-backed source of truth for the local Jellyfin metadata cache.
 ///
 /// A single actor owns the pool-facing repository API. GRDB still uses a
 /// DatabasePool internally, so observations and future background readers can
 /// be added without changing the schema or the view-facing interface.
-actor LibraryRepository: RecentTrackCaching {
+actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
     static let shared: LibraryRepository = {
         do {
             return try LibraryRepository(databaseURL: defaultDatabaseURL())
@@ -1123,6 +1134,41 @@ actor LibraryRepository: RecentTrackCaching {
             }
         } catch {
             logger.error("Unable to save Discover snapshot: \(error.localizedDescription)")
+        }
+    }
+
+    func discoveryCandidates(in scope: LibraryScope) -> [DiscoveryCandidate] {
+        do {
+            return try database.read { db in
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT item.*, state.lastPlayedAt, state.playCount, state.isFavorite
+                        FROM libraryItem AS item
+                        LEFT JOIN userItemState AS state
+                          ON state.serverKey = item.serverKey
+                         AND state.userID = item.userID
+                         AND state.itemID = item.itemID
+                        WHERE item.serverKey = ?
+                          AND item.userID = ?
+                          AND item.itemType = ?
+                        """,
+                    arguments: [scope.serverKey, scope.userID, LibraryItemType.track.rawValue]
+                )
+                return try rows.map { row in
+                    let record = try LibraryItemRecord(row: row)
+                    let isFavorite = (row["isFavorite"] as Bool?) ?? false
+                    return DiscoveryCandidate(
+                        track: record.track(isFavorite: isFavorite),
+                        lastPlayedAt: row["lastPlayedAt"],
+                        playCount: (row["playCount"] as Int?) ?? 0,
+                        isFavorite: isFavorite
+                    )
+                }
+            }
+        } catch {
+            logger.error("Unable to load discovery candidates: \(error.localizedDescription)")
+            return []
         }
     }
 

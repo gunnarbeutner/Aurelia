@@ -540,6 +540,81 @@ struct AureliaTests {
         #expect(await repository.discoverySnapshot(in: otherScope) == nil)
     }
 
+    @Test func dynamicDiscoverySelectsNeglectedAndUnderplayedTracksStably() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let old = now.addingTimeInterval(-200 * 24 * 60 * 60)
+        let recent = now.addingTimeInterval(-5 * 24 * 60 * 60)
+        let candidates = [
+            DiscoveryCandidate(
+                track: Track(id: "favorite", name: "Favorite", artistName: "A", albumName: "One", duration: 1, artworkURL: nil, artistId: "a"),
+                lastPlayedAt: old,
+                playCount: 8,
+                isFavorite: true
+            ),
+            DiscoveryCandidate(
+                track: Track(id: "former", name: "Former Regular", artistName: "B", albumName: "Two", duration: 1, artworkURL: nil, artistId: "b"),
+                lastPlayedAt: old,
+                playCount: 3,
+                isFavorite: false
+            ),
+            DiscoveryCandidate(
+                track: Track(id: "recent", name: "Recent", artistName: "C", albumName: "Three", duration: 1, artworkURL: nil, artistId: "c"),
+                lastPlayedAt: recent,
+                playCount: 10,
+                isFavorite: true
+            ),
+            DiscoveryCandidate(
+                track: Track(id: "unplayed", name: "Unplayed", artistName: "D", albumName: "Four", duration: 1, artworkURL: nil, artistId: "d"),
+                lastPlayedAt: nil,
+                playCount: 0,
+                isFavorite: false
+            ),
+            DiscoveryCandidate(
+                track: Track(id: "one-play", name: "One Play", artistName: "E", albumName: "Five", duration: 1, artworkURL: nil, artistId: "e"),
+                lastPlayedAt: old,
+                playCount: 1,
+                isFavorite: false
+            )
+        ]
+
+        let rediscover = DynamicDiscoverySelector.rediscover(from: candidates, now: now)
+        let rediscoverAgain = DynamicDiscoverySelector.rediscover(from: candidates, now: now)
+        let offPath = DynamicDiscoverySelector.offTheBeatenPath(from: candidates, now: now)
+
+        #expect(Set(rediscover.map(\.id)) == ["favorite", "former"])
+        #expect(rediscover == rediscoverAgain)
+        #expect(Set(offPath.map(\.id)) == ["unplayed", "one-play"])
+    }
+
+    @Test func dynamicDiscoveryCapsRepeatedArtists() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let candidates = (0..<8).map { index in
+            DiscoveryCandidate(
+                track: Track(
+                    id: "track-\(index)",
+                    name: "Track \(index)",
+                    artistName: index < 6 ? "Same Artist" : "Artist \(index)",
+                    albumName: "Album",
+                    duration: 1,
+                    artworkURL: nil,
+                    artistId: index < 6 ? "same" : "artist-\(index)"
+                ),
+                lastPlayedAt: nil,
+                playCount: 0,
+                isFavorite: false
+            )
+        }
+
+        let selected = DynamicDiscoverySelector.offTheBeatenPath(
+            from: candidates,
+            now: now,
+            limit: 8
+        )
+
+        #expect(selected.filter { $0.artistId == "same" }.count == 2)
+        #expect(selected.count == 4)
+    }
+
     @Test func decodesAudioMusePluginInfo() throws {
         let data = Data(#"{"Version":"1.4.2","AvailableEndpoints":["GET /AudioMuseAI/health"]}"#.utf8)
         let info = try JSONDecoder().decode(AudioMusePluginInfo.self, from: data)
@@ -591,8 +666,7 @@ struct AureliaTests {
 
         #expect(viewModel.shelves.count == DiscoveryViewModel.maximumMixShelfCount)
         #expect(viewModel.shelves.map(\.seed.id) == [
-            "recent-0", "recent-1", "recent-2", "recent-3", "recent-4",
-            "recent-5", "recent-6", "recent-7", "favorite-c", "random-d"
+            "recent-0", "recent-1", "recent-2", "recent-3", "recent-4"
         ])
     }
 
@@ -784,6 +858,7 @@ struct AureliaTests {
     }
 
     @Test @MainActor func discoveryStagesAutomaticRefreshUntilNextActivation() async {
+        var currentDate = Date(timeIntervalSince1970: 1_800_000_000)
         var recent = [
             Track(
                 id: "recent-a",
@@ -796,7 +871,11 @@ struct AureliaTests {
             )
         ]
         let api = FakeDiscoveryAPI()
-        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { recent },
+            now: { currentDate }
+        )
 
         await viewModel.refresh()
         #expect(viewModel.shelves.first?.seed.id == "recent-a")
@@ -813,6 +892,18 @@ struct AureliaTests {
                 artistId: "artist-b"
             )
         ]
+
+        // The current day's discovery shelves remain stable, even when recent
+        // playback changes underneath them.
+        await viewModel.loadIfNeeded(publishResult: false)
+        await viewModel.activate()
+
+        #expect(viewModel.shelves.first?.seed.id == "recent-a")
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
+
+        // Once a new day begins, prepare the next snapshot without rearranging
+        // the visible page. It is adopted on the following activation.
+        currentDate = currentDate.addingTimeInterval(24 * 60 * 60)
         await viewModel.loadIfNeeded(publishResult: false)
 
         #expect(viewModel.shelves.first?.seed.id == "recent-a")

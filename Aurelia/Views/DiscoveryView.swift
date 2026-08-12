@@ -74,6 +74,26 @@ struct DiscoveryView: View {
                     mixesShelf
                 }
 
+                if !viewModel.rediscoverTracks.isEmpty {
+                    dynamicTrackShelf(
+                        title: "Rediscover",
+                        subtitle: "Music you loved that hasn't been in rotation lately.",
+                        systemImage: "clock.arrow.circlepath",
+                        tracks: viewModel.rediscoverTracks,
+                        accessibilityID: "discovery-rediscover-title"
+                    )
+                }
+
+                if !viewModel.offTheBeatenPathTracks.isEmpty {
+                    dynamicTrackShelf(
+                        title: "Off the Beaten Path",
+                        subtitle: "Underplayed corners of your library, refreshed daily.",
+                        systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                        tracks: viewModel.offTheBeatenPathTracks,
+                        accessibilityID: "discovery-off-path-title"
+                    )
+                }
+
                 if !viewModel.recentTracks.isEmpty {
                     recentPlaysShelf
                 }
@@ -156,11 +176,13 @@ struct DiscoveryView: View {
 
     private var mixesShelf: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Mixes")
-                .font(.appTitle)
-                .foregroundColor(.appText)
-                .padding(.horizontal, 20)
-                .accessibilityIdentifier("discovery-mixes-title")
+            shelfHeader(
+                title: "Your Daily Mixes",
+                subtitle: "Familiar favorites and nearby discoveries, refreshed daily.",
+                systemImage: "sparkles",
+                tracks: nil,
+                accessibilityID: "discovery-mixes-title"
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
@@ -190,6 +212,62 @@ struct DiscoveryView: View {
             }
             .scrollClipDisabled()
         }
+    }
+
+    private func dynamicTrackShelf(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tracks: [Track],
+        accessibilityID: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            shelfHeader(
+                title: title,
+                subtitle: subtitle,
+                systemImage: systemImage,
+                tracks: tracks,
+                accessibilityID: accessibilityID
+            )
+            trackScroller(tracks)
+        }
+    }
+
+    private func shelfHeader(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tracks: [Track]?,
+        accessibilityID: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label(title, systemImage: systemImage)
+                    .font(.appTitle)
+                    .foregroundColor(.appText)
+                    .accessibilityIdentifier(accessibilityID)
+                Text(subtitle)
+                    .font(.appCaption)
+                    .foregroundColor(.appTextSecondary)
+            }
+
+            Spacer(minLength: 8)
+
+            if let tracks, !tracks.isEmpty {
+                Button {
+                    startPlayback(tracks, startingAt: 0)
+                } label: {
+                    Label("Play", systemImage: "play.fill")
+                        .font(.appSubheadline)
+                        .foregroundColor(.appAccentText)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.appAccent))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20)
     }
 
     private var fallbackShelf: some View {

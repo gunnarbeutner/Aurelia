@@ -42,8 +42,103 @@ nonisolated struct DiscoverySnapshot: Codable, Equatable, Sendable {
     let shelves: [DiscoveryShelf]
     let fallbackTracks: [Track]
     let recentTracks: [Track]?
+    var rediscoverTracks: [Track]? = nil
+    var offTheBeatenPathTracks: [Track]? = nil
     let recentSignature: [String]
     let refreshedAt: Date
+}
+
+nonisolated enum DynamicDiscoverySelector {
+    static func rediscover(
+        from candidates: [DiscoveryCandidate],
+        now: Date,
+        limit: Int = 24
+    ) -> [Track] {
+        let neglectCutoff = now.addingTimeInterval(-120 * 24 * 60 * 60)
+        let eligible = candidates.filter { candidate in
+            guard let lastPlayedAt = candidate.lastPlayedAt else { return false }
+            return lastPlayedAt < neglectCutoff && (candidate.isFavorite || candidate.playCount >= 2)
+        }
+        return select(
+            eligible.sorted {
+                if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
+                if $0.playCount != $1.playCount { return $0.playCount > $1.playCount }
+                return ($0.lastPlayedAt ?? .distantPast) < ($1.lastPlayedAt ?? .distantPast)
+            },
+            period: periodKey(for: now, component: .weekOfYear),
+            limit: limit
+        )
+    }
+
+    static func offTheBeatenPath(
+        from candidates: [DiscoveryCandidate],
+        now: Date,
+        limit: Int = 24
+    ) -> [Track] {
+        let recentCutoff = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        let eligible = candidates.filter { candidate in
+            candidate.playCount <= 1
+                && (candidate.lastPlayedAt == nil || candidate.lastPlayedAt! < recentCutoff)
+        }
+        return select(
+            eligible.sorted {
+                if ($0.lastPlayedAt == nil) != ($1.lastPlayedAt == nil) {
+                    return $0.lastPlayedAt == nil
+                }
+                if $0.playCount != $1.playCount { return $0.playCount < $1.playCount }
+                return $0.track.id < $1.track.id
+            },
+            period: periodKey(for: now, component: .day),
+            limit: limit
+        )
+    }
+
+    static func dayKey(for date: Date) -> String {
+        periodKey(for: date, component: .day)
+    }
+
+    private enum PeriodComponent { case day, weekOfYear }
+
+    private static func periodKey(for date: Date, component: PeriodComponent) -> String {
+        let calendar = Calendar(identifier: .iso8601)
+        let parts: DateComponents
+        switch component {
+        case .day:
+            parts = calendar.dateComponents([.year, .month, .day], from: date)
+            return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+        case .weekOfYear:
+            parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+            return String(format: "%04d-W%02d", parts.yearForWeekOfYear ?? 0, parts.weekOfYear ?? 0)
+        }
+    }
+
+    private static func select(
+        _ candidates: [DiscoveryCandidate],
+        period: String,
+        limit: Int
+    ) -> [Track] {
+        // Pull from a broad high-quality pool, then use a stable period-based
+        // order so the collection changes without jumping around on every visit.
+        let pool = Array(candidates.prefix(max(limit * 5, limit)))
+            .sorted { stableValue("\(period)|\($0.track.id)") < stableValue("\(period)|\($1.track.id)") }
+        var artistCounts: [String: Int] = [:]
+        var selected: [Track] = []
+        for candidate in pool {
+            let artist = candidate.track.artistId
+                ?? candidate.track.artistName.lowercased()
+            guard artistCounts[artist, default: 0] < 2 else { continue }
+            artistCounts[artist, default: 0] += 1
+            selected.append(candidate.track)
+            if selected.count == limit { break }
+        }
+        return selected
+    }
+
+    private static func stableValue(_ value: String) -> UInt64 {
+        value.utf8.reduce(14_695_981_039_346_656_037) { hash, byte in
+            (hash ^ UInt64(byte)) &* 1_099_511_628_211
+        }
+    }
 }
 
 struct DiscoveryCache {
@@ -74,7 +169,7 @@ struct DiscoveryCache {
 
 @MainActor
 final class DiscoveryViewModel: ObservableObject {
-    static let maximumMixShelfCount = 10
+    static let maximumMixShelfCount = 5
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Aurelia",
@@ -84,6 +179,8 @@ final class DiscoveryViewModel: ObservableObject {
     @Published private(set) var shelves: [DiscoveryShelf] = []
     @Published private(set) var fallbackTracks: [Track] = []
     @Published private(set) var recentTracks: [Track] = []
+    @Published private(set) var rediscoverTracks: [Track] = []
+    @Published private(set) var offTheBeatenPathTracks: [Track] = []
     @Published private(set) var availability: AudioMuseAvailability = .checking
     @Published private(set) var isLoading = false
     @Published private(set) var isRefreshing = false
@@ -96,6 +193,8 @@ final class DiscoveryViewModel: ObservableObject {
     private let cache: DiscoveryCache?
     private let snapshotRepository: LibraryRepository?
     private let snapshotScope: LibraryScope?
+    private let candidateProvider: (any DiscoveryCandidateProviding)?
+    private let now: () -> Date
     private var hasLoadedDatabaseCache = false
     private var loadedRecentSignature: [String] = []
     private var lastRefreshDate: Date?
@@ -103,7 +202,7 @@ final class DiscoveryViewModel: ObservableObject {
     private var isPreparingRefresh = false
     private var refreshGeneration: UInt64 = 0
     private var observedActiveAnalysis = false
-    private let cacheMaxAge: TimeInterval = 5 * 60
+    private var hasGeneratedDynamicContent = false
 
     convenience init() {
         let service = JellyfinService.shared
@@ -114,6 +213,7 @@ final class DiscoveryViewModel: ObservableObject {
             recentScope: service.libraryScope,
             snapshotRepository: LibraryRepository.shared,
             snapshotScope: service.libraryScope,
+            candidateProvider: LibraryRepository.shared,
             cache: DiscoveryCache(
                 key: DiscoveryCache.key(
                     baseURL: service.baseURL,
@@ -130,6 +230,8 @@ final class DiscoveryViewModel: ObservableObject {
         recentScope: LibraryScope? = nil,
         snapshotRepository: LibraryRepository? = nil,
         snapshotScope: LibraryScope? = nil,
+        candidateProvider: (any DiscoveryCandidateProviding)? = nil,
+        now: @escaping () -> Date = Date.init,
         cache: DiscoveryCache? = nil
     ) {
         self.api = api
@@ -138,12 +240,18 @@ final class DiscoveryViewModel: ObservableObject {
         self.recentScope = recentScope
         self.snapshotRepository = snapshotRepository
         self.snapshotScope = snapshotScope
+        self.candidateProvider = candidateProvider
+        self.now = now
         self.cache = cache
         recentTracks = Self.uniqueRecentTracks(recentTracksProvider())
 
         if let snapshot = cache?.load() {
             shelves = snapshot.shelves
             recentTracks = snapshot.recentTracks ?? recentTracks
+            rediscoverTracks = snapshot.rediscoverTracks ?? []
+            offTheBeatenPathTracks = snapshot.offTheBeatenPathTracks ?? []
+            hasGeneratedDynamicContent = snapshot.rediscoverTracks != nil
+                || snapshot.offTheBeatenPathTracks != nil
             fallbackTracks = recentTracks.isEmpty ? snapshot.fallbackTracks : []
             loadedRecentSignature = snapshot.recentSignature
             lastRefreshDate = snapshot.refreshedAt
@@ -151,7 +259,8 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     var hasContent: Bool {
-        !shelves.isEmpty || !fallbackTracks.isEmpty || !recentTracks.isEmpty
+        !shelves.isEmpty || !rediscoverTracks.isEmpty || !offTheBeatenPathTracks.isEmpty
+            || !fallbackTracks.isEmpty || !recentTracks.isEmpty
     }
 
     func activate() async {
@@ -182,13 +291,12 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     func loadIfNeeded(publishResult: Bool = true) async {
-        let signature = Self.uniqueRecentTracks(recentTracksProvider()).prefix(12).map(\.id)
-        let freshestSignature = pendingSnapshot?.recentSignature ?? loadedRecentSignature
         let freshestRefreshDate = pendingSnapshot?.refreshedAt ?? lastRefreshDate
-        let cacheIsStale = freshestRefreshDate.map {
-            Date().timeIntervalSince($0) >= cacheMaxAge
+        let dynamicContentMissing = !hasGeneratedDynamicContent && candidateProvider != nil
+        let dayChanged = freshestRefreshDate.map {
+            DynamicDiscoverySelector.dayKey(for: $0) != DynamicDiscoverySelector.dayKey(for: now())
         } ?? true
-        guard !hasContent || signature != freshestSignature || cacheIsStale else { return }
+        guard !hasContent || dynamicContentMissing || dayChanged else { return }
         await refresh(force: true, publishResult: publishResult)
     }
 
@@ -224,6 +332,20 @@ final class DiscoveryViewModel: ObservableObject {
         do {
             let previousShelves = shelves
             let recentTracks = try await fetchRecentlyPlayedTracks()
+            let discoveryCandidates: [DiscoveryCandidate]
+            if let candidateProvider, let snapshotScope {
+                discoveryCandidates = await candidateProvider.discoveryCandidates(in: snapshotScope)
+            } else {
+                discoveryCandidates = []
+            }
+            let rediscoverTracks = DynamicDiscoverySelector.rediscover(
+                from: discoveryCandidates,
+                now: now()
+            )
+            let offTheBeatenPathTracks = DynamicDiscoverySelector.offTheBeatenPath(
+                from: discoveryCandidates,
+                now: now()
+            )
             let recent = uniqueSeeds(recentTracks)
             async let favoriteTracks = fetchFavoriteSeedTracks()
             async let randomTracks = fetchRandomSeedTracks()
@@ -279,8 +401,10 @@ final class DiscoveryViewModel: ObservableObject {
                 shelves: resolvedShelves,
                 fallbackTracks: fallbackTracks,
                 recentTracks: Array(recentTracks.prefix(12)),
+                rediscoverTracks: rediscoverTracks,
+                offTheBeatenPathTracks: offTheBeatenPathTracks,
                 recentSignature: Array(recentTracks.prefix(12).map(\.id)),
-                refreshedAt: Date()
+                refreshedAt: now()
             )
             let mixIssue = mixRefreshIssue(
                 candidatesWereAvailable: !candidates.isEmpty,
@@ -440,6 +564,10 @@ final class DiscoveryViewModel: ObservableObject {
     private func apply(_ snapshot: DiscoverySnapshot) {
         shelves = snapshot.shelves
         recentTracks = snapshot.recentTracks ?? recentTracks
+        rediscoverTracks = snapshot.rediscoverTracks ?? []
+        offTheBeatenPathTracks = snapshot.offTheBeatenPathTracks ?? []
+        hasGeneratedDynamicContent = snapshot.rediscoverTracks != nil
+            || snapshot.offTheBeatenPathTracks != nil
         fallbackTracks = recentTracks.isEmpty ? snapshot.fallbackTracks : []
         loadedRecentSignature = snapshot.recentSignature
         lastRefreshDate = snapshot.refreshedAt
