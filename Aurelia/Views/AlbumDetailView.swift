@@ -584,9 +584,14 @@ struct AlbumDetailView: View {
                 }
                 .padding(.vertical, 40)
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(albumTracks.enumerated()), id: \.element.id) { index, track in
-                        AlbumTrackRow(track: track, trackNumber: index + 1) {
+                        AlbumTrackRow(
+                            track: track,
+                            trackNumber: index + 1,
+                            isCurrentlyPlaying: playerManager.currentTrack?.id == track.id,
+                            isPlaying: playerManager.isPlaying
+                        ) {
                             // Play from this track
                             playerManager.play(tracks: albumTracks, startingAt: index)
                         } onAddToPlaylist: {
@@ -658,14 +663,10 @@ struct InfoBadge: View {
 struct AlbumTrackRow: View {
     let track: Track
     let trackNumber: Int
+    let isCurrentlyPlaying: Bool
+    let isPlaying: Bool
     let action: () -> Void
     var onAddToPlaylist: (() -> Void)? = nil
-    @ObservedObject var downloadManager = DownloadManager.shared
-    @ObservedObject var playerManager = PlayerManager.shared
-
-    private var isCurrentlyPlaying: Bool {
-        playerManager.currentTrack?.id == track.id
-    }
 
     var body: some View {
         Button {
@@ -677,7 +678,7 @@ struct AlbumTrackRow: View {
                     Image(systemName: "waveform")
                         .font(.body.weight(.bold))
                         .foregroundColor(.appAccent)
-                        .symbolEffect(.variableColor.iterative, isActive: playerManager.isPlaying)
+                        .symbolEffect(.variableColor.iterative, isActive: isPlaying)
                         .frame(width: 28, alignment: .trailing)
                 } else {
                     Text("\(trackNumber)")

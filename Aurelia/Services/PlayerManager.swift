@@ -126,6 +126,10 @@ class PlayerManager: NSObject, ObservableObject {
     private var originalQueue: [Track] = []
     private var originalIndex: Int = 0
     private var lastValidPlaybackTime: Double = 0.0  // Track last known position to detect unexpected restarts
+    private let statePersistenceQueue = DispatchQueue(
+        label: "de.beutner.Aurelia.player-state-persistence",
+        qos: .utility
+    )
 
     // MARK: - Playback State Persistence Keys
     private enum StateKey {
@@ -157,16 +161,35 @@ class PlayerManager: NSObject, ObservableObject {
 
     // MARK: - State Persistence
 
-    /// Save current playback state to UserDefaults
-    func savePlaybackState() {
+    /// Save current playback state to UserDefaults.
+    ///
+    /// Encoding a large artist or playlist queue can be expensive. Normal
+    /// playback saves run on a serial utility queue so tapping Play does not
+    /// hold the main thread. Scene-background saves can request a synchronous
+    /// flush so state is durable before the app is suspended.
+    func savePlaybackState(synchronously: Bool = false) {
         guard !queue.isEmpty else { return }
-        if let data = try? JSONEncoder().encode(queue) {
-            UserDefaults.standard.set(data, forKey: StateKey.queue)
+
+        let queueSnapshot = queue
+        let indexSnapshot = currentIndex
+        let timeSnapshot = currentTime
+        let shuffleSnapshot = shuffleEnabled
+        let repeatSnapshot = repeatMode.rawValue
+        let write = {
+            if let data = try? JSONEncoder().encode(queueSnapshot) {
+                UserDefaults.standard.set(data, forKey: StateKey.queue)
+            }
+            UserDefaults.standard.set(indexSnapshot, forKey: StateKey.currentIndex)
+            UserDefaults.standard.set(timeSnapshot, forKey: StateKey.currentTime)
+            UserDefaults.standard.set(shuffleSnapshot, forKey: StateKey.shuffleEnabled)
+            UserDefaults.standard.set(repeatSnapshot, forKey: StateKey.repeatMode)
         }
-        UserDefaults.standard.set(currentIndex, forKey: StateKey.currentIndex)
-        UserDefaults.standard.set(currentTime, forKey: StateKey.currentTime)
-        UserDefaults.standard.set(shuffleEnabled, forKey: StateKey.shuffleEnabled)
-        UserDefaults.standard.set(repeatMode.rawValue, forKey: StateKey.repeatMode)
+
+        if synchronously {
+            statePersistenceQueue.sync(execute: write)
+        } else {
+            statePersistenceQueue.async(execute: write)
+        }
         logger.info("💾 Saved playback state: \(self.currentTrack?.name ?? "none") @ \(self.currentTime)s")
     }
 

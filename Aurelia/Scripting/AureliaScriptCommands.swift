@@ -25,8 +25,8 @@ enum AureliaScripting {
     static let tabNames = ["discover", "library", "search", "favorites", "settings"]
 
     /// How long a scripted navigation waits for the push to land. The view
-    /// stages navigation through a short delay, so this only needs to outlast
-    /// that plus a little slack.
+    /// stages navigation on the next run loop so tab and path mutations commit
+    /// in order; this timeout is only a safety bound.
     private static let navigationTimeout: TimeInterval = 3
 
     // MARK: - Player presentation

@@ -140,7 +140,9 @@ struct MainTabView: View {
             navCoordinator.pendingArtistNavigation = nil
             selectedTab = 1
             libraryPath = NavigationPath()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // Stage the push on the next run loop so the tab selection and path
+            // reset commit first, without imposing a visible fixed delay.
+            DispatchQueue.main.async {
                 libraryPath.append(artist)
             }
         }
@@ -149,7 +151,7 @@ struct MainTabView: View {
             navCoordinator.pendingAlbumNavigation = nil
             selectedTab = 1
             libraryPath = NavigationPath()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.async {
                 libraryPath.append(album)
             }
         }

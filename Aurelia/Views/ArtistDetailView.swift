@@ -491,7 +491,7 @@ struct ArtistDetailView: View {
 
     // MARK: - All Albums View
     private var allAlbumsView: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             ForEach(albums.sorted(by: { ($0.year ?? 0) > ($1.year ?? 0) })) { album in
                 NavigationLink(value: album) {
                     AlbumListRow(album: album)
@@ -523,7 +523,7 @@ struct ArtistDetailView: View {
 
     // MARK: - By Year View
     private var byYearView: some View {
-        VStack(spacing: 12) {
+        LazyVStack(spacing: 12) {
             ForEach(albumsByYear.keys.sorted(by: >), id: \.self) { year in
                 YearSection(
                     year: year,

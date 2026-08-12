@@ -117,7 +117,7 @@ struct AureliaApp: App {
             }
 
             // Save playback state so we can restore on next launch
-            PlayerManager.shared.savePlaybackState()
+            PlayerManager.shared.savePlaybackState(synchronously: true)
 
             // Ensure audio session remains active
             do {

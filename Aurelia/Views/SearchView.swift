@@ -175,7 +175,7 @@ struct SearchView: View {
     // MARK: - Results List
     private var searchResultsList: some View {
         ScrollView {
-            VStack(spacing: 8) {
+            LazyVStack(spacing: 8) {
                 ForEach(searchResults) { result in
                     switch result {
                     case .artist(let artist):
