@@ -301,17 +301,18 @@ struct NowPlayingView: View {
 
     private func compactContent(in geometry: GeometryProxy) -> some View {
         let contentWidth = NowPlayingLayout.contentWidth(for: geometry.size.width)
-        // The iOS tab bar floats over this view rather than insetting it, so
-        // its height has to come off the page or the queue shows through from
-        // behind the bar.
-        let pageHeight = max(
-            0,
-            geometry.size.height
-                - (horizontalSizeClass == .compact ? MiniPlayerLayout.tabBarClearance : 0)
-        )
+        // The floating compact tab bar overlays this geometry. Player controls
+        // must fit above it, while the queue must start beyond its translucent
+        // region. Those are deliberately separate heights: using the latter to
+        // size artwork pushed the secondary controls underneath the tab bar.
+        let bottomOcclusion = horizontalSizeClass == .compact
+            ? MiniPlayerLayout.tabBarClearance
+            : geometry.safeAreaInsets.bottom
+        let playerPageHeight = max(0, geometry.size.height - bottomOcclusion)
+        let queueStartHeight = max(playerPageHeight, geometry.size.height + bottomOcclusion)
         let artworkSize = NowPlayingLayout.compactArtworkSize(
             contentWidth: contentWidth,
-            availableHeight: pageHeight
+            availableHeight: playerPageHeight
                 - chromeHeight
                 - NowPlayingLayout.artworkTopSpacing
                 - NowPlayingLayout.queueTopSpacing
@@ -349,9 +350,13 @@ struct NowPlayingView: View {
 
                     Spacer(minLength: NowPlayingLayout.queueTopSpacing)
                 }
-                // One page for the player, so the queue reads as a second
-                // screen instead of peeking out from under the tab bar.
-                .frame(minHeight: pageHeight, alignment: .top)
+                // Keep all player controls inside the unobscured page.
+                .frame(height: playerPageHeight, alignment: .top)
+
+                // Move the queue past both the underlying viewport edge and
+                // the floating tab bar without inflating the artwork.
+                Color.clear
+                    .frame(height: queueStartHeight - playerPageHeight)
 
                 queueSection
 
@@ -1357,7 +1362,11 @@ private struct UpNextQueueRow: View {
                         .frame(width: 44, height: 52)
                         .contentShape(Rectangle())
                         .accessibilityLabel("Reorder \(track.name)")
-                        .highPriorityGesture(reorderGesture)
+                        .accessibilityHint("Press and hold, then drag")
+                        // The scroll view must see the touch from its first
+                        // sample to preserve flick velocity. A high-priority
+                        // long press withheld quick swipes until they ended.
+                        .simultaneousGesture(reorderGesture)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -1418,19 +1427,25 @@ private struct UpNextQueueRow: View {
     }
 
     private var reorderGesture: some Gesture {
-        DragGesture(
-            minimumDistance: 4,
-            coordinateSpace: .named(Self.coordinateSpaceName)
-        )
+        LongPressGesture(minimumDuration: 0.25, maximumDistance: 10)
+            .sequenced(
+                before: DragGesture(
+                    minimumDistance: 0,
+                    coordinateSpace: .named(Self.coordinateSpaceName)
+                )
+            )
             .onChanged { value in
+                guard case .second(true, let drag?) = value else { return }
                 isReorderGestureActive = true
                 swipeOffset = 0
                 swipeStartOffset = nil
                 swipeAxis = nil
-                onReorder(value.translation.height, false)
+                onReorder(drag.translation.height, false)
             }
             .onEnded { value in
-                onReorder(value.translation.height, true)
+                if case .second(true, let drag?) = value {
+                    onReorder(drag.translation.height, true)
+                }
                 DispatchQueue.main.async {
                     isReorderGestureActive = false
                 }
