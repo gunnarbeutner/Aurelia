@@ -24,6 +24,7 @@ struct MainTabView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var navCoordinator = NavigationCoordinator.shared
     @ObservedObject var instantMixCoordinator = InstantMixCoordinator.shared
+    @ObservedObject private var keyboard = KeyboardObserver.shared
 
     var body: some View {
         ZStack {
@@ -170,8 +171,11 @@ struct MainTabView: View {
         }
         #else
         .overlay(alignment: .bottom) {
-            // Mini Player floats above the iOS tab bar.
-            if playerManager.currentTrack != nil {
+            // Mini Player floats above the iOS tab bar. Keyboard avoidance
+            // lifts a bottom overlay, and opting its content out of the
+            // keyboard safe area does not help — the TabView it hangs off is
+            // what shrinks — so it stands down entirely while typing.
+            if playerManager.currentTrack != nil, !keyboard.isVisible {
                 MiniPlayerView(showNowPlaying: $showNowPlaying)
                     .padding(.horizontal, usesBottomTabBar ? 8 : 0)
                     .padding(.bottom, usesBottomTabBar ? MiniPlayerLayout.tabBarClearance : 0)

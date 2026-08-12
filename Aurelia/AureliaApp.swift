@@ -53,6 +53,7 @@ struct AureliaApp: App {
         }
         NetworkMonitor.shared.start()
         OfflineAvailability.shared.start()
+        KeyboardObserver.shared.start()
     }
 
     #if DEBUG

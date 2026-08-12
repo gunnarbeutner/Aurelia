@@ -11,6 +11,7 @@ import UIKit
 struct SearchView: View {
     let searchFocusRequest: Int
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject private var keyboard = KeyboardObserver.shared
     private let repository = LibraryRepository.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dismissSearch) private var dismissSearch
@@ -230,7 +231,9 @@ struct SearchView: View {
         }
         .accessibilityIdentifier("search-results-list")
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if playerManager.currentTrack != nil {
+            // Nothing sits in this strip while typing: the tab bar is behind
+            // the keyboard and the mini player has stood down.
+            if playerManager.currentTrack != nil, !keyboard.isVisible {
                 Color.appBackground
                     .frame(height: MiniPlayerLayout.contentClearance)
                     .accessibilityHidden(true)
