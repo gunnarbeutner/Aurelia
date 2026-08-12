@@ -12,6 +12,7 @@ enum PlayerPresentationMotion {
 }
 
 struct MainTabView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTab = 0
     @State private var showNowPlaying = false
     @State private var searchFocusRequest = 0
@@ -182,14 +183,18 @@ struct MainTabView: View {
             // Mini Player floats above the iOS tab bar.
             if playerManager.currentTrack != nil {
                 MiniPlayerView(showNowPlaying: $showNowPlaying)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, MiniPlayerLayout.tabBarClearance)
+                    .padding(.horizontal, usesBottomTabBar ? 8 : 0)
+                    .padding(.bottom, usesBottomTabBar ? MiniPlayerLayout.tabBarClearance : 0)
                     .opacity(showNowPlaying ? 0 : 1)
                     .allowsHitTesting(!showNowPlaying)
                     .accessibilityHidden(showNowPlaying)
             }
         }
         #endif
+    }
+
+    private var usesBottomTabBar: Bool {
+        horizontalSizeClass == .compact
     }
 
     #if targetEnvironment(macCatalyst)

@@ -39,6 +39,35 @@ nonisolated struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+nonisolated enum DailyMixRecommendations {
+    /// AudioMuse can occasionally return a nearest-neighbour set dominated by
+    /// one artist. A Daily Mix should cross at least one artist boundary and
+    /// avoid letting any single artist consume most of the visible shelf.
+    static func select(from tracks: [Track], limit: Int = 12) -> [Track] {
+        guard limit > 0 else { return [] }
+        let grouped = Dictionary(grouping: tracks) { artistKey($0.artistName) }
+        guard grouped.keys.filter({ !$0.isEmpty }).count >= 2 else { return [] }
+
+        var artistCounts: [String: Int] = [:]
+        var selected: [Track] = []
+        let perArtistLimit = max(2, limit / 4)
+
+        for track in tracks {
+            let key = artistKey(track.artistName)
+            if artistCounts[key, default: 0] < perArtistLimit {
+                selected.append(track)
+                artistCounts[key, default: 0] += 1
+            }
+            if selected.count == limit { return selected }
+        }
+        return selected
+    }
+
+    private static func artistKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
 nonisolated struct DiscoverySnapshot: Codable, Equatable, Sendable {
     let shelves: [DiscoveryShelf]
     let fallbackTracks: [Track]
@@ -51,7 +80,7 @@ nonisolated struct DiscoverySnapshot: Codable, Equatable, Sendable {
 }
 
 nonisolated enum DynamicDiscoverySelector {
-    static let dailyMixStrategyVersion = 2
+    static let dailyMixStrategyVersion = 3
 
     nonisolated struct DailyMixSeed: Equatable, Sendable {
         let track: Track
@@ -472,15 +501,16 @@ final class DiscoveryViewModel: ObservableObject {
                 do {
                     let seed = dailySeed.track
                     try Task.checkCancellation()
-                    let items = try await api.fetchInstantMix(itemId: seed.id, limit: 13)
+                    let items = try await api.fetchInstantMix(itemId: seed.id, limit: 40)
                     try Task.checkCancellation()
                     let tracks = items
                         .filter { $0.Type == .Audio && $0.Id != seed.id }
                         .map { Track(from: $0, baseURL: api.baseURL) }
                         .filter { !recentTrackIDs.contains($0.id) }
-                        .filter { usedRecommendationIds.insert($0.id).inserted }
-                    let recommendations = Array(tracks.prefix(12))
+                        .filter { !usedRecommendationIds.contains($0.id) }
+                    let recommendations = DailyMixRecommendations.select(from: tracks)
                     if !recommendations.isEmpty {
+                        usedRecommendationIds.formUnion(recommendations.map(\.id))
                         newShelves.append(DiscoveryShelf(seed: seed, tracks: recommendations, title: dailySeed.title))
                     } else {
                         emptyMixCount += 1
@@ -509,7 +539,13 @@ final class DiscoveryViewModel: ObservableObject {
             // A refresh is only allowed to improve known-good recommendations.
             // Plugin health and analysis state are transient, so neither may
             // erase shelves that were generated successfully earlier.
-            let resolvedShelves = newShelves.isEmpty ? previousShelves : newShelves
+            let reusablePreviousShelves = previousShelves.filter {
+                !DailyMixRecommendations.select(from: $0.tracks).isEmpty
+            }
+            let generatedSeedIDs = Set(newShelves.map(\.seed.id))
+            let resolvedShelves = Array((newShelves + reusablePreviousShelves.filter {
+                !generatedSeedIDs.contains($0.seed.id)
+            }).prefix(Self.maximumMixShelfCount))
             let resolvedRediscoverTracks = discoveryCandidates.isEmpty
                 ? self.rediscoverTracks
                 : rediscoverTracks
