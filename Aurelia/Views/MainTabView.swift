@@ -399,7 +399,10 @@ struct SwipeToDismissPlayer<Content: View>: View {
             .frame(width: 96, height: 28, alignment: .top)
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 8)
+                // Measure in a stationary coordinate space. Measuring inside
+                // the layer being offset feeds the movement back into the
+                // gesture and makes pointer drags lag and oscillate.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         dragOffset = PlayerDismissalInteraction.offset(
                             for: value.translation
@@ -427,9 +430,9 @@ struct SwipeToDismissPlayer<Content: View>: View {
 
 enum PlayerDismissalInteraction {
     static func offset(for translation: CGSize) -> CGFloat {
-        let isDownward = translation.height > 0
-        let isVertical = abs(translation.height) > abs(translation.width)
-        return isDownward && isVertical ? translation.height : 0
+        // Once dismissal begins, incidental sideways movement must not snap
+        // the player back to zero. Only upward movement is resisted.
+        max(0, translation.height)
     }
 
     static func shouldDismiss(
