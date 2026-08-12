@@ -2002,4 +2002,162 @@ struct AureliaActionTests {
         #expect(snapshot.artists.map(\.id) == ["ar"])
         #expect(FavoritesSnapshot.from(items: [], baseURL: "https://music.example").isEmpty)
     }
+
+    /// The catalog is what tells browsing which containers still have something
+    /// playable, so the mapping from downloaded tracks upward has to hold.
+    @Test func offlineContainersMapDownloadedTracksToAlbumsArtistsAndPlaylists() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+
+        let albumArtist = Artist(id: "va", name: "Various Artists", bio: nil, albumCount: 1, artworkURL: nil)
+        let trackArtist = Artist(id: "bjork", name: "Björk", bio: nil, albumCount: 0, artworkURL: nil)
+        let compilation = Album(
+            id: "comp",
+            name: "Iceland Airwaves",
+            artistName: albumArtist.name,
+            artistId: albumArtist.id,
+            year: 2001,
+            artworkURL: nil,
+            genreIDs: []
+        )
+        let untouched = Album(
+            id: "other",
+            name: "Vespertine",
+            artistName: trackArtist.name,
+            artistId: trackArtist.id,
+            year: 2001,
+            artworkURL: nil,
+            genreIDs: []
+        )
+        func track(_ id: String, album: Album) -> Track {
+            Track(
+                id: id,
+                name: id,
+                artistName: trackArtist.name,
+                albumName: album.name,
+                duration: 200,
+                artworkURL: nil,
+                indexNumber: 1,
+                albumId: album.id,
+                artistId: trackArtist.id,
+                artistIDs: [trackArtist.id],
+                genreIDs: []
+            )
+        }
+        let downloaded = track("downloaded", album: compilation)
+        let streaming = track("streaming", album: untouched)
+        let saved = Playlist(id: "saved", name: "Saved", trackCount: 1, artworkURL: nil, dateCreated: nil)
+        let empty = Playlist(id: "empty", name: "Nothing local", trackCount: 1, artworkURL: nil, dateCreated: nil)
+
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [compilation, untouched],
+                artists: [albumArtist, trackArtist],
+                tracks: [downloaded, streaming],
+                playlists: [saved, empty],
+                genres: [],
+                playlistEntries: [
+                    LibraryPlaylistEntry(playlistID: saved.id, track: downloaded, position: 0),
+                    LibraryPlaylistEntry(playlistID: empty.id, track: streaming, position: 0)
+                ]
+            ),
+            in: scope
+        )
+
+        let containers = try await repository.offlineContainers(
+            forTrackIDs: [downloaded.id],
+            in: scope
+        )
+
+        #expect(containers.albumIDs == [compilation.id])
+        #expect(containers.playlistIDs == [saved.id])
+        // The album artist is credited even though no track names them, which
+        // is exactly the compilation case a download record cannot express.
+        #expect(containers.artistIDs == [trackArtist.id, albumArtist.id])
+
+        #expect(try await repository.offlineContainers(forTrackIDs: [], in: scope) == OfflineContainerIDs())
+    }
+
+    @Test func offlineCatalogAnswersPerSubject() {
+        let catalog = OfflineCatalog(
+            trackIDs: ["t1"],
+            containers: OfflineContainerIDs(
+                albumIDs: ["al1"],
+                artistIDs: ["ar1"],
+                playlistIDs: ["pl1"]
+            )
+        )
+
+        #expect(catalog.hasLocalCopy(of: .track("t1")))
+        #expect(!catalog.hasLocalCopy(of: .track("t2")))
+        #expect(catalog.hasLocalCopy(of: .album("al1")))
+        #expect(!catalog.hasLocalCopy(of: .album("al2")))
+        #expect(catalog.hasLocalCopy(of: .artist("ar1")))
+        #expect(catalog.hasLocalCopy(of: .playlist("pl1")))
+        // An ID that names nothing local must not be mistaken for another kind.
+        #expect(!catalog.hasLocalCopy(of: .artist("al1")))
+        #expect(!OfflineCatalog().hasLocalCopy(of: .track("t1")))
+    }
+
+    /// Firsthand evidence — the socket opening, a request failing — settles
+    /// reachability outright, with no probe involved.
+    @MainActor
+    @Test func networkMonitorTrustsFirsthandEvents() {
+        let monitor = NetworkMonitor(pathMonitor: nil, probe: OfflineProbeStub(result: true).run)
+        // Optimistic until something says otherwise, so a cold launch does not
+        // flash the whole library as unavailable.
+        #expect(monitor.isOffline == false)
+
+        monitor.noteServerUnreachable()
+        #expect(monitor.isOffline == true)
+        monitor.noteServerReachable()
+        #expect(monitor.isOffline == false)
+    }
+
+    /// A dropped socket is only secondhand evidence: a proxy that refuses to
+    /// pass upgrades breaks the socket while leaving HTTP intact, so a drop is
+    /// confirmed before the whole library gets marked unavailable.
+    @MainActor
+    @Test func networkMonitorConfirmsADroppedSocketBeforeMarkingContent() async {
+        let serverStillUp = NetworkMonitor(
+            pathMonitor: nil,
+            probe: OfflineProbeStub(result: true).run
+        )
+        serverStillUp.noteServerConnectionLost()
+        await serverStillUp.probeServer()
+        #expect(serverStillUp.isOffline == false)
+
+        let serverGone = NetworkMonitor(
+            pathMonitor: nil,
+            probe: OfflineProbeStub(result: false).run
+        )
+        serverGone.noteServerConnectionLost()
+        await serverGone.probeServer()
+        #expect(serverGone.isOffline == true)
+    }
+
+    /// Online, nothing is marked — a library that is mostly not downloaded
+    /// would otherwise read as mostly broken.
+    @MainActor
+    @Test func offlineAvailabilityOnlyMarksContentWhileOffline() async {
+        let monitor = NetworkMonitor(pathMonitor: nil, probe: OfflineProbeStub(result: false).run)
+        let availability = OfflineAvailability(monitor: monitor)
+        #expect(availability.isUnavailable(.album("anything")) == false)
+
+        availability.start()
+        await monitor.probeServer()
+        #expect(availability.isUnavailable(.album("anything")) == true)
+    }
+}
+
+/// Keeps the probe result out of the closure's capture list so the stub can be
+/// handed to `NetworkMonitor` as a plain function reference.
+@MainActor
+private final class OfflineProbeStub {
+    let result: Bool
+    init(result: Bool) { self.result = result }
+    func run() async -> Bool { result }
 }

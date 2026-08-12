@@ -58,6 +58,7 @@ struct ArtistCard: View {
         .contextMenu {
             ArtistContextMenu(artist: artist)
         }
+        .offlineAvailability(.artist(artist.id))
     }
 
     private var placeholderArtwork: some View {

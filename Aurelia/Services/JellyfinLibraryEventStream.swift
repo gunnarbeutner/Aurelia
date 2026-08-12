@@ -9,6 +9,10 @@ final class JellyfinLibraryEventStream {
         case libraryChanged
         case userDataChanged
         case reconnected
+        /// The handshake completed — firsthand proof the server is answering.
+        case connected
+        /// The socket dropped on its own. Deliberate teardown stays silent.
+        case disconnected
     }
 
     private let service: JellyfinService
@@ -20,9 +24,14 @@ final class JellyfinLibraryEventStream {
     private var routeIndex = 0
     private var onEvent: ((Event) -> Void)?
     private let routes = ["socket", "embywebsocket"]
+    private var socketSession: URLSession?
 
     init(service: JellyfinService) {
         self.service = service
+    }
+
+    deinit {
+        socketSession?.invalidateAndCancel()
     }
 
     func start(onEvent: @escaping (Event) -> Void) {
@@ -40,6 +49,19 @@ final class JellyfinLibraryEventStream {
         socket = nil
     }
 
+    /// Collapses the reconnect backoff when something outside says the network
+    /// is back, so recovery is not left waiting out a delay that was scheduled
+    /// before the fix landed.
+    func reconnectNow() {
+        guard shouldRun else { return }
+        reconnectAttempt = 0
+        receiveTask?.cancel()
+        receiveTask = nil
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
+        connect()
+    }
+
     private func connect() {
         guard shouldRun, service.isAuthenticated,
               let request = try? service.makeLibraryWebSocketRequest(
@@ -48,12 +70,27 @@ final class JellyfinLibraryEventStream {
             stop()
             return
         }
-        let task = URLSession.shared.webSocketTask(with: request)
+        let task = session().webSocketTask(with: request)
         socket = task
         task.resume()
         receiveTask = Task { @MainActor [weak self] in
             await self?.receiveLoop(task, isReconnect: self?.connectedOnce == true)
         }
+    }
+
+    /// The handshake is only reported through a delegate, so the socket needs a
+    /// session of its own rather than the shared one.
+    private func session() -> URLSession {
+        if let socketSession { return socketSession }
+        let observer = SocketOpenObserver { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.shouldRun else { return }
+                self.onEvent?(.connected)
+            }
+        }
+        let session = URLSession(configuration: .default, delegate: observer, delegateQueue: nil)
+        socketSession = session
+        return session
     }
 
     private func receiveLoop(
@@ -100,16 +137,38 @@ final class JellyfinLibraryEventStream {
                 connect()
                 return
             }
+            onEvent?(.disconnected)
             if !receivedMessage { routeIndex = 0 }
             reconnectAttempt += 1
             let delay = min(pow(2, Double(reconnectAttempt - 1)), 60)
             try? await Task.sleep(for: .seconds(delay))
-            guard shouldRun else { return }
+            // `reconnectNow` cancels this task to skip the rest of the backoff
+            // and has already started a fresh connection of its own.
+            guard shouldRun, !Task.isCancelled else { return }
             connect()
         }
     }
 
     private struct Envelope: Decodable {
         let MessageType: String
+    }
+}
+
+/// URLSession reports a completed WebSocket handshake only to a delegate, and
+/// that moment is the earliest honest proof that the server is up — waiting for
+/// the server's first message would conflate "unreachable" with "quiet".
+private final class SocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let onOpen: @Sendable () -> Void
+
+    init(onOpen: @escaping @Sendable () -> Void) {
+        self.onOpen = onOpen
+    }
+
+    nonisolated func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        onOpen()
     }
 }

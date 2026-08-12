@@ -819,6 +819,86 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
+    /// Maps a set of downloaded tracks onto the containers they belong to, so
+    /// browsing can mark albums, artists and playlists that hold nothing
+    /// playable while the server is out of reach. Membership is read from the
+    /// catalog rather than from the download records because a download only
+    /// remembers one artist, while a track can credit several.
+    func offlineContainers(
+        forTrackIDs trackIDs: Set<String>,
+        in scope: LibraryScope
+    ) throws -> OfflineContainerIDs {
+        guard !trackIDs.isEmpty else { return OfflineContainerIDs() }
+        return try database.read { db in
+            var result = OfflineContainerIDs()
+
+            try Self.forEachIDBatch(trackIDs) { slots, arguments in
+                result.albumIDs.formUnion(try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT DISTINCT albumID FROM libraryItem
+                        WHERE serverKey = ? AND userID = ?
+                          AND albumID IS NOT NULL AND itemID IN (\(slots))
+                        """,
+                    arguments: StatementArguments([scope.serverKey, scope.userID] + arguments)
+                ))
+
+                result.playlistIDs.formUnion(try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT DISTINCT playlistID FROM playlistEntry
+                        WHERE serverKey = ? AND userID = ? AND itemID IN (\(slots))
+                        """,
+                    arguments: StatementArguments([scope.serverKey, scope.userID] + arguments)
+                ))
+            }
+
+            // An album counts for its own album artist too, otherwise a
+            // compilation's artist looks empty when every track on it is
+            // credited to somebody else. Both sources are needed: `itemArtist`
+            // carries a track's several credits, while the album artist is only
+            // ever written to `libraryItem`.
+            try Self.forEachIDBatch(trackIDs.union(result.albumIDs)) { slots, arguments in
+                let scoped = StatementArguments([scope.serverKey, scope.userID] + arguments)
+                result.artistIDs.formUnion(try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT DISTINCT artistID FROM itemArtist
+                        WHERE serverKey = ? AND userID = ? AND itemID IN (\(slots))
+                        """,
+                    arguments: scoped
+                ))
+                result.artistIDs.formUnion(try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT DISTINCT artistID FROM libraryItem
+                        WHERE serverKey = ? AND userID = ?
+                          AND artistID IS NOT NULL AND itemID IN (\(slots))
+                        """,
+                    arguments: scoped
+                ))
+            }
+            return result
+        }
+    }
+
+    /// SQLite caps how many variables one statement may bind, and a large
+    /// download set would sail past it in a single `IN (…)`.
+    private static func forEachIDBatch(
+        _ ids: Set<String>,
+        batchSize: Int = 400,
+        body: (String, [String]) throws -> Void
+    ) rethrows {
+        let all = Array(ids)
+        var start = all.startIndex
+        while start < all.endIndex {
+            let end = min(start + batchSize, all.endIndex)
+            let batch = Array(all[start..<end])
+            try body(databaseQuestionMarks(count: batch.count), batch)
+            start = end
+        }
+    }
+
     func tracks(inAlbum albumID: String, in scope: LibraryScope) throws -> [Track] {
         try tracks(
             sql: """

@@ -44,6 +44,15 @@ struct AureliaApp: App {
         }
         #endif
         requestNotificationPermissions()
+
+        // Browsing marks what will not play while the server is unreachable, so
+        // both the reachability signal and the downloaded-content index need to
+        // be live before the first screen draws.
+        NetworkMonitor.shared.onPathRestored = {
+            LibrarySyncCoordinator.shared.reconnectEventStream()
+        }
+        NetworkMonitor.shared.start()
+        OfflineAvailability.shared.start()
     }
 
     #if DEBUG
@@ -103,6 +112,9 @@ struct AureliaApp: App {
             print("🟢 App became active")
             Task { @MainActor in
                 LibrarySyncCoordinator.shared.startEventMonitoring()
+                // The path handler stays silent about changes that happened
+                // while the app was suspended, so re-probe on the way back in.
+                NetworkMonitor.shared.refresh()
             }
 
         case .inactive:

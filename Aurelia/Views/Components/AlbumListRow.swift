@@ -79,6 +79,7 @@ struct AlbumListRow: View {
         .contextMenu {
             AlbumContextMenu(album: album)
         }
+        .offlineAvailability(.album(album.id))
     }
 
     private var placeholderArtwork: some View {

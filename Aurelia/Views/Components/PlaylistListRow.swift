@@ -66,6 +66,7 @@ struct PlaylistListRow: View {
             .contextMenu {
                 PlaylistContextMenu(playlist: playlist)
             }
+            .offlineAvailability(.playlist(playlist.id))
     }
 
     private var placeholderArtwork: some View {

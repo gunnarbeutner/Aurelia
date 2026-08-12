@@ -190,6 +190,7 @@ struct SearchView: View {
                         .contextMenu {
                             InstantMixButton(itemId: artist.id, itemName: artist.name)
                         }
+                        .offlineAvailability(.artist(artist.id))
                     case .album(let album):
                         NavigationLink(value: album) {
                             SearchResultRow(result: result)
@@ -199,6 +200,7 @@ struct SearchView: View {
                         .contextMenu {
                             AlbumContextMenu(album: album)
                         }
+                        .offlineAvailability(.album(album.id))
                     case .track(let track):
                         Button { handleTrackTap(track) } label: {
                             SearchResultRow(result: result)
@@ -208,6 +210,7 @@ struct SearchView: View {
                         .contextMenu {
                             TrackContextMenu(track: track)
                         }
+                        .offlineAvailability(.track(track.id))
                     case .playlist(let playlist):
                         NavigationLink(value: playlist) {
                             SearchResultRow(result: result)
@@ -217,6 +220,7 @@ struct SearchView: View {
                         .contextMenu {
                             PlaylistContextMenu(playlist: playlist)
                         }
+                        .offlineAvailability(.playlist(playlist.id))
                     }
                 }
 

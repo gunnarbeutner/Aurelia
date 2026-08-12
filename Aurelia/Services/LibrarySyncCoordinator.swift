@@ -50,9 +50,24 @@ final class LibrarySyncCoordinator: ObservableObject {
     }
 
     func startEventMonitoring() {
-        eventStream.start { [weak self] _ in
-            self?.scheduleEventSync()
+        eventStream.start { [weak self] event in
+            switch event {
+            case .connected:
+                // The socket reaching the server is the cheapest reachability
+                // signal there is, and it arrives without being asked.
+                NetworkMonitor.shared.noteServerReachable()
+            case .disconnected:
+                NetworkMonitor.shared.noteServerConnectionLost()
+            case .libraryChanged, .userDataChanged, .reconnected:
+                self?.scheduleEventSync()
+            }
         }
+    }
+
+    /// Lets the reachability monitor cut short the socket's reconnect backoff
+    /// when an interface comes back.
+    func reconnectEventStream() {
+        eventStream.reconnectNow()
     }
 
     func stopEventMonitoring() {
@@ -120,10 +135,16 @@ final class LibrarySyncCoordinator: ObservableObject {
                 )
             }
             status = .idle
+            // A completed sync is firsthand proof the server is up, which beats
+            // waiting for the reachability probe to come round again.
+            NetworkMonitor.shared.noteServerReachable()
         } catch is CancellationError {
             status = .idle
             throw CancellationError()
         } catch {
+            if error is URLError {
+                NetworkMonitor.shared.noteServerUnreachable()
+            }
             let hasCache = (try? await repository.librarySnapshot(
                 in: scope,
                 includeTracks: false

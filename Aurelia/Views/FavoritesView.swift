@@ -394,6 +394,7 @@ struct FavoriteTrackRow: View {
         .contextMenu {
             TrackContextMenu(track: track)
         }
+        .offlineAvailability(.track(track.id))
     }
 }
 

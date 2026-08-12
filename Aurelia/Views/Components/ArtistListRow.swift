@@ -61,6 +61,7 @@ struct ArtistListRow: View {
         .contextMenu {
             ArtistContextMenu(artist: artist)
         }
+        .offlineAvailability(.artist(artist.id))
     }
 
     private var placeholderArtistArt: some View {

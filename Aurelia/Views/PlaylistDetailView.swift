@@ -464,6 +464,7 @@ struct PlaylistTrackRow: View {
         .contextMenu {
             TrackContextMenu(track: track, onAddToPlaylist: onAddToPlaylist)
         }
+        .offlineAvailability(.track(track.id))
     }
 }
 
