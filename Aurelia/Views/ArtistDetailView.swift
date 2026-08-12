@@ -496,6 +496,10 @@ struct ArtistDetailView: View {
                 NavigationLink(value: album) {
                     AlbumListRow(album: album)
                 }
+                // AlbumListRow carries no horizontal inset of its own, so the
+                // row content aligns with the section header while the tinted
+                // background still runs to the edges.
+                .padding(.horizontal, 20)
                 .background(Color.appMidBackground.opacity(0.3))
             }
         }
@@ -671,6 +675,7 @@ struct YearSection: View {
                         NavigationLink(value: album) {
                             AlbumListRow(album: album)
                         }
+                        .padding(.horizontal, 20)
                         .background(Color.appMidBackground.opacity(0.2))
                     }
                 }
