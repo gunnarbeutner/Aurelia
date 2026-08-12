@@ -26,82 +26,16 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
-                tabContent(for: 0) {
-                    NavigationStack(path: $discoverPath) {
-                        DiscoveryView()
-                    }
-                }
-                .tabItem {
-                    Label("Discover", systemImage: "sparkles")
-                }
-                .tag(0)
-
-                tabContent(for: 1) {
-                    NavigationStack(path: $libraryPath) {
-                        LibraryView()
-                    }
-                }
-                .tabItem {
-                    Label("Library", systemImage: "music.note.list")
-                }
-                .tag(1)
-                
-                tabContent(for: 2) {
-                    NavigationStack(path: $searchPath) {
-                        SearchView(searchFocusRequest: searchFocusRequest)
-                    }
-                }
-                .tabItem {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-                .tag(2)
-                
-                tabContent(for: 3) {
-                    NavigationStack(path: $favoritesPath) {
-                        FavoritesView(isActive: selectedTab == 3)
-                    }
-                }
-                .tabItem {
-                    Label("Favorites", systemImage: "heart.fill")
-                }
-                .tag(3)
-                
-                tabContent(for: 4) {
-                    NavigationStack(path: $settingsPath) {
-                        SettingsView()
-                    }
-                }
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(4)
-            }
-            .tint(.appAccent)
-            .toolbar(showNowPlaying ? .hidden : .visible, for: .tabBar)
             #if targetEnvironment(macCatalyst)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if playerManager.currentTrack != nil {
-                    MiniPlayerView(showNowPlaying: $showNowPlaying)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 8)
-                        .opacity(showNowPlaying ? 0 : 1)
-                        .allowsHitTesting(!showNowPlaying)
-                        .accessibilityHidden(showNowPlaying)
-                }
+            if showNowPlaying, playerManager.currentTrack != nil {
+                catalystPlayerPresentation
+                    .transition(.move(edge: .bottom))
+            } else {
+                tabInterface
+                    .transition(.identity)
             }
             #else
-            .overlay(alignment: .bottom) {
-                // Mini Player floats above the iOS tab bar.
-                if playerManager.currentTrack != nil {
-                    MiniPlayerView(showNowPlaying: $showNowPlaying)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, MiniPlayerLayout.tabBarClearance)
-                        .opacity(showNowPlaying ? 0 : 1)
-                        .allowsHitTesting(!showNowPlaying)
-                        .accessibilityHidden(showNowPlaying)
-                }
-            }
+            tabInterface
             #endif
 
             if instantMixCoordinator.isLoading {
@@ -182,6 +116,109 @@ struct MainTabView: View {
         .focusedSceneValue(\.appCommandActions, commandActions)
     }
 
+    private var tabInterface: some View {
+        TabView(selection: $selectedTab) {
+            tabContent(for: 0) {
+                NavigationStack(path: $discoverPath) {
+                    DiscoveryView()
+                }
+            }
+            .tabItem {
+                Label("Discover", systemImage: "sparkles")
+            }
+            .tag(0)
+
+            tabContent(for: 1) {
+                NavigationStack(path: $libraryPath) {
+                    LibraryView()
+                }
+            }
+            .tabItem {
+                Label("Library", systemImage: "music.note.list")
+            }
+            .tag(1)
+
+            tabContent(for: 2) {
+                NavigationStack(path: $searchPath) {
+                    SearchView(searchFocusRequest: searchFocusRequest)
+                }
+            }
+            .tabItem {
+                Label("Search", systemImage: "magnifyingglass")
+            }
+            .tag(2)
+
+            tabContent(for: 3) {
+                NavigationStack(path: $favoritesPath) {
+                    FavoritesView(isActive: selectedTab == 3)
+                }
+            }
+            .tabItem {
+                Label("Favorites", systemImage: "heart.fill")
+            }
+            .tag(3)
+
+            tabContent(for: 4) {
+                NavigationStack(path: $settingsPath) {
+                    SettingsView()
+                }
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape.fill")
+            }
+            .tag(4)
+        }
+        .tint(.appAccent)
+        #if targetEnvironment(macCatalyst)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerManager.currentTrack != nil {
+                MiniPlayerView(showNowPlaying: $showNowPlaying)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+            }
+        }
+        #else
+        .overlay(alignment: .bottom) {
+            // Mini Player floats above the iOS tab bar.
+            if playerManager.currentTrack != nil {
+                MiniPlayerView(showNowPlaying: $showNowPlaying)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, MiniPlayerLayout.tabBarClearance)
+                    .opacity(showNowPlaying ? 0 : 1)
+                    .allowsHitTesting(!showNowPlaying)
+                    .accessibilityHidden(showNowPlaying)
+            }
+        }
+        #endif
+    }
+
+    #if targetEnvironment(macCatalyst)
+    private var catalystPlayerPresentation: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topTrailing) {
+                NowPlayingView(
+                    onDismiss: dismissNowPlaying,
+                    embedsAirPlayButton: false
+                )
+
+                AirPlayButton()
+                    .frame(width: 44, height: 44)
+                    .padding(.top, 8)
+                    .padding(
+                        .trailing,
+                        NowPlayingLayout.airPlayTrailingPadding(
+                            usesTwoColumns: NowPlayingLayout.usesTwoColumns(
+                                isCompactWidth: false,
+                                screenWidth: geometry.size.width,
+                                screenHeight: geometry.size.height
+                            )
+                        )
+                    )
+            }
+        }
+    }
+    #endif
+
     private var commandActions: AureliaCommandActions {
         AureliaCommandActions(
             selectedTab: selectedTab,
@@ -261,11 +298,13 @@ struct MainTabView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
+            #if !targetEnvironment(macCatalyst)
             .overlay {
                 if selectedTab == tab {
                     playerPresentation
                 }
             }
+            #endif
     }
 
     @ViewBuilder
