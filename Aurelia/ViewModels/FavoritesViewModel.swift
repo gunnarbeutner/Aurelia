@@ -11,6 +11,30 @@ nonisolated struct FavoritesSnapshot: Equatable, Sendable {
     var isEmpty: Bool {
         tracks.isEmpty && albums.isEmpty && artists.isEmpty
     }
+
+    /// Groups the favourites Jellyfin returns into the snapshot shape. Anything
+    /// that is not a track, album or artist — a favourited playlist, say — has
+    /// nowhere to go in this view and is dropped.
+    static func from(items: [BaseItemDto], baseURL: String) -> FavoritesSnapshot {
+        var tracks: [Track] = []
+        var albums: [Album] = []
+        var artists: [Artist] = []
+
+        for item in items {
+            switch item.Type {
+            case .Audio:
+                tracks.append(Track(from: item, baseURL: baseURL))
+            case .MusicAlbum:
+                albums.append(Album(from: item, baseURL: baseURL))
+            case .MusicArtist:
+                artists.append(Artist(from: item, baseURL: baseURL))
+            default:
+                break
+            }
+        }
+
+        return FavoritesSnapshot(tracks: tracks, albums: albums, artists: artists)
+    }
 }
 
 nonisolated enum FavoriteMutation: Sendable {
@@ -81,8 +105,17 @@ final class FavoritesViewModel: ObservableObject {
             },
             cacheSnapshot: { _ in },
             fetcher: {
-                try await LibrarySyncCoordinator.shared.sync(trigger: .manual)
+                // Favourites refresh on their own rather than dragging a whole
+                // library sync behind them, which is what pull-to-refresh here
+                // used to trigger.
                 guard let currentScope = service.libraryScope else { return .empty }
+                let items = try await service.fetchFavorites(
+                    includeItemTypes: "Audio,MusicAlbum,MusicArtist"
+                )
+                await LibraryRepository.shared.replaceFavorites(
+                    FavoritesSnapshot.from(items: items, baseURL: service.baseURL),
+                    in: currentScope
+                )
                 return await LibraryRepository.shared.favoriteSnapshot(in: currentScope)
             }
         )

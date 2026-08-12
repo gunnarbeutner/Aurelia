@@ -55,9 +55,6 @@ struct FavoritesView: View {
                     }
                 }
                 .scrollBounceBehavior(.always)
-                .refreshable {
-                    await viewModel.refresh()
-                }
             }
         }
         .navigationDestination(for: Album.self) { album in

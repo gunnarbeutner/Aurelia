@@ -1745,4 +1745,23 @@ struct AureliaActionTests {
     @Test func artistShuffleCapMatchesTheArtistScreen() {
         #expect(AureliaActions.artistShuffleLimit == 200)
     }
+
+    /// Favourites refresh on their own now, so the item-type routing that used
+    /// to come free with a full library sync has to be correct here instead.
+    @Test func favoritesSnapshotRoutesServerItemsByType() {
+        let items = [
+            BaseItemDto(Id: "t", Name: "Jóga", Type: .Audio, RunTimeTicks: 10_000_000),
+            BaseItemDto(Id: "al", Name: "Homogenic", Type: .MusicAlbum),
+            BaseItemDto(Id: "ar", Name: "Björk", Type: .MusicArtist),
+            // A favourited playlist has nowhere to go in this view.
+            BaseItemDto(Id: "pl", Name: "Iceland", Type: .Playlist)
+        ]
+
+        let snapshot = FavoritesSnapshot.from(items: items, baseURL: "https://music.example")
+
+        #expect(snapshot.tracks.map(\.id) == ["t"])
+        #expect(snapshot.albums.map(\.id) == ["al"])
+        #expect(snapshot.artists.map(\.id) == ["ar"])
+        #expect(FavoritesSnapshot.from(items: [], baseURL: "https://music.example").isEmpty)
+    }
 }
