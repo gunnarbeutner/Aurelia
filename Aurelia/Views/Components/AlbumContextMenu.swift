@@ -96,6 +96,7 @@ struct AlbumContextMenu: View {
 struct TrackContextMenu: View {
     let track: Track
     var onAddToPlaylist: (() -> Void)? = nil
+    var offersInstantMix = true
     /// Position of this track in the playback queue, when the menu is opened
     /// from a row that is already queued. The queue actions then *move* the
     /// track instead of inserting a second copy, and "Add to Queue" is dropped
@@ -106,9 +107,11 @@ struct TrackContextMenu: View {
     @ObservedObject private var playerManager = PlayerManager.shared
 
     var body: some View {
-        InstantMixButton(itemId: track.id, itemName: track.name)
+        if offersInstantMix {
+            InstantMixButton(itemId: track.id, itemName: track.name)
 
-        Divider()
+            Divider()
+        }
 
         Button {
             NavigationCoordinator.shared.navigateToAlbum(for: track)

@@ -185,6 +185,10 @@ struct MainTabView: View {
                 MiniPlayerView(showNowPlaying: $showNowPlaying)
                     .padding(.horizontal, usesBottomTabBar ? 8 : 0)
                     .padding(.bottom, usesBottomTabBar ? MiniPlayerLayout.tabBarClearance : 0)
+                    .ignoresSafeArea(
+                        .container,
+                        edges: usesBottomTabBar ? [] : .bottom
+                    )
                     .opacity(showNowPlaying ? 0 : 1)
                     .allowsHitTesting(!showNowPlaying)
                     .accessibilityHidden(showNowPlaying)
@@ -397,6 +401,7 @@ struct SwipeToDismissPlayer<Content: View>: View {
             .fill(Color.appTextSecondary)
             .frame(width: 38, height: 5)
             .frame(width: 96, height: 28, alignment: .top)
+            .padding(.top, 12)
             .contentShape(Rectangle())
             .gesture(
                 // Measure in a stationary coordinate space. Measuring inside

@@ -221,7 +221,7 @@ struct DiscoveryView: View {
 
                             Divider()
 
-                            TrackContextMenu(track: shelf.seed)
+                            TrackContextMenu(track: shelf.seed, offersInstantMix: false)
                         }
                     }
                 }

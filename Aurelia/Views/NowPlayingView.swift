@@ -1244,7 +1244,10 @@ private struct UpNextQueueRow: View {
                 .padding(.vertical, 6)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onPlay)
-                .highPriorityGesture(horizontalSwipe)
+                // Let vertical drags continue into the enclosing ScrollView;
+                // this gesture only takes effect once it has resolved to a
+                // horizontal queue-row swipe.
+                .simultaneousGesture(horizontalSwipe)
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityLabel("Play \(track.name) next")
