@@ -25,7 +25,7 @@ struct ArtistDetailView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     @State private var albums: [Album] = []
-    @State private var isLoadingAlbums = true
+    @State private var isLoadingAlbums = false
     // Navigation handled by NavigationStack
     @State private var viewMode: ArtistViewMode = .allAlbums
     @State private var selectedYear: Int?
@@ -166,10 +166,10 @@ struct ArtistDetailView: View {
 
     // MARK: - Fetch Artist Data
     private func fetchArtistAlbums() async {
-        isLoadingAlbums = true
-        defer { isLoadingAlbums = false }
-        guard let scope = jellyfinService.libraryScope else { return }
-        albums = (try? await repository.albums(forArtist: artist.id, in: scope)) ?? []
+        await DelayedLoading.run { isLoadingAlbums = $0 } work: {
+            guard let scope = jellyfinService.libraryScope else { return }
+            albums = (try? await repository.albums(forArtist: artist.id, in: scope)) ?? []
+        }
     }
 
     // MARK: - Toggle Favorite

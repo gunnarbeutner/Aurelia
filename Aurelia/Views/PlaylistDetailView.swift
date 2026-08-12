@@ -16,7 +16,7 @@ struct PlaylistDetailView: View {
     @Environment(\.dismiss) var dismiss
     @State private var isFavorite: Bool
     @State private var playlistTracks: [Track] = []
-    @State private var isLoadingTracks = true
+    @State private var isLoadingTracks = false
     @State private var showAddToPlaylist = false
     @State private var selectedTrackIds: [String] = []
 
@@ -86,10 +86,10 @@ struct PlaylistDetailView: View {
 
     // MARK: - Fetch Playlist Tracks
     private func fetchPlaylistTracks() async {
-        isLoadingTracks = true
-        defer { isLoadingTracks = false }
-        guard let scope = jellyfinService.libraryScope else { return }
-        playlistTracks = (try? await repository.tracks(inPlaylist: playlist.id, in: scope)) ?? []
+        await DelayedLoading.run { isLoadingTracks = $0 } work: {
+            guard let scope = jellyfinService.libraryScope else { return }
+            playlistTracks = (try? await repository.tracks(inPlaylist: playlist.id, in: scope)) ?? []
+        }
     }
 
     // MARK: - Toggle Favorite

@@ -12,7 +12,7 @@ struct PlaylistSelectionSheet: View {
     @ObservedObject private var libraryStore = LibraryStore.shared
     @Environment(\.dismiss) var dismiss
     @State private var playlists: [Playlist] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var isAdding = false
     @State private var selectedPlaylistId: String?
     @State private var errorMessage: String?
@@ -138,10 +138,10 @@ struct PlaylistSelectionSheet: View {
 
     // MARK: - Fetch Playlists
     private func fetchPlaylists() async {
-        isLoading = true
-        await libraryStore.reload()
-        playlists = libraryStore.playlists
-        isLoading = false
+        await DelayedLoading.run { isLoading = $0 } work: {
+            await libraryStore.reload()
+            playlists = libraryStore.playlists
+        }
     }
 
     // MARK: - Add to Playlist

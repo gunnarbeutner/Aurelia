@@ -161,7 +161,10 @@ struct LibraryView: View {
     }
     @State private var showSortMenu = false
     // Navigation handled by NavigationStack and NavigationLink
-    @State private var isLoading = true
+    // Seeded false and corrected by the store's publisher, which delivers its
+    // current value on subscribe. Starting true flashed a spinner on every
+    // appearance even when the catalog was already loaded.
+    @State private var isLoading = false
     @State private var isSyncing = false
     @State private var errorMessage: String?
     @State private var showNewPlaylistSheet = false
@@ -975,6 +978,8 @@ struct LibraryView: View {
                     .font(.caption)
                     .foregroundColor(.appTextSecondary)
                 TextField("Search", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .focusEffectDisabled()
                     .font(.subheadline)
                     .foregroundColor(Color.appText)
                     .autocorrectionDisabled()
