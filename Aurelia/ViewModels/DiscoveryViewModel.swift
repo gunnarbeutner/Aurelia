@@ -12,11 +12,12 @@ import OSLog
 nonisolated struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     let seed: Track
     let tracks: [Track]
+    var title: String? = nil
 
     var id: String { seed.id }
 
     var mixTitle: String {
-        "\(seed.artistName) Mix"
+        title ?? "\(seed.artistName) Mix"
     }
 
     var supportingArtistNames: [String] {
@@ -44,11 +45,82 @@ nonisolated struct DiscoverySnapshot: Codable, Equatable, Sendable {
     let recentTracks: [Track]?
     var rediscoverTracks: [Track]? = nil
     var offTheBeatenPathTracks: [Track]? = nil
+    var strategyVersion: Int? = nil
     let recentSignature: [String]
     let refreshedAt: Date
 }
 
 nonisolated enum DynamicDiscoverySelector {
+    static let dailyMixStrategyVersion = 2
+
+    nonisolated struct DailyMixSeed: Equatable, Sendable {
+        let track: Track
+        let title: String
+    }
+
+    static func dailyMixSeeds(
+        from candidates: [DiscoveryCandidate],
+        recentTrackIDs: Set<String>,
+        now: Date,
+        limit: Int = 5
+    ) -> [DailyMixSeed] {
+        guard limit > 0 else { return [] }
+        let recentCutoff = now.addingTimeInterval(-14 * 24 * 60 * 60)
+        let eligible = candidates.filter {
+            !recentTrackIDs.contains($0.track.id)
+                && ($0.lastPlayedAt == nil || $0.lastPlayedAt! < recentCutoff)
+        }
+        let ranked = eligible.sorted {
+            if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
+            if $0.playCount != $1.playCount { return $0.playCount > $1.playCount }
+            return $0.track.id < $1.track.id
+        }
+        let rotated = stableOrder(
+            Array(ranked.prefix(max(limit * 12, limit))),
+            period: dayKey(for: now)
+        )
+
+        var selected: [DailyMixSeed] = []
+        var usedTracks = Set<String>()
+        var usedArtists = Set<String>()
+        var usedGenres = Set<String>()
+        let regionCount = min(3, limit)
+
+        // First cover distinct regions of taste. Genre is preferred, with the
+        // artist acting as a useful region when Jellyfin has sparse tagging.
+        for candidate in rotated {
+            let artist = artistKey(candidate.track)
+            let genres = Set(candidate.track.genreIDs ?? [])
+            let addsGenre = !genres.isEmpty && genres.isDisjoint(with: usedGenres)
+            guard addsGenre || (!usedArtists.contains(artist) && usedGenres.isEmpty) else { continue }
+            selected.append(DailyMixSeed(track: candidate.track, title: "\(candidate.track.artistName) Mix"))
+            usedTracks.insert(candidate.track.id)
+            usedArtists.insert(artist)
+            usedGenres.formUnion(genres)
+            if selected.count == regionCount { break }
+        }
+
+        // Sparse genre metadata should not reduce the number of broad mixes.
+        for candidate in rotated where selected.count < regionCount {
+            let artist = artistKey(candidate.track)
+            guard !usedTracks.contains(candidate.track.id), !usedArtists.contains(artist) else { continue }
+            selected.append(DailyMixSeed(track: candidate.track, title: "\(candidate.track.artistName) Mix"))
+            usedTracks.insert(candidate.track.id)
+            usedArtists.insert(artist)
+        }
+
+        // The remaining slots are deliberately song-led. This gives AudioMuse
+        // a precise sonic starting point alongside the broader taste regions.
+        for candidate in rotated where selected.count < limit {
+            let artist = artistKey(candidate.track)
+            guard !usedTracks.contains(candidate.track.id), !usedArtists.contains(artist) else { continue }
+            selected.append(DailyMixSeed(track: candidate.track, title: "\(candidate.track.name) Mix"))
+            usedTracks.insert(candidate.track.id)
+            usedArtists.insert(artist)
+        }
+        return selected
+    }
+
     static func rediscover(
         from candidates: [DiscoveryCandidate],
         now: Date,
@@ -134,6 +206,19 @@ nonisolated enum DynamicDiscoverySelector {
         return selected
     }
 
+    private static func stableOrder(
+        _ candidates: [DiscoveryCandidate],
+        period: String
+    ) -> [DiscoveryCandidate] {
+        candidates.sorted {
+            stableValue("\(period)|\($0.track.id)") < stableValue("\(period)|\($1.track.id)")
+        }
+    }
+
+    private static func artistKey(_ track: Track) -> String {
+        track.artistId ?? track.artistName.lowercased()
+    }
+
     private static func stableValue(_ value: String) -> UInt64 {
         value.utf8.reduce(14_695_981_039_346_656_037) { hash, byte in
             (hash ^ UInt64(byte)) &* 1_099_511_628_211
@@ -203,6 +288,7 @@ final class DiscoveryViewModel: ObservableObject {
     private var refreshGeneration: UInt64 = 0
     private var observedActiveAnalysis = false
     private var hasGeneratedDynamicContent = false
+    private var loadedStrategyVersion: Int?
 
     convenience init() {
         let service = JellyfinService.shared
@@ -252,6 +338,7 @@ final class DiscoveryViewModel: ObservableObject {
             offTheBeatenPathTracks = snapshot.offTheBeatenPathTracks ?? []
             hasGeneratedDynamicContent = snapshot.rediscoverTracks != nil
                 || snapshot.offTheBeatenPathTracks != nil
+            loadedStrategyVersion = snapshot.strategyVersion
             fallbackTracks = recentTracks.isEmpty ? snapshot.fallbackTracks : []
             loadedRecentSignature = snapshot.recentSignature
             lastRefreshDate = snapshot.refreshedAt
@@ -293,10 +380,11 @@ final class DiscoveryViewModel: ObservableObject {
     func loadIfNeeded(publishResult: Bool = true) async {
         let freshestRefreshDate = pendingSnapshot?.refreshedAt ?? lastRefreshDate
         let dynamicContentMissing = !hasGeneratedDynamicContent && candidateProvider != nil
+        let strategyChanged = loadedStrategyVersion != DynamicDiscoverySelector.dailyMixStrategyVersion
         let dayChanged = freshestRefreshDate.map {
             DynamicDiscoverySelector.dayKey(for: $0) != DynamicDiscoverySelector.dayKey(for: now())
         } ?? true
-        guard !hasContent || dynamicContentMissing || dayChanged else { return }
+        guard !hasContent || dynamicContentMissing || strategyChanged || dayChanged else { return }
         await refresh(force: true, publishResult: publishResult)
     }
 
@@ -346,29 +434,43 @@ final class DiscoveryViewModel: ObservableObject {
                 from: discoveryCandidates,
                 now: now()
             )
-            let recent = uniqueSeeds(recentTracks)
-            async let favoriteTracks = fetchFavoriteSeedTracks()
-            async let randomTracks = fetchRandomSeedTracks()
-            let fetchedSeeds = try await (favoriteTracks, randomTracks)
-            let candidates = uniqueSeeds(recent + fetchedSeeds.0 + fetchedSeeds.1)
+            let audioMuseReady = await audioMuseIsReady()
+            let recentCutoff = now().addingTimeInterval(-14 * 24 * 60 * 60)
+            let recentTrackIDs = Set(recentTracks.map(\.id)).union(
+                discoveryCandidates.compactMap { candidate in
+                    guard let lastPlayedAt = candidate.lastPlayedAt,
+                          lastPlayedAt >= recentCutoff else { return nil }
+                    return candidate.track.id
+                }
+            )
+            let dailySeeds = audioMuseReady
+                ? DynamicDiscoverySelector.dailyMixSeeds(
+                    from: discoveryCandidates,
+                    recentTrackIDs: recentTrackIDs,
+                    now: now(),
+                    limit: Self.maximumMixShelfCount
+                )
+                : []
 
             var newShelves: [DiscoveryShelf] = []
             var usedRecommendationIds = Set<String>()
             var mixFailures: [String] = []
             var emptyMixCount = 0
 
-            for seed in candidates.prefix(12) where newShelves.count < Self.maximumMixShelfCount {
+            for dailySeed in dailySeeds where newShelves.count < Self.maximumMixShelfCount {
                 do {
+                    let seed = dailySeed.track
                     try Task.checkCancellation()
                     let items = try await api.fetchInstantMix(itemId: seed.id, limit: 13)
                     try Task.checkCancellation()
                     let tracks = items
                         .filter { $0.Type == .Audio && $0.Id != seed.id }
                         .map { Track(from: $0, baseURL: api.baseURL) }
+                        .filter { !recentTrackIDs.contains($0.id) }
                         .filter { usedRecommendationIds.insert($0.id).inserted }
                     let recommendations = Array(tracks.prefix(12))
                     if !recommendations.isEmpty {
-                        newShelves.append(DiscoveryShelf(seed: seed, tracks: recommendations))
+                        newShelves.append(DiscoveryShelf(seed: seed, tracks: recommendations, title: dailySeed.title))
                     } else {
                         emptyMixCount += 1
                         Self.logger.info(
@@ -380,22 +482,24 @@ final class DiscoveryViewModel: ObservableObject {
                 } catch {
                     mixFailures.append(error.localizedDescription)
                     Self.logger.warning(
-                        "Instant Mix failed for seed \(seed.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .public)"
+                        "Instant Mix failed for seed \(dailySeed.track.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .public)"
                     )
                     continue
                 }
             }
 
-            guard !newShelves.isEmpty || !candidates.isEmpty else {
+            guard !newShelves.isEmpty || !discoveryCandidates.isEmpty || !recentTracks.isEmpty else {
                 throw DiscoveryError.noMusic
             }
 
             // A refresh is transactional for recommendation shelves. Recent
             // playback can still move forward, but a temporary plugin/server
             // failure must never replace known-good mixes with an empty array.
-            let resolvedShelves = newShelves.isEmpty ? previousShelves : newShelves
+            let resolvedShelves = audioMuseReady
+                ? (newShelves.isEmpty ? previousShelves : newShelves)
+                : []
             let fallbackTracks = resolvedShelves.isEmpty && recentTracks.isEmpty
-                ? Array(candidates.prefix(12))
+                ? Array(discoveryCandidates.map(\.track).prefix(12))
                 : []
             let snapshot = DiscoverySnapshot(
                 shelves: resolvedShelves,
@@ -403,11 +507,12 @@ final class DiscoveryViewModel: ObservableObject {
                 recentTracks: Array(recentTracks.prefix(12)),
                 rediscoverTracks: rediscoverTracks,
                 offTheBeatenPathTracks: offTheBeatenPathTracks,
+                strategyVersion: DynamicDiscoverySelector.dailyMixStrategyVersion,
                 recentSignature: Array(recentTracks.prefix(12).map(\.id)),
                 refreshedAt: now()
             )
             let mixIssue = mixRefreshIssue(
-                candidatesWereAvailable: !candidates.isEmpty,
+                candidatesWereAvailable: !dailySeeds.isEmpty,
                 generatedShelfCount: newShelves.count,
                 retainedPreviousShelves: newShelves.isEmpty && !previousShelves.isEmpty,
                 failureDescriptions: mixFailures,
@@ -466,6 +571,32 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
+    private func audioMuseIsReady() async -> Bool {
+        do {
+            let info = try await api.fetchAudioMuseInfo()
+            guard try await api.checkAudioMuseHealth() else {
+                availability = .unavailable
+                return false
+            }
+            if let task = try await api.fetchActiveAudioMuseTask() {
+                availability = .analyzing(task)
+                return false
+            }
+            availability = .ready(version: info.version)
+            return true
+        } catch let error as JellyfinError {
+            if case .notFound = error {
+                availability = .notInstalled
+            } else {
+                availability = .unavailable
+            }
+            return false
+        } catch {
+            availability = .unavailable
+            return false
+        }
+    }
+
     private static func uniqueRecentTracks(_ tracks: [Track]) -> [Track] {
         var itemIds = Set<String>()
         return tracks.filter { itemIds.insert($0.id).inserted }
@@ -502,28 +633,6 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
-    private func fetchFavoriteSeedTracks() async throws -> [Track] {
-        do {
-            return try await api.fetchFavoriteTracks(limit: 12)
-                .map { Track(from: $0, baseURL: api.baseURL) }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            return []
-        }
-    }
-
-    private func fetchRandomSeedTracks() async throws -> [Track] {
-        do {
-            return try await api.fetchRandomTracks(limit: 12)
-                .map { Track(from: $0, baseURL: api.baseURL) }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            return []
-        }
-    }
-
     private func mixRefreshIssue(
         candidatesWereAvailable: Bool,
         generatedShelfCount: Int,
@@ -537,21 +646,10 @@ final class DiscoveryViewModel: ObservableObject {
         }
 
         let summary = retainedPreviousShelves
-            ? "Couldn’t refresh Instant Mixes. Showing the previous mixes."
-            : "Instant Mixes are temporarily unavailable."
+            ? "Couldn’t refresh Daily Mixes. Showing the previous mixes."
+            : "Daily Mixes are temporarily unavailable."
         guard let detail = failureDescriptions.first else { return summary }
         return "\(summary) \(detail)"
-    }
-
-    private func uniqueSeeds(_ tracks: [Track]) -> [Track] {
-        var itemIds = Set<String>()
-        var artistKeys = Set<String>()
-
-        return tracks.filter { track in
-            let artistKey = track.artistId?.lowercased()
-                ?? track.artistName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return itemIds.insert(track.id).inserted && artistKeys.insert(artistKey).inserted
-        }
     }
 
     private func applyPendingSnapshot() {
@@ -568,6 +666,7 @@ final class DiscoveryViewModel: ObservableObject {
         offTheBeatenPathTracks = snapshot.offTheBeatenPathTracks ?? []
         hasGeneratedDynamicContent = snapshot.rediscoverTracks != nil
             || snapshot.offTheBeatenPathTracks != nil
+        loadedStrategyVersion = snapshot.strategyVersion
         fallbackTracks = recentTracks.isEmpty ? snapshot.fallbackTracks : []
         loadedRecentSignature = snapshot.recentSignature
         lastRefreshDate = snapshot.refreshedAt

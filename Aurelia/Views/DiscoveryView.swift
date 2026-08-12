@@ -155,7 +155,7 @@ struct DiscoveryView: View {
                 .foregroundColor(.appTextSecondary)
                 .padding(.horizontal, 20)
         case .notInstalled, .unavailable:
-            Label("Using Jellyfin Instant Mix", systemImage: "sparkles")
+            Label("AudioMuse-AI is required for Daily Mixes", systemImage: "waveform.path.badge.exclamationmark")
                 .font(.appCaption)
                 .foregroundColor(.appTextSecondary)
                 .padding(.horizontal, 20)

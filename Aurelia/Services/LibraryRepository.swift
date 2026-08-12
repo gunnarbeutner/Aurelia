@@ -1143,23 +1143,32 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 let rows = try Row.fetchAll(
                     db,
                     sql: """
-                        SELECT item.*, state.lastPlayedAt, state.playCount, state.isFavorite
+                        SELECT item.*, state.lastPlayedAt, state.playCount, state.isFavorite,
+                               GROUP_CONCAT(DISTINCT genre.genreID) AS discoveryGenreIDs
                         FROM libraryItem AS item
                         LEFT JOIN userItemState AS state
                           ON state.serverKey = item.serverKey
                          AND state.userID = item.userID
                          AND state.itemID = item.itemID
+                        LEFT JOIN itemGenre AS genre
+                          ON genre.serverKey = item.serverKey
+                         AND genre.userID = item.userID
+                         AND genre.itemID = item.itemID
                         WHERE item.serverKey = ?
                           AND item.userID = ?
                           AND item.itemType = ?
+                        GROUP BY item.serverKey, item.userID, item.itemID
                         """,
                     arguments: [scope.serverKey, scope.userID, LibraryItemType.track.rawValue]
                 )
                 return try rows.map { row in
                     let record = try LibraryItemRecord(row: row)
                     let isFavorite = (row["isFavorite"] as Bool?) ?? false
+                    let genreIDs = (row["discoveryGenreIDs"] as String?)?
+                        .split(separator: ",")
+                        .map(String.init)
                     return DiscoveryCandidate(
-                        track: record.track(isFavorite: isFavorite),
+                        track: record.track(isFavorite: isFavorite, genreIDs: genreIDs),
                         lastPlayedAt: row["lastPlayedAt"],
                         playCount: (row["playCount"] as Int?) ?? 0,
                         isFavorite: isFavorite
@@ -2009,7 +2018,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         updatedAt = Date()
     }
 
-    func track(isFavorite: Bool) -> Track {
+    func track(isFavorite: Bool, genreIDs: [String]? = nil) -> Track {
         Track(
             id: itemID,
             name: name,
@@ -2024,6 +2033,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
             albumId: albumID,
             artistId: artistID,
             artistIDs: artistID.map { [$0] },
+            genreIDs: genreIDs,
             productionYear: productionYear
         )
     }

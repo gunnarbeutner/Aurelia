@@ -615,6 +615,45 @@ struct AureliaTests {
         #expect(selected.count == 4)
     }
 
+    @Test func dailyMixSeedsCombineTasteRegionsAndSongsWithoutRecentTracks() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let old = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        let candidates = (0..<7).map { index in
+            DiscoveryCandidate(
+                track: Track(
+                    id: "track-\(index)",
+                    name: "Song \(index)",
+                    artistName: "Artist \(index)",
+                    albumName: "Album \(index)",
+                    duration: 1,
+                    artworkURL: nil,
+                    artistId: "artist-\(index)",
+                    genreIDs: ["genre-\(index % 3)"]
+                ),
+                lastPlayedAt: old,
+                playCount: 7 - index,
+                isFavorite: index < 4
+            )
+        }
+
+        let seeds = DynamicDiscoverySelector.dailyMixSeeds(
+            from: candidates,
+            recentTrackIDs: ["track-0"],
+            now: now
+        )
+
+        #expect(seeds.count == 5)
+        #expect(!seeds.map(\.track.id).contains("track-0"))
+        #expect(Set(seeds.map(\.track.artistId)).count == 5)
+        #expect(seeds.prefix(3).allSatisfy { $0.title == "\($0.track.artistName) Mix" })
+        #expect(seeds.suffix(2).allSatisfy { $0.title == "\($0.track.name) Mix" })
+        #expect(seeds == DynamicDiscoverySelector.dailyMixSeeds(
+            from: candidates,
+            recentTrackIDs: ["track-0"],
+            now: now
+        ))
+    }
+
     @Test func decodesAudioMusePluginInfo() throws {
         let data = Data(#"{"Version":"1.4.2","AvailableEndpoints":["GET /AudioMuseAI/health"]}"#.utf8)
         let info = try JSONDecoder().decode(AudioMusePluginInfo.self, from: data)
@@ -633,41 +672,46 @@ struct AureliaTests {
         #expect(status.isActive)
     }
 
-    @Test @MainActor func discoveryPrefersRecentTracksAndDistinctArtists() async {
+    @Test @MainActor func discoveryExcludesRecentTracksFromDailyMixSeeds() async throws {
         let recentA = Track(id: "recent-a", name: "A", artistName: "Artist A", albumName: "One", duration: 1, artworkURL: nil, artistId: "artist-a")
-        let duplicateArtist = Track(id: "recent-a2", name: "A2", artistName: "Artist A", albumName: "Two", duration: 1, artworkURL: nil, artistId: "artist-a")
-        let recentB = Track(id: "recent-b", name: "B", artistName: "Artist B", albumName: "Three", duration: 1, artworkURL: nil, artistId: "artist-b")
         let api = FakeDiscoveryAPI()
-        let viewModel = DiscoveryViewModel(api: api) { [recentA, duplicateArtist, recentB] }
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(recentA),
+            Self.discoveryCandidate(id: "taste-b", artist: "Artist B", genre: "rock"),
+            Self.discoveryCandidate(id: "taste-c", artist: "Artist C", genre: "jazz")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { [recentA] },
+            snapshotScope: scope,
+            candidateProvider: provider
+        )
 
         await viewModel.refresh()
 
-        #expect(viewModel.shelves.map(\.seed.id) == ["recent-a", "recent-b", "favorite-c", "random-d"])
-        #expect(api.requestedMixes.prefix(2) == ["recent-a", "recent-b"])
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-a", "recent-a2", "recent-b"])
+        #expect(!api.requestedMixes.contains("recent-a"))
+        #expect(Set(api.requestedMixes) == ["taste-b", "taste-c"])
+        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
     }
 
-    @Test @MainActor func discoveryBuildsUpToMaximumMixShelves() async {
-        let recent = (0..<8).map { index in
-            Track(
-                id: "recent-\(index)",
-                name: "Recent \(index)",
-                artistName: "Artist \(index)",
-                albumName: "Album \(index)",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-\(index)"
-            )
-        }
+    @Test @MainActor func discoveryBuildsUpToMaximumMixShelves() async throws {
         let api = FakeDiscoveryAPI()
-        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+        let provider = FakeDiscoveryCandidateProvider(candidates: (0..<8).map {
+            Self.discoveryCandidate(id: "taste-\($0)", artist: "Artist \($0)", genre: "genre-\($0 % 3)")
+        })
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { [] },
+            snapshotScope: scope,
+            candidateProvider: provider
+        )
 
         await viewModel.refresh()
 
         #expect(viewModel.shelves.count == DiscoveryViewModel.maximumMixShelfCount)
-        #expect(viewModel.shelves.map(\.seed.id) == [
-            "recent-0", "recent-1", "recent-2", "recent-3", "recent-4"
-        ])
+        #expect(Set(viewModel.shelves.map(\.seed.id)).count == 5)
     }
 
     @Test @MainActor func discoveryUsesJellyfinRecentlyPlayedStateWhenAvailable() async {
@@ -687,7 +731,7 @@ struct AureliaTests {
         await viewModel.refresh()
 
         #expect(viewModel.recentTracks.map(\.id) == ["server"])
-        #expect(api.requestedMixes.first == "server")
+        #expect(api.requestedMixes.isEmpty)
     }
 
     @Test func discoveryMixUsesTheSeedArtistAndListsOtherArtistsOnce() {
@@ -706,15 +750,25 @@ struct AureliaTests {
         #expect(shelf.supportingArtistNames == ["Guest A", "Guest B"])
     }
 
-    @Test @MainActor func discoveryFallsBackWhenFavoriteSeedsFail() async {
+    @Test @MainActor func discoveryRequiresAudioMuseForDailyMixes() async throws {
         let api = FakeDiscoveryAPI()
-        api.shouldFailFavorites = true
-        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] })
+        api.audioMuseAvailable = false
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(id: "taste", artist: "Artist", genre: "rock")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { [] },
+            snapshotScope: scope,
+            candidateProvider: provider
+        )
 
         await viewModel.refresh()
 
-        #expect(viewModel.shelves.map(\.seed.id) == ["random-d"])
-        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.shelves.isEmpty)
+        #expect(api.requestedMixes.isEmpty)
+        #expect(viewModel.availability == .notInstalled)
     }
 
     @Test @MainActor func discoveryDoesNotRepeatRecentHistoryAsStartListeningFallback() async {
@@ -737,55 +791,37 @@ struct AureliaTests {
         #expect(viewModel.recentTracks.map(\.id) == ["recent"])
         #expect(viewModel.fallbackTracks.isEmpty)
         #expect(viewModel.hasContent)
-        #expect(viewModel.errorMessage != nil)
+        #expect(viewModel.errorMessage == nil)
     }
 
-    @Test @MainActor func discoveryOffersStartListeningFallbackWithoutHistory() async {
+    @Test @MainActor func discoveryOffersStartListeningFallbackWithoutHistory() async throws {
         let api = FakeDiscoveryAPI()
         api.shouldFailMixes = true
-        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] })
+        let candidate = Self.discoveryCandidate(id: "library", artist: "Artist", genre: "rock")
+        let provider = FakeDiscoveryCandidateProvider(candidates: [candidate])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] }, snapshotScope: scope, candidateProvider: provider)
 
         await viewModel.refresh()
 
         #expect(viewModel.shelves.isEmpty)
         #expect(viewModel.recentTracks.isEmpty)
-        #expect(viewModel.fallbackTracks.map(\.id) == ["favorite-c", "random-d"])
+        #expect(viewModel.fallbackTracks.map(\.id) == ["library"])
     }
 
-    @Test @MainActor func discoveryRetainsExistingMixesWhenEveryRefreshMixFails() async {
-        var recent = [
-            Track(
-                id: "recent-a",
-                name: "Recent A",
-                artistName: "Artist A",
-                albumName: "Album A",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-a"
-            )
-        ]
+    @Test @MainActor func discoveryRetainsExistingMixesWhenEveryRefreshMixFails() async throws {
         let api = FakeDiscoveryAPI()
-        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+        let provider = FakeDiscoveryCandidateProvider(candidates: [Self.discoveryCandidate(id: "taste", artist: "Artist", genre: "rock")])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] }, snapshotScope: scope, candidateProvider: provider)
 
         await viewModel.refresh()
         let originalShelves = viewModel.shelves
-        recent = [
-            Track(
-                id: "recent-b",
-                name: "Recent B",
-                artistName: "Artist B",
-                albumName: "Album B",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-b"
-            )
-        ]
         api.shouldFailMixes = true
 
         await viewModel.refresh()
 
         #expect(viewModel.shelves == originalShelves)
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
         #expect(viewModel.errorMessage?.contains("Showing the previous mixes") == true)
     }
 
@@ -808,7 +844,7 @@ struct AureliaTests {
         #expect(viewModel.shelves.isEmpty)
         #expect(viewModel.recentTracks.map(\.id) == ["recent"])
         #expect(viewModel.hasContent)
-        #expect(viewModel.errorMessage == "Instant Mixes are temporarily unavailable.")
+        #expect(viewModel.errorMessage == nil)
     }
 
     @Test func jellyfinHTTPErrorIncludesStatusAndServerMessage() {
@@ -857,98 +893,65 @@ struct AureliaTests {
         #expect(restoredAPI.requestedMixes.isEmpty)
     }
 
-    @Test @MainActor func discoveryStagesAutomaticRefreshUntilNextActivation() async {
+    @Test @MainActor func discoveryStagesAutomaticRefreshUntilNextActivation() async throws {
         var currentDate = Date(timeIntervalSince1970: 1_800_000_000)
-        var recent = [
-            Track(
-                id: "recent-a",
-                name: "Recent A",
-                artistName: "Artist A",
-                albumName: "Album A",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-a"
-            )
-        ]
         let api = FakeDiscoveryAPI()
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(id: "taste-a", artist: "Artist A", genre: "rock")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
         let viewModel = DiscoveryViewModel(
             api: api,
-            recentTracksProvider: { recent },
+            recentTracksProvider: { [] },
+            snapshotScope: scope,
+            candidateProvider: provider,
             now: { currentDate }
         )
 
         await viewModel.refresh()
-        #expect(viewModel.shelves.first?.seed.id == "recent-a")
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
+        #expect(viewModel.shelves.first?.seed.id == "taste-a")
 
-        recent = [
-            Track(
-                id: "recent-b",
-                name: "Recent B",
-                artistName: "Artist B",
-                albumName: "Album B",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-b"
-            )
-        ]
+        await provider.replace(with: [
+            Self.discoveryCandidate(id: "taste-b", artist: "Artist B", genre: "jazz")
+        ])
 
         // The current day's discovery shelves remain stable, even when recent
         // playback changes underneath them.
         await viewModel.loadIfNeeded(publishResult: false)
         await viewModel.activate()
 
-        #expect(viewModel.shelves.first?.seed.id == "recent-a")
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
+        #expect(viewModel.shelves.first?.seed.id == "taste-a")
 
         // Once a new day begins, prepare the next snapshot without rearranging
         // the visible page. It is adopted on the following activation.
         currentDate = currentDate.addingTimeInterval(24 * 60 * 60)
         await viewModel.loadIfNeeded(publishResult: false)
 
-        #expect(viewModel.shelves.first?.seed.id == "recent-a")
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-a"])
+        #expect(viewModel.shelves.first?.seed.id == "taste-a")
 
         await viewModel.activate()
 
-        #expect(viewModel.shelves.first?.seed.id == "recent-b")
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
+        #expect(viewModel.shelves.first?.seed.id == "taste-b")
     }
 
-    @Test @MainActor func discoveryExplicitRefreshPublishesStagedChangesImmediately() async {
-        var recent = [
-            Track(
-                id: "recent-a",
-                name: "Recent A",
-                artistName: "Artist A",
-                albumName: "Album A",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-a"
-            )
-        ]
+    @Test @MainActor func discoveryExplicitRefreshPublishesStagedChangesImmediately() async throws {
         let api = FakeDiscoveryAPI()
-        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { recent })
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(id: "taste-a", artist: "Artist A", genre: "rock")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(api: api, recentTracksProvider: { [] }, snapshotScope: scope, candidateProvider: provider)
 
         await viewModel.refresh()
-        recent = [
-            Track(
-                id: "recent-b",
-                name: "Recent B",
-                artistName: "Artist B",
-                albumName: "Album B",
-                duration: 1,
-                artworkURL: nil,
-                artistId: "artist-b"
-            )
-        ]
+        await provider.replace(with: [
+            Self.discoveryCandidate(id: "taste-b", artist: "Artist B", genre: "jazz")
+        ])
         await viewModel.loadIfNeeded(publishResult: false)
-        #expect(viewModel.shelves.first?.seed.id == "recent-a")
+        #expect(viewModel.shelves.first?.seed.id == "taste-a")
 
         await viewModel.refresh()
 
-        #expect(viewModel.shelves.first?.seed.id == "recent-b")
-        #expect(viewModel.recentTracks.map(\.id) == ["recent-b"])
+        #expect(viewModel.shelves.first?.seed.id == "taste-b")
     }
 
     @Test @MainActor func favoritesRevalidatesWhenStaleOrExpiredAndPTRAlwaysRefreshes() async {
@@ -1157,6 +1160,55 @@ struct AureliaTests {
             ],
             albums: [],
             artists: []
+        )
+    }
+
+    private static func discoveryCandidate(
+        _ track: Track,
+        genre: String? = nil
+    ) -> DiscoveryCandidate {
+        let enrichedTrack = Track(
+            id: track.id,
+            name: track.name,
+            sortName: track.sortName,
+            artistName: track.artistName,
+            albumName: track.albumName,
+            duration: track.duration,
+            artworkURL: track.artworkURL,
+            isFavorite: track.isFavorite,
+            indexNumber: track.indexNumber,
+            parentIndexNumber: track.parentIndexNumber,
+            albumId: track.albumId,
+            artistId: track.artistId,
+            artistIDs: track.artistIDs,
+            genreIDs: genre.map { [$0] },
+            playlistEntryID: track.playlistEntryID,
+            productionYear: track.productionYear
+        )
+        return DiscoveryCandidate(
+            track: enrichedTrack,
+            lastPlayedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            playCount: 5,
+            isFavorite: true
+        )
+    }
+
+    private static func discoveryCandidate(
+        id: String,
+        artist: String,
+        genre: String
+    ) -> DiscoveryCandidate {
+        discoveryCandidate(
+            Track(
+                id: id,
+                name: "Song \(id)",
+                artistName: artist,
+                albumName: "Album",
+                duration: 1,
+                artworkURL: nil,
+                artistId: artist.lowercased().replacingOccurrences(of: " ", with: "-")
+            ),
+            genre: genre
         )
     }
 
@@ -1673,6 +1725,7 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     var shouldFailFavorites = false
     var shouldFailRecent = true
     var serverRecentTracks: [BaseItemDto] = []
+    var audioMuseAvailable = true
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
         requestedMixes.append(itemId)
@@ -1696,10 +1749,11 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     }
 
     func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo {
-        AudioMusePluginInfo(version: "1", availableEndpoints: [])
+        guard audioMuseAvailable else { throw JellyfinError.notFound }
+        return AudioMusePluginInfo(version: "1", availableEndpoints: [])
     }
 
-    func checkAudioMuseHealth() async throws -> Bool { true }
+    func checkAudioMuseHealth() async throws -> Bool { audioMuseAvailable }
     func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { nil }
 
     func audio(id: String, artist: String) -> BaseItemDto {
@@ -1712,6 +1766,22 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
             Artists: [artist],
             ArtistItems: [NameIdPair(Name: artist, Id: artist.lowercased())]
         )
+    }
+}
+
+private actor FakeDiscoveryCandidateProvider: DiscoveryCandidateProviding {
+    private var storedCandidates: [DiscoveryCandidate]
+
+    init(candidates: [DiscoveryCandidate]) {
+        storedCandidates = candidates
+    }
+
+    func discoveryCandidates(in scope: LibraryScope) -> [DiscoveryCandidate] {
+        storedCandidates
+    }
+
+    func replace(with candidates: [DiscoveryCandidate]) {
+        storedCandidates = candidates
     }
 }
 
