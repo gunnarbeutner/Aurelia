@@ -2,8 +2,7 @@
 //  KeychainService.swift
 //  Aurelia
 //
-//  Secure storage service for Jellyfin access tokens using iOS Keychain
-//  Ensures sensitive authentication data is encrypted at rest
+//  Secure storage for the Jellyfin server and authenticated session.
 //
 
 import Foundation
@@ -24,13 +23,15 @@ enum KeychainServiceError: LocalizedError {
     }
 }
 
-/// Service for secure storage of authentication tokens in iOS Keychain
+/// Service for secure storage of the Jellyfin account in Keychain.
 /// Provides thread-safe access to encrypted credential storage
 class KeychainService {
     static let shared = KeychainService()
 
     private let serviceName = "de.beutner.Aurelia.jellyfin"
     private let accountName = "jellyfinAccessToken"
+    private let serverURLName = "jellyfinServerURL"
+    private let userIDName = "jellyfinUserId"
 
     private init() {}
 
@@ -39,26 +40,7 @@ class KeychainService {
     /// Saves access token to Keychain
     /// - Parameter token: The Jellyfin access token to store securely
     func saveAccessToken(_ token: String) throws {
-        let data = Data(token.utf8)
-
-        // Create query for adding item
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: accountName,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock // Available after first unlock for background playback
-        ]
-
-        // Delete any existing item first
-        SecItemDelete(query as CFDictionary)
-
-        // Add new item
-        let status = SecItemAdd(query as CFDictionary, nil)
-
-        guard status == errSecSuccess else {
-            throw KeychainServiceError.operationFailed(status)
-        }
+        try save(token, account: accountName)
     }
 
     /// Retrieves access token from Keychain
@@ -98,6 +80,26 @@ class KeychainService {
         if status != errSecSuccess && status != errSecItemNotFound {
             print("Failed to delete access token from Keychain: \(status)")
         }
+    }
+
+    func saveServerURL(_ serverURL: String) throws {
+        try save(serverURL, account: serverURLName)
+    }
+
+    func getServerURL() -> String? {
+        value(account: serverURLName)
+    }
+
+    func saveUserID(_ userID: String) throws {
+        try save(userID, account: userIDName)
+    }
+
+    func getUserID() -> String? {
+        value(account: userIDName)
+    }
+
+    func deleteUserID() {
+        remove(for: userIDName)
     }
 
     // MARK: - Additional Secure Storage
@@ -166,5 +168,36 @@ class KeychainService {
         ]
 
         SecItemDelete(query as CFDictionary)
+    }
+
+    private func save(_ value: String, account: String) throws {
+        let identity: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: account
+        ]
+        let data = Data(value.utf8)
+
+        let updateStatus = SecItemUpdate(
+            identity as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainServiceError.operationFailed(updateStatus)
+        }
+
+        var newItem = identity
+        newItem[kSecValueData as String] = data
+        // Available after first unlock for background playback and sync.
+        newItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        let status = SecItemAdd(newItem as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainServiceError.operationFailed(status)
+        }
+    }
+
+    private func value(account: String) -> String? {
+        retrieve(for: account)
     }
 }

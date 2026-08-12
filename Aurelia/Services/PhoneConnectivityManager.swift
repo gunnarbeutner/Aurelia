@@ -60,7 +60,7 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
 
         guard jellyfin.isAuthenticated,
               let accessToken = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             print("⚠️ Cannot sync - not authenticated")
             return
         }
@@ -399,7 +399,7 @@ extension PhoneConnectivityManager: WCSessionDelegate {
 
         guard jellyfin.isAuthenticated,
               let accessToken = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             print("⚠️ Cannot provide credentials - not authenticated")
             replyHandler([:])
             return

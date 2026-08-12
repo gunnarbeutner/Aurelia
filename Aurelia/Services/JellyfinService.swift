@@ -20,10 +20,11 @@ class JellyfinService: ObservableObject {
     private let logger = Logger(subsystem: "de.beutner.Aurelia", category: "JellyfinService")
 
     // MARK: - Properties
-    // Server URL is user-configurable via Settings
-    @Published var baseURL: String = UserDefaults.standard.string(forKey: "jellyfinServerURL") ?? "" {
+    // Keychain survives app removal, so a reinstall can restore the server and
+    // authenticated Jellyfin session without onboarding again.
+    @Published var baseURL: String = KeychainService.shared.getServerURL() ?? "" {
         didSet {
-            UserDefaults.standard.set(baseURL, forKey: "jellyfinServerURL")
+            try? KeychainService.shared.saveServerURL(baseURL)
         }
     }
     private let clientName = "Aurelia"
@@ -175,13 +176,14 @@ class JellyfinService: ObservableObject {
             if let authResult = try? JSONDecoder().decode(AuthenticationResult.self, from: authData),
                let token = authResult.AccessToken {
                 // Store token securely
+                try KeychainService.shared.saveServerURL(baseURL)
                 try KeychainService.shared.saveAccessToken(token)
                 self.isAuthenticated = true
                 self.currentUser = authResult.User
 
                 // Store user ID
                 if let userId = authResult.User?.Id {
-                    UserDefaults.standard.set(userId, forKey: "jellyfinUserId")
+                    try KeychainService.shared.saveUserID(userId)
                 }
 
                 return true
@@ -213,12 +215,13 @@ class JellyfinService: ObservableObject {
         case 200:
             let authResult = try JSONDecoder().decode(AuthenticationResult.self, from: data)
             if let token = authResult.AccessToken {
+                try KeychainService.shared.saveServerURL(baseURL)
                 try KeychainService.shared.saveAccessToken(token)
                 self.isAuthenticated = true
                 self.currentUser = authResult.User
 
                 if let userId = authResult.User?.Id {
-                    UserDefaults.standard.set(userId, forKey: "jellyfinUserId")
+                    try KeychainService.shared.saveUserID(userId)
                 }
 
                 // Sync to watch
@@ -294,8 +297,7 @@ class JellyfinService: ObservableObject {
             let user = try SafeJellyfinDecoder.decode(User.self, from: data)
             self.currentUser = user
             
-            // Store user ID for future use
-            UserDefaults.standard.set(user.Id, forKey: "jellyfinUserId")
+            try KeychainService.shared.saveUserID(user.Id)
             
         case 401:
             throw JellyfinError.unauthorized
@@ -338,7 +340,7 @@ class JellyfinService: ObservableObject {
         fields: String? = nil
     ) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -434,7 +436,7 @@ class JellyfinService: ObservableObject {
 
     func fetchArtistsPage(parentId: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -490,7 +492,7 @@ class JellyfinService: ObservableObject {
 
     func fetchTracksPage(parentId: String, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -534,7 +536,7 @@ class JellyfinService: ObservableObject {
     /// Search for music items across all types
     func searchMusic(query: String, parentId: String? = nil) async throws -> [BaseItemDto] {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -687,7 +689,7 @@ class JellyfinService: ObservableObject {
     /// Create a new playlist
     func createPlaylist(name: String, trackIds: [String] = []) async throws -> String {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -819,7 +821,7 @@ class JellyfinService: ObservableObject {
 
     func fetchPlaylistsPage(limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -869,7 +871,7 @@ class JellyfinService: ObservableObject {
 
     func fetchGenresPage(limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw URLError(.userAuthenticationRequired)
         }
 
@@ -909,7 +911,7 @@ class JellyfinService: ObservableObject {
 
     private func fetchMusicItemsByGenre(genreId: String) async throws -> [BaseItemDto] {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw URLError(.userAuthenticationRequired)
         }
 
@@ -940,7 +942,7 @@ class JellyfinService: ObservableObject {
     /// Mark an item as favorite
     func markFavorite(itemId: String) async throws {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -964,7 +966,7 @@ class JellyfinService: ObservableObject {
     /// Remove item from favorites
     func unmarkFavorite(itemId: String) async throws {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -987,7 +989,7 @@ class JellyfinService: ObservableObject {
     /// Fetch user's favorite items
     func fetchFavorites(includeItemTypes: String = "Audio,MusicAlbum,Playlist") async throws -> [BaseItemDto] {
         guard let token = KeychainService.shared.getAccessToken(),
-              let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
+              let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
@@ -1423,7 +1425,7 @@ class JellyfinService: ObservableObject {
     private func handleInvalidSession() async {
         // Clear stored credentials
         KeychainService.shared.deleteAccessToken()
-        UserDefaults.standard.removeObject(forKey: "jellyfinUserId")
+        KeychainService.shared.deleteUserID()
         
         // Update authentication state
         self.isAuthenticated = false
@@ -1444,14 +1446,14 @@ class JellyfinService: ObservableObject {
         isAuthenticated = false
         currentUser = nil
         KeychainService.shared.deleteAccessToken()
-        UserDefaults.standard.removeObject(forKey: "jellyfinUserId")
+        KeychainService.shared.deleteUserID()
     }
 
     // MARK: - Public Computed Properties
 
-    /// Current user ID from UserDefaults
+    /// Current Jellyfin user ID from Keychain.
     var currentUserId: String? {
-        UserDefaults.standard.string(forKey: "jellyfinUserId")
+        KeychainService.shared.getUserID()
     }
 
     /// Image types worth requesting for an artist. Backdrop is wide by design
