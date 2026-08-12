@@ -1454,6 +1454,35 @@ class JellyfinService: ObservableObject {
         UserDefaults.standard.string(forKey: "jellyfinUserId")
     }
 
+    /// Image types worth requesting for an artist. Backdrop is wide by design
+    /// and suits a header; Primary is a portrait and only looks right in a
+    /// square. Thumb is deliberately absent — Jellyfin serves none for artists
+    /// in practice, so asking for it only buys a 404 before the fallback.
+    enum ArtistImageKind {
+        case backdrop
+        case primary
+
+        var path: String {
+            switch self {
+            case .backdrop: return "Backdrop/0"
+            case .primary: return "Primary"
+            }
+        }
+    }
+
+    /// Builds an artist image URL without needing the item's image tag. The tag
+    /// is only a cache key, so omitting it costs nothing here and saves storing
+    /// per-image tags in the local catalog. A kind the artist has no image for
+    /// simply 404s, which the caller treats as "try the next candidate".
+    func artistImageURL(
+        artistID: String,
+        kind: ArtistImageKind,
+        maxWidth: Int
+    ) -> URL? {
+        guard !baseURL.isEmpty, !artistID.isEmpty else { return nil }
+        return URL(string: "\(baseURL)/Items/\(artistID)/Images/\(kind.path)?maxWidth=\(maxWidth)")
+    }
+
     var libraryScope: LibraryScope? {
         LibraryScope(baseURL: baseURL, userID: currentUserId)
     }

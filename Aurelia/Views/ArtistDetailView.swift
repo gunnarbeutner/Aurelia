@@ -38,6 +38,36 @@ struct ArtistDetailView: View {
     private var effectiveArtworkURL: String? {
         artist.artworkURL ?? wikiImageURL
     }
+
+    /// Index into ``headerImageCandidates``. Advanced when a candidate fails to
+    /// load, which is how a missing backdrop falls through to the next choice.
+    @State private var headerCandidateIndex = 0
+
+    /// Header art in descending order of suitability. Backdrop and Thumb are
+    /// wide images meant for exactly this; the square Primary is the fallback,
+    /// and the Wikipedia lookup backs that up when the server has nothing.
+    private var headerImageCandidates: [URL] {
+        var candidates: [URL] = []
+        for kind in [JellyfinService.ArtistImageKind.backdrop, .primary] {
+            if let url = jellyfinService.artistImageURL(
+                artistID: artist.id,
+                kind: kind,
+                maxWidth: 1280
+            ) {
+                candidates.append(url)
+            }
+        }
+        if let wiki = wikiImageURL, let url = URL(string: wiki) {
+            candidates.append(url)
+        }
+        return candidates
+    }
+
+    private var headerImageURL: URL? {
+        let candidates = headerImageCandidates
+        guard candidates.indices.contains(headerCandidateIndex) else { return nil }
+        return candidates[headerCandidateIndex]
+    }
     @State private var isFavorite: Bool
 
     init(artist: Artist) {
@@ -163,6 +193,13 @@ struct ArtistDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
     }
 
+    /// Steps to the next header candidate when one fails to load — typically a
+    /// backdrop the server does not have for this artist.
+    private func advanceHeaderCandidate() {
+        guard headerCandidateIndex < headerImageCandidates.count - 1 else { return }
+        headerCandidateIndex += 1
+    }
+
     // MARK: - Fetch Artist Data
     private func fetchArtistAlbums() async {
         await DelayedLoading.run { isLoadingAlbums = $0 } work: {
@@ -207,7 +244,7 @@ struct ArtistDetailView: View {
         VStack(spacing: 0) {
             // Large artist artwork/gradient
             ZStack {
-                if let artworkURL = effectiveArtworkURL, let url = URL(string: artworkURL) {
+                if let url = headerImageURL {
                     GeometryReader { geo in
                         CachedAsyncImage(url: url) { phase in
                             switch phase {
@@ -221,10 +258,12 @@ struct ArtistDetailView: View {
                                     .clipped()
                             case .failure:
                                 placeholderArtistHeader
+                                    .onAppear { advanceHeaderCandidate() }
                             @unknown default:
                                 placeholderArtistHeader
                             }
                         }
+                        .id(url)
                     }
                     .frame(height: 280)
                     .clipped()
