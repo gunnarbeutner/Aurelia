@@ -135,7 +135,6 @@ func recentlyPlayedAlbums(from items: [BaseItemDto], baseURL: String) -> [Album]
 struct LibraryView: View {
     @ObservedObject private var libraryStore = LibraryStore.shared
     @ObservedObject var playerManager = PlayerManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var albums: [Album] = []
     @State private var serverRecentAlbums: [Album]?
@@ -494,7 +493,7 @@ struct LibraryView: View {
                                             .padding(.vertical, 14)
                                         }
                                         if genre.id != genres.last?.id {
-                                            Divider().background(Color.white.opacity(0.05)).padding(.horizontal, 20)
+                                            Divider().background(Color.appSubtleFill).padding(.horizontal, 20)
                                         }
                                     }
                                 }
@@ -656,7 +655,7 @@ struct LibraryView: View {
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundColor(.neonPink)
+                            .foregroundColor(.appSecondary)
                     }
                 }
                 
@@ -796,12 +795,12 @@ struct LibraryView: View {
                             .frame(width: 44, height: 44)
                             .overlay(
                                 Circle()
-                                    .stroke(Color.neonPink.opacity(0.5), lineWidth: 1)
+                                    .stroke(Color.appSecondary.opacity(0.5), lineWidth: 1)
                             )
 
                         Image(systemName: "plus.circle.fill")
                             .font(.title3.weight(.semibold))
-                            .foregroundColor(.neonPink)
+                            .foregroundColor(.appSecondary)
                     }
                 }
             }
@@ -876,7 +875,7 @@ struct LibraryView: View {
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(Color.white.opacity(0.1))
+                        .fill(Color.appControlFill)
                 )
                 .overlay(
                     Capsule()
@@ -923,7 +922,7 @@ struct LibraryView: View {
             }
             .background(
                 Capsule()
-                    .fill(Color.white.opacity(0.1))
+                    .fill(Color.appControlFill)
             )
             .overlay(
                 Capsule()
@@ -943,7 +942,7 @@ struct LibraryView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
-                        .foregroundColor(.neonPink)
+                        .foregroundColor(.appSecondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("New playlist")

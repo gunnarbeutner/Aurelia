@@ -38,7 +38,7 @@ struct FavoritesView: View {
             if viewModel.isInitialLoading {
                 VStack(spacing: 16) {
                     ProgressView()
-                        .tint(.neonPink)
+                        .tint(.appSecondary)
                         .scaleEffect(1.5)
                     Text("Loading favorites...")
                         .font(.appBody)
@@ -159,11 +159,11 @@ struct FavoritesView: View {
                             .padding(.vertical, 8)
                             .background(
                                 Capsule()
-                                    .fill(selectedFilter == filter ? Color.neonCyan : Color.white.opacity(0.08))
+                                    .fill(selectedFilter == filter ? Color.appAccent : Color.appControlFill)
                             )
                             .overlay(
                                 Capsule()
-                                    .stroke(selectedFilter == filter ? Color.clear : Color.white.opacity(0.1), lineWidth: 1)
+                                    .stroke(selectedFilter == filter ? Color.clear : Color.appControlFill, lineWidth: 1)
                             )
                     }
                 }
@@ -238,7 +238,7 @@ struct FavoritesView: View {
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.white.opacity(0.08))
+                                    .fill(Color.appControlFill)
                             )
                         }
                     }
@@ -256,7 +256,7 @@ struct FavoritesView: View {
 
                         if index < favoriteTracks.count - 1 {
                             Divider()
-                                .background(Color.white.opacity(0.06))
+                                .background(Color.appSubtleFill)
                         }
                     }
                 }
@@ -289,7 +289,7 @@ struct FavoritesView: View {
         VStack(spacing: 16) {
             Image(systemName: "heart")
                 .font(.system(size: 48))
-                .foregroundColor(.white.opacity(0.2))
+                .foregroundColor(.appTextSecondary)
             Text("No Favorites Yet")
                 .font(.appTitle)
                 .foregroundColor(Color.appText)
@@ -308,7 +308,7 @@ struct FavoritesView: View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
-                .foregroundColor(.neonPink)
+                .foregroundColor(.appSecondary)
             Text("Error Loading Favorites")
                 .font(.appHeadline)
                 .foregroundColor(Color.appText)
@@ -320,10 +320,10 @@ struct FavoritesView: View {
             Button("Try Again") {
                 Task { await viewModel.refresh() }
             }
-            .foregroundColor(.black)
+            .foregroundColor(.appAccentText)
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
-            .background(Capsule().fill(Color.neonPink))
+            .background(Capsule().fill(Color.appSecondary))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 120)
@@ -352,14 +352,14 @@ struct FavoriteTrackRow: View {
                             image.resizable().aspectRatio(contentMode: .fill)
                         default:
                             Rectangle().fill(Color.appMidBackground)
-                                .overlay(Image(systemName: "music.note").font(.caption).foregroundColor(.white.opacity(0.3)))
+                                .overlay(Image(systemName: "music.note").font(.caption).foregroundColor(.appTextSecondary))
                         }
                     }
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            .stroke(Color.appControlFill, lineWidth: 1)
                     )
                 }
 
@@ -367,7 +367,7 @@ struct FavoriteTrackRow: View {
                 if isCurrentlyPlaying {
                     Image(systemName: "waveform")
                         .font(.caption.weight(.bold))
-                        .foregroundColor(.neonCyan)
+                        .foregroundColor(.appAccent)
                         .symbolEffect(.variableColor.iterative, isActive: playerManager.isPlaying)
                         .frame(width: 16)
                 }
@@ -376,11 +376,11 @@ struct FavoriteTrackRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name)
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(isCurrentlyPlaying ? .neonCyan : .white.opacity(0.7))
+                        .foregroundColor(isCurrentlyPlaying ? .appAccent : .white.opacity(0.7))
                         .lineLimit(1)
                     Text(track.artistName)
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(.appTextSecondary)
                         .lineLimit(1)
                 }
 
@@ -388,7 +388,7 @@ struct FavoriteTrackRow: View {
 
                 Text(track.durationFormatted)
                     .font(.appMono)
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(.appTextSecondary)
             }
             .padding(.vertical, 8)
             .contentShape(Rectangle())

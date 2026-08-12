@@ -11,7 +11,6 @@ struct PlaylistDetailView: View {
     let playlist: Playlist
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @State private var isFavorite: Bool
@@ -127,9 +126,9 @@ struct PlaylistDetailView: View {
                 // Gradient background
                 LinearGradient(
                     colors: [
-                        Color.neonPink.opacity(0.6),
                         Color.appSecondary.opacity(0.6),
-                        Color.neonPurple.opacity(0.7)
+                        Color.appSecondary.opacity(0.6),
+                        Color.appTertiary.opacity(0.7)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -153,7 +152,7 @@ struct PlaylistDetailView: View {
                                         .stroke(
                                             LinearGradient(
                                                 colors: [
-                                                    Color.neonPink.opacity(0.8),
+                                                    Color.appSecondary.opacity(0.8),
                                                     Color.appSecondary.opacity(0.8)
                                                 ],
                                                 startPoint: .topLeading,
@@ -190,14 +189,14 @@ struct PlaylistDetailView: View {
                 Text(playlist.name)
                     .font(.title2.weight(.bold))
                     .foregroundColor(Color.appText)
-                    .neonGlow(color: .neonPink, radius: 4)
+                    .neonGlow(color: .appSecondary, radius: 4)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
 
                 Text("Playlist")
                     .font(.appHeadline)
-                    .foregroundColor(.neonPink)
-                    .neonGlow(color: .neonPink, radius: 6)
+                    .foregroundColor(.appSecondary)
+                    .neonGlow(color: .appSecondary, radius: 6)
             }
             .padding(.top, -40)
             .padding(.bottom, 20)
@@ -210,9 +209,9 @@ struct PlaylistDetailView: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color.neonPink.opacity(0.5),
                         Color.appSecondary.opacity(0.5),
-                        Color.neonPurple.opacity(0.5)
+                        Color.appSecondary.opacity(0.5),
+                        Color.appTertiary.opacity(0.5)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -224,7 +223,7 @@ struct PlaylistDetailView: View {
                     .stroke(
                         LinearGradient(
                             colors: [
-                                Color.neonPink.opacity(0.8),
+                                Color.appSecondary.opacity(0.8),
                                 Color.appSecondary.opacity(0.8)
                             ],
                             startPoint: .topLeading,
@@ -237,7 +236,7 @@ struct PlaylistDetailView: View {
             .overlay(
                 Image(systemName: "music.note.list")
                     .font(.title)
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(.appTextMuted)
             )
     }
 
@@ -256,14 +255,14 @@ struct PlaylistDetailView: View {
                         .font(.appBody)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.black)
+                .foregroundColor(.appAccentText)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(playlistTracks.isEmpty ? Color.gray : Color.neonPink)
+                        .fill(playlistTracks.isEmpty ? Color.gray : Color.appSecondary)
                 )
-                .neonGlow(color: playlistTracks.isEmpty ? .clear : .neonPink, radius: 6)
+                .neonGlow(color: playlistTracks.isEmpty ? .clear : .appSecondary, radius: 6)
             }
             .disabled(playlistTracks.isEmpty)
 
@@ -279,13 +278,13 @@ struct PlaylistDetailView: View {
                     .frame(width: 56, height: 56)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
+                            .fill(Color.appControlFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.neonPurple.opacity(0.5), lineWidth: 1)
+                                    .stroke(Color.appTertiary.opacity(0.5), lineWidth: 1)
                             )
                     )
-                    .neonGlow(color: .neonPurple, radius: 8)
+                    .neonGlow(color: .appTertiary, radius: 8)
             }
             .disabled(playlistTracks.isEmpty)
 
@@ -295,17 +294,17 @@ struct PlaylistDetailView: View {
             } label: {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(.title3.weight(.semibold))
-                    .foregroundColor(isFavorite ? .neonPink : .white)
+                    .foregroundColor(isFavorite ? .appSecondary : .white)
                     .frame(width: 56, height: 56)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
+                            .fill(Color.appControlFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.neonPink.opacity(isFavorite ? 0.8 : 0.5), lineWidth: 1)
+                                    .stroke(Color.appSecondary.opacity(isFavorite ? 0.8 : 0.5), lineWidth: 1)
                             )
                     )
-                    .neonGlow(color: .neonPink, radius: isFavorite ? 6 : 4)
+                    .neonGlow(color: .appSecondary, radius: isFavorite ? 6 : 4)
             }
         }
         .padding(.horizontal, 20)
@@ -339,7 +338,7 @@ struct PlaylistDetailView: View {
                 HStack {
                     Spacer()
                     ProgressView()
-                        .tint(.neonPink)
+                        .tint(.appSecondary)
                     Text("Loading tracks...")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
@@ -374,7 +373,7 @@ struct PlaylistDetailView: View {
 
                         if index < playlistTracks.count - 1 {
                             Divider()
-                                .background(Color.white.opacity(0.1))
+                                .background(Color.appControlFill)
                                 .padding(.horizontal, 20)
                         }
                     }
@@ -382,10 +381,10 @@ struct PlaylistDetailView: View {
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Color.appSubtleFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.neonPink.opacity(0.2), lineWidth: 1)
+                                .stroke(Color.appSecondary.opacity(0.2), lineWidth: 1)
                         )
                 )
                 .padding(.horizontal, 20)
@@ -419,7 +418,7 @@ struct PlaylistTrackRow: View {
                 } else {
                     Text("\(trackNumber)")
                         .font(.system(.body, design: .monospaced).weight(.bold))
-                        .foregroundColor(.neonPink)
+                        .foregroundColor(.appSecondary)
                         .frame(width: 28, alignment: .trailing)
                 }
 
@@ -450,7 +449,7 @@ struct PlaylistTrackRow: View {
                 // Play button
                 Image(systemName: "play.circle.fill")
                     .font(.title2)
-                    .foregroundColor(.neonPink)
+                    .foregroundColor(.appSecondary)
             }
             .padding(.vertical, 12)
             .background(

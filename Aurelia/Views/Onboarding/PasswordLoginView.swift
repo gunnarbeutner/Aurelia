@@ -71,13 +71,13 @@ struct PasswordLoginView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Username")
                                 .font(.caption)
-                                .foregroundColor(.neonCyan)
+                                .foregroundColor(.appAccent)
                                 .textCase(.uppercase)
                                 .fontWeight(.semibold)
 
                             HStack(spacing: 12) {
                                 Image(systemName: "person.fill")
-                                    .foregroundColor(.neonCyan)
+                                    .foregroundColor(.appAccent)
 
                                 TextField("Username", text: $username)
                                     .textFieldStyle(.plain)
@@ -103,7 +103,7 @@ struct PasswordLoginView: View {
                             .padding(16)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.1))
+                                    .fill(Color.appControlFill)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
                                             .stroke(Color.appAccent.opacity(0.3), lineWidth: 1)
@@ -115,13 +115,13 @@ struct PasswordLoginView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Password")
                                 .font(.caption)
-                                .foregroundColor(.neonCyan)
+                                .foregroundColor(.appAccent)
                                 .textCase(.uppercase)
                                 .fontWeight(.semibold)
 
                             HStack(spacing: 12) {
                                 Image(systemName: "lock.fill")
-                                    .foregroundColor(.neonCyan)
+                                    .foregroundColor(.appAccent)
 
                                 SecureField("Password", text: $password)
                                     .textFieldStyle(.plain)
@@ -145,7 +145,7 @@ struct PasswordLoginView: View {
                             .padding(16)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.1))
+                                    .fill(Color.appControlFill)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
                                             .stroke(Color.appAccent.opacity(0.3), lineWidth: 1)
@@ -170,7 +170,7 @@ struct PasswordLoginView: View {
                             Text(isAuthenticating ? "Signing In..." : "Sign In")
                                 .font(.body.weight(.semibold))
                         }
-                        .foregroundColor(.black)
+                        .foregroundColor(.appAccentText)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -186,7 +186,7 @@ struct PasswordLoginView: View {
                     // Help text
                     HStack(spacing: 12) {
                         Image(systemName: "info.circle")
-                            .foregroundColor(.neonPink.opacity(0.8))
+                            .foregroundColor(.appSecondary.opacity(0.8))
                             .font(.caption)
 
                         Text("Use your Jellyfin username and password to sign in")
@@ -197,7 +197,7 @@ struct PasswordLoginView: View {
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.white.opacity(0.05))
+                            .fill(Color.appSubtleFill)
                     )
                     .padding(.horizontal, 30)
 

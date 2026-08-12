@@ -9,7 +9,6 @@ import SwiftUI
 
 struct ServerSetupView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @State private var serverURL = ""
     @State private var isValidating = false
     @State private var errorMessage = ""
@@ -97,13 +96,13 @@ struct ServerSetupView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Server URL")
                 .font(.appCaption)
-                .foregroundColor(.neonCyan)
+                .foregroundColor(.appAccent)
                 .textCase(.uppercase)
                 .fontWeight(.semibold)
 
             HStack(spacing: 12) {
                 Image(systemName: "server.rack")
-                    .foregroundColor(.neonCyan)
+                    .foregroundColor(.appAccent)
                     .font(.title3)
 
                 TextField("https://jellyfin.example.com", text: $serverURL)
@@ -130,7 +129,7 @@ struct ServerSetupView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.1))
+                    .fill(Color.appControlFill)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(Color.appAccent.opacity(0.3), lineWidth: 1)
@@ -160,14 +159,14 @@ struct ServerSetupView: View {
                     .font(.appBody)
                     .fontWeight(.semibold)
             }
-            .foregroundColor(.black)
+            .foregroundColor(.appAccentText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(serverURL.isEmpty ? Color.gray : Color.appAccent)
             )
-            .neonGlow(color: serverURL.isEmpty ? .clear : .neonCyan, radius: 6)
+            .neonGlow(color: serverURL.isEmpty ? .clear : .appAccent, radius: 6)
         }
         .disabled(serverURL.isEmpty || isValidating)
         .accessibilityLabel(isValidating ? "Connecting to server" : "Connect to server")
@@ -179,7 +178,7 @@ struct ServerSetupView: View {
         VStack(spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "info.circle")
-                    .foregroundColor(.neonPink.opacity(0.8))
+                    .foregroundColor(.appSecondary.opacity(0.8))
                     .font(.caption)
 
                 Text("Enter your Jellyfin server URL (e.g., https://jellyfin.example.com:8096)")
@@ -190,7 +189,7 @@ struct ServerSetupView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(Color.appSubtleFill)
             )
         }
     }

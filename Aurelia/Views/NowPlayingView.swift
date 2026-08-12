@@ -186,7 +186,6 @@ struct NowPlayingView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
     @ObservedObject var jellyfinService = JellyfinService.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @Environment(\.dismiss) var dismiss
     // Slider state removed — using WaveformView now
     @State private var selectedQueueTab: NowPlayingQueueTab = .upNext
@@ -260,10 +259,7 @@ struct NowPlayingView: View {
                 queueSection
                     .padding(.top, 24)
 
-                // The player is presented inside the selected tab's content so
-                // the native tab bar remains usable. Leave enough trailing
-                // scroll space for the final queue row to clear that bar.
-                Spacer().frame(height: MiniPlayerLayout.tabBarClearance + 40)
+                Spacer().frame(height: 40)
             }
             .frame(width: NowPlayingLayout.contentWidth(for: geometry.size.width))
             .padding(.horizontal, NowPlayingLayout.horizontalPadding)
@@ -309,7 +305,7 @@ struct NowPlayingView: View {
                 .frame(width: columns.queue)
                 .overlay(alignment: .leading) {
                     Rectangle()
-                        .fill(Color.white.opacity(0.08))
+                        .fill(Color.appBorder)
                         .frame(width: 1)
                         .offset(x: -NowPlayingLayout.regularColumnSpacing / 2)
                 }
@@ -326,7 +322,9 @@ struct NowPlayingView: View {
     ) -> some View {
         VStack(spacing: 0) {
             artworkSection(screenWidth: width, screenHeight: viewportHeight)
-                .padding(.top, 12)
+                // The artwork shadow extends above the image. Keep it inside
+                // the scroll viewport so Catalyst does not clip its top edge.
+                .padding(.top, 32)
 
             trackInfoSection
                 .padding(.top, 20)
@@ -366,7 +364,7 @@ struct NowPlayingView: View {
                 .padding(.top, 12)
 
             controlsSection
-                .padding(.top, 10)
+            .padding(.top, 32)
 
             secondaryActionsSection
                 .padding(.top, 8)
@@ -407,7 +405,7 @@ struct NowPlayingView: View {
                 dominantColor
                     .opacity(0.15)
                     .ignoresSafeArea()
-                    .animation(.easeInOut(duration: 0.8), value: dominantColor != nil)
+                    .animation(.easeInOut(duration: 0.8), value: self.dominantColor != nil)
             }
         }
     }
@@ -424,7 +422,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.body.weight(.medium))
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.appTextSecondary)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Close now playing")
@@ -469,7 +467,7 @@ struct NowPlayingView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                    .stroke(Color.appControlFill, lineWidth: 1)
                             )
                             .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
                     case .failure:
@@ -495,13 +493,13 @@ struct NowPlayingView: View {
                 .frame(width: size, height: size)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.appControlFill, lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
 
             Image(systemName: "music.note")
                 .font(.largeTitle)
-                .foregroundColor(.white.opacity(0.2))
+                .foregroundColor(.appTextMuted)
         }
     }
 
@@ -528,7 +526,7 @@ struct NowPlayingView: View {
                     } label: {
                         Text(track.artistName)
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(.appTextSecondary)
                             .multilineTextAlignment(.center)
                     }
 
@@ -537,7 +535,7 @@ struct NowPlayingView: View {
                     } label: {
                         Text(track.albumName)
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(.appTextMuted)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                     }
@@ -554,7 +552,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(.title3)
-                    .foregroundColor(isFavorite ? .neonPink : .white.opacity(0.3))
+                    .foregroundColor(isFavorite ? .appSecondary : .appTextMuted)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
@@ -580,11 +578,11 @@ struct NowPlayingView: View {
             HStack {
                 Text(formatTime(playbackProgress.currentTime))
                     .font(.appMono)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.appTextSecondary)
                 Spacer()
                 Text(formatTime(playerManager.duration))
                     .font(.appMono)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.appTextSecondary)
             }
         }
     }
@@ -598,7 +596,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "shuffle")
                     .font(.body)
-                    .foregroundColor(playerManager.shuffleEnabled ? .neonCyan : .white.opacity(0.4))
+                    .foregroundColor(playerManager.shuffleEnabled ? .appAccent : .appTextSecondary)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Shuffle")
@@ -611,7 +609,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "backward.fill")
                     .font(.title2)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.appText)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Previous track")
@@ -644,7 +642,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.title2)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.appText)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Next track")
@@ -657,7 +655,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: repeatIcon)
                     .font(.body)
-                    .foregroundColor(playerManager.repeatMode != .off ? .neonCyan : .white.opacity(0.4))
+                    .foregroundColor(playerManager.repeatMode != .off ? .appAccent : .appTextSecondary)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Repeat")
@@ -685,16 +683,16 @@ struct NowPlayingView: View {
                     Text(playerManager.playbackRate == 1.0 ? "1x" : String(format: "%.2gx", playerManager.playbackRate))
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                 }
-                .foregroundColor(playerManager.playbackRate != 1.0 ? .neonCyan : .white.opacity(0.4))
+                .foregroundColor(playerManager.playbackRate != 1.0 ? .appAccent : .appTextSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(playerManager.playbackRate != 1.0 ? Color.neonCyan.opacity(0.15) : Color.white.opacity(0.1))
+                        .fill(playerManager.playbackRate != 1.0 ? Color.appAccent.opacity(0.15) : Color.appControlFill)
                 )
                 .overlay(
                     Capsule()
-                        .stroke(playerManager.playbackRate != 1.0 ? Color.neonCyan.opacity(0.3) : Color.clear, lineWidth: 1)
+                        .stroke(playerManager.playbackRate != 1.0 ? Color.appAccent.opacity(0.3) : Color.clear, lineWidth: 1)
                 )
             }
             .accessibilityLabel("Playback speed: \(playerManager.playbackRate)x")
@@ -711,12 +709,12 @@ struct NowPlayingView: View {
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
                     }
                 }
-                .foregroundColor(sleepTimer.isActive ? .appAccent : .white.opacity(0.4))
+                .foregroundColor(sleepTimer.isActive ? .appAccent : .appTextSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(sleepTimer.isActive ? Color.appAccent.opacity(0.15) : Color.white.opacity(0.1))
+                        .fill(sleepTimer.isActive ? Color.appAccent.opacity(0.15) : Color.appControlFill)
                 )
                 .overlay(
                     Capsule()
@@ -791,7 +789,7 @@ struct NowPlayingView: View {
                         .contentShape(Rectangle())
                         .background {
                             if selectedQueueTab == tab {
-                                Capsule().fill(Color.white.opacity(0.1))
+                                Capsule().fill(Color.appControlFill)
                             }
                         }
                 }
@@ -800,8 +798,8 @@ struct NowPlayingView: View {
             }
         }
         .padding(3)
-        .background(Capsule().fill(Color.black.opacity(0.18)))
-        .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Capsule().fill(Color.appControlFill))
+        .overlay(Capsule().stroke(Color.appBorder, lineWidth: 1))
         .accessibilityIdentifier("now-playing-queue-tabs")
     }
 
@@ -851,7 +849,7 @@ struct NowPlayingView: View {
                     showClearUpcomingConfirmation = true
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundColor(.neonPink)
+                .foregroundColor(.appSecondary)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear Up Next")
             }
@@ -893,13 +891,13 @@ struct NowPlayingView: View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(.white.opacity(0.25))
+                .foregroundColor(.appTextMuted)
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(.white.opacity(0.55))
+                .foregroundColor(.appTextSecondary)
             Text(message)
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(.appTextMuted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -1073,7 +1071,7 @@ private struct HistoryQueueRow: View {
                             .overlay(
                                 Image(systemName: "music.note")
                                     .font(.caption)
-                                    .foregroundColor(.white.opacity(0.3))
+                                    .foregroundColor(.appTextMuted)
                             )
                     }
                 }
@@ -1081,17 +1079,17 @@ private struct HistoryQueueRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.appControlFill, lineWidth: 1)
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name)
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(.appTextSecondary)
                         .lineLimit(1)
                     Text(track.artistName)
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(.appTextMuted)
                         .lineLimit(1)
                 }
 
@@ -1099,7 +1097,7 @@ private struct HistoryQueueRow: View {
 
                 Text(track.durationFormatted)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(.appTextMuted)
             }
             .contentShape(Rectangle())
             .padding(.horizontal, 8)
@@ -1162,7 +1160,7 @@ private struct UpNextQueueRow: View {
                                 .overlay(
                                     Image(systemName: "music.note")
                                         .font(.caption)
-                                        .foregroundColor(.white.opacity(0.3))
+                                        .foregroundColor(.appTextMuted)
                                 )
                         }
                     }
@@ -1170,17 +1168,17 @@ private struct UpNextQueueRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            .stroke(Color.appControlFill, lineWidth: 1)
                     )
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.name)
                             .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(.appTextSecondary)
                             .lineLimit(1)
                         Text(track.artistName)
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(.appTextMuted)
                             .lineLimit(1)
                     }
 
@@ -1188,7 +1186,7 @@ private struct UpNextQueueRow: View {
 
                     Text(track.durationFormatted)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(.appTextMuted)
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 6)
@@ -1204,7 +1202,7 @@ private struct UpNextQueueRow: View {
 
                 Image(systemName: "line.3.horizontal")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(.appTextMuted)
                     .frame(width: 44, height: 52)
                     .contentShape(Rectangle())
                     .accessibilityLabel("Reorder \(track.name)")
@@ -1294,7 +1292,7 @@ struct AirPlayButton: UIViewRepresentable {
         let routePickerView = AVRoutePickerView()
         routePickerView.backgroundColor = .clear
         routePickerView.activeTintColor = UIColor(Color.appAccent)
-        routePickerView.tintColor = UIColor(.white.opacity(0.6))
+        routePickerView.tintColor = UIColor(.appTextSecondary)
         routePickerView.prioritizesVideoDevices = false
         return routePickerView
     }

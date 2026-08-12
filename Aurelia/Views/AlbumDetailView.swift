@@ -13,7 +13,6 @@ struct AlbumDetailView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var downloadManager = DownloadManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @State private var isFavorite: Bool
@@ -300,7 +299,7 @@ struct AlbumDetailView: View {
                             .font(.caption.weight(.semibold))
                     }
                     .font(.appHeadline)
-                    .foregroundColor(.neonPink)
+                    .foregroundColor(.appSecondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("album-artist-link")
@@ -433,7 +432,7 @@ struct AlbumDetailView: View {
                         .font(.appBody)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.black)
+                .foregroundColor(.appAccentText)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
@@ -459,7 +458,7 @@ struct AlbumDetailView: View {
                     .frame(width: 56, height: 56)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
+                            .fill(Color.appControlFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
                                     .stroke(Color.appTertiary.opacity(0.5), lineWidth: 1)
@@ -477,11 +476,11 @@ struct AlbumDetailView: View {
             } label: {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(.title3.weight(.semibold))
-                    .foregroundColor(isFavorite ? .neonPink : .white)
+                    .foregroundColor(isFavorite ? .appSecondary : .white)
                     .frame(width: 56, height: 56)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
+                            .fill(Color.appControlFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
                                     .stroke(Color.appSecondary.opacity(isFavorite ? 0.8 : 0.5), lineWidth: 1)
@@ -499,7 +498,7 @@ struct AlbumDetailView: View {
                 ZStack {
                     // Background
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.1))
+                        .fill(Color.appControlFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(downloadIconColor.opacity(0.5), lineWidth: 1)
@@ -607,7 +606,7 @@ struct AlbumDetailView: View {
 
                         if index < albumTracks.count - 1 {
                             Divider()
-                                .background(Color.white.opacity(0.1))
+                                .background(Color.appControlFill)
                                 .padding(.horizontal, 20)
                         }
                     }
@@ -615,7 +614,7 @@ struct AlbumDetailView: View {
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Color.appSubtleFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
                                 .stroke(Color.appAccent.opacity(0.2), lineWidth: 1)
@@ -637,7 +636,7 @@ struct InfoBadge: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.caption)
-                .foregroundColor(.neonCyan)
+                .foregroundColor(.appAccent)
 
             Text(value)
                 .font(.system(.caption, design: .monospaced).weight(.medium))
@@ -650,7 +649,7 @@ struct InfoBadge: View {
         .fixedSize()
         .background(
             Capsule()
-                .fill(Color.white.opacity(0.1))
+                .fill(Color.appControlFill)
         )
         .overlay(
             Capsule()
@@ -683,7 +682,7 @@ struct AlbumTrackRow: View {
                 } else {
                     Text("\(trackNumber)")
                         .font(.system(.body, design: .monospaced).weight(.bold))
-                        .foregroundColor(.neonCyan)
+                        .foregroundColor(.appAccent)
                         .frame(width: 28, alignment: .trailing)
                 }
 
@@ -706,7 +705,7 @@ struct AlbumTrackRow: View {
                 // Play button
                 Image(systemName: "play.circle.fill")
                     .font(.title2)
-                    .foregroundColor(.neonCyan)
+                    .foregroundColor(.appAccent)
             }
             .padding(.vertical, 12)
             .background(

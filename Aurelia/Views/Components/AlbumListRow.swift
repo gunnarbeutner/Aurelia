@@ -96,7 +96,7 @@ struct AlbumListRow: View {
                 .frame(width: 52, height: 52)
             Text(String(album.name.prefix(1)).uppercased())
                 .font(.system(.callout, weight: .bold))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(.appTextSecondary)
         }
     }
 }

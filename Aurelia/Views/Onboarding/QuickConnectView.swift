@@ -9,7 +9,6 @@ import SwiftUI
 
 struct QuickConnectView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @State private var quickConnectCode = ""
     @State private var quickConnectSecret = ""
     @State private var isLoading = true
@@ -175,14 +174,14 @@ struct QuickConnectView: View {
             // Code
             Text(quickConnectCode)
                 .font(.system(.title, design: .monospaced).weight(.bold))
-                .foregroundColor(.neonCyan)
+                .foregroundColor(.appAccent)
                 .tracking(8)
                 .neonGlow(color: .appAccent, radius: 6)
                 .padding(.vertical, 30)
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Color.appSubtleFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 20)
                                 .stroke(
@@ -209,12 +208,12 @@ struct QuickConnectView: View {
                     Text("Copy Code")
                         .font(.appCaption)
                 }
-                .foregroundColor(.neonPurple)
+                .foregroundColor(.appTertiary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(Color.white.opacity(0.1))
+                        .fill(Color.appControlFill)
                 )
                 .overlay(
                     Capsule()
@@ -237,7 +236,7 @@ struct QuickConnectView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.appSubtleFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.appSecondary.opacity(0.2), lineWidth: 1)
@@ -250,7 +249,7 @@ struct QuickConnectView: View {
         HStack(spacing: 16) {
             Text(number)
                 .font(.system(.headline, design: .monospaced).weight(.bold))
-                .foregroundColor(.neonPink)
+                .foregroundColor(.appSecondary)
                 .frame(width: 32, height: 32)
                 .background(
                     Circle()
@@ -278,7 +277,7 @@ struct QuickConnectView: View {
         .padding(.horizontal, 20)
         .background(
             Capsule()
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.appSubtleFill)
         )
     }
 

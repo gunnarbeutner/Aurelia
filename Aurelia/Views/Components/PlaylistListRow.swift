@@ -60,7 +60,7 @@ struct PlaylistListRow: View {
                 // Chevron
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.neonPink.opacity(0.6))
+                    .foregroundColor(.appSecondary.opacity(0.6))
             }
             .padding(.vertical, 14)
             .contextMenu {
@@ -74,7 +74,7 @@ struct PlaylistListRow: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.neonPink.opacity(0.4),
+                            Color.appSecondary.opacity(0.4),
                             Color.appSecondary.opacity(0.4)
                         ],
                         startPoint: .topLeading,
@@ -85,7 +85,7 @@ struct PlaylistListRow: View {
 
             Image(systemName: "music.note.list")
                 .font(.title3)
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(.appTextSecondary)
         }
     }
 }

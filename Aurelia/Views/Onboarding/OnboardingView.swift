@@ -82,7 +82,6 @@ struct OnboardingView: View {
                 ))
             }
         }
-        .preferredColorScheme(.dark)
     }
 }
 

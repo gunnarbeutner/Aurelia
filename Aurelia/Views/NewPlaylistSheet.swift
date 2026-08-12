@@ -38,8 +38,8 @@ struct NewPlaylistSheet: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color.neonPink.opacity(0.3),
-                                        Color.neonPurple.opacity(0.3)
+                                        Color.appSecondary.opacity(0.3),
+                                        Color.appTertiary.opacity(0.3)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -49,7 +49,7 @@ struct NewPlaylistSheet: View {
 
                         Image(systemName: "music.note.list")
                             .font(.title)
-                            .foregroundColor(.neonPink)
+                            .foregroundColor(.appSecondary)
                     }
                     .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                     .padding(.top, 20)
@@ -59,7 +59,7 @@ struct NewPlaylistSheet: View {
                         Text("New Playlist")
                             .font(.title2.weight(.bold))
                             .foregroundColor(Color.appText)
-                            .neonGlow(color: .neonPink, radius: 8)
+                            .neonGlow(color: .appSecondary, radius: 8)
 
                         Text("Create a playlist to organize your music")
                             .font(.appBody)
@@ -83,13 +83,13 @@ struct NewPlaylistSheet: View {
                             .padding(16)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.1))
+                                    .fill(Color.appControlFill)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.neonPink.opacity(0.4), lineWidth: 1)
+                                            .stroke(Color.appSecondary.opacity(0.4), lineWidth: 1)
                                     )
                             )
-                            .tint(.neonPink)
+                            .tint(.appSecondary)
                             .submitLabel(.done)
                             .onSubmit {
                                 if !playlistName.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -130,7 +130,7 @@ struct NewPlaylistSheet: View {
                                 .font(.appBody)
                                 .fontWeight(.semibold)
                         }
-                        .foregroundColor(.black)
+                        .foregroundColor(.appAccentText)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -138,11 +138,11 @@ struct NewPlaylistSheet: View {
                                 .fill(
                                     playlistName.trimmingCharacters(in: .whitespaces).isEmpty
                                     ? Color.gray
-                                    : Color.neonPink
+                                    : Color.appSecondary
                                 )
                         )
                         .neonGlow(
-                            color: playlistName.trimmingCharacters(in: .whitespaces).isEmpty ? .clear : .neonPink,
+                            color: playlistName.trimmingCharacters(in: .whitespaces).isEmpty ? .clear : .appSecondary,
                             radius: 12
                         )
                     }
@@ -157,7 +157,7 @@ struct NewPlaylistSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(.neonPink)
+                    .foregroundColor(.appSecondary)
                     .disabled(isCreating)
                 }
             }

@@ -19,7 +19,6 @@ struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -305,11 +304,11 @@ struct ArtistDetailView: View {
                     } label: {
                         Image(systemName: isFavorite ? "heart.fill" : "heart")
                             .font(.title3.weight(.semibold))
-                            .foregroundColor(isFavorite ? .neonPink : .white)
+                            .foregroundColor(isFavorite ? .appSecondary : .white)
                             .frame(width: 56, height: 56)
                             .background(
                                 Circle()
-                                    .fill(Color.white.opacity(0.1))
+                                    .fill(Color.appControlFill)
                                     .overlay(
                                         Circle()
                                             .stroke(Color.appSecondary.opacity(isFavorite ? 0.8 : 0.5), lineWidth: 1)
@@ -324,7 +323,7 @@ struct ArtistDetailView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "music.note.list")
                             .font(.caption)
-                            .foregroundColor(.neonCyan)
+                            .foregroundColor(.appAccent)
                         Text("\(artist.albumCount) album\(artist.albumCount == 1 ? "" : "s")")
                             .font(.subheadline.weight(.medium))
                             .foregroundColor(.appTextSecondary)
@@ -333,7 +332,7 @@ struct ArtistDetailView: View {
                     .padding(.vertical, 8)
                     .background(
                         Capsule()
-                            .fill(Color.white.opacity(0.1))
+                            .fill(Color.appControlFill)
                     )
                     .overlay(
                         Capsule()
@@ -352,7 +351,7 @@ struct ArtistDetailView: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .font(.caption)
-                    .foregroundColor(.neonCyan)
+                    .foregroundColor(.appAccent)
                 Text("About")
                     .font(.headline.weight(.semibold))
                     .foregroundColor(Color.appText)
@@ -368,7 +367,7 @@ struct ArtistDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.appSubtleFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.appAccent.opacity(0.2), lineWidth: 1)
@@ -395,7 +394,7 @@ struct ArtistDetailView: View {
             // Artist icon overlay
             Image(systemName: "person.circle.fill")
                 .font(.largeTitle)
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(.appTextMuted)
         }
     }
 
@@ -443,7 +442,7 @@ struct ArtistDetailView: View {
                             .accessibilityLabel(label)
                         }
                     }
-                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .background(Capsule().fill(Color.appControlFill))
                     .overlay(Capsule().stroke(Color.appAccent.opacity(0.4), lineWidth: 1))
                 }
             }
@@ -584,7 +583,7 @@ struct StatBadge: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.system(.title3, design: .monospaced).weight(.bold))
-                .foregroundColor(.neonCyan)
+                .foregroundColor(.appAccent)
 
             Text(label)
                 .font(.appCaption)
@@ -594,7 +593,7 @@ struct StatBadge: View {
         .padding(.vertical, 8)
         .background(
             Capsule()
-                .fill(Color.white.opacity(0.1))
+                .fill(Color.appControlFill)
         )
         .overlay(
             Capsule()
@@ -633,10 +632,10 @@ struct YearSection: View {
                     HStack(spacing: 8) {
                         Text("\(albums.count)")
                             .font(.headline.weight(.bold))
-                            .foregroundColor(.neonCyan)
+                            .foregroundColor(.appAccent)
                         Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.right.circle.fill")
                             .font(.title3.weight(.semibold))
-                            .foregroundColor(.neonCyan)
+                            .foregroundColor(.appAccent)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)

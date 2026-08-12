@@ -97,7 +97,7 @@ struct DiscoveryView: View {
         .overlay(alignment: .topTrailing) {
             if viewModel.isRefreshing {
                 ProgressView()
-                    .tint(.neonCyan)
+                    .tint(.appAccent)
                     .padding(20)
             }
         }
@@ -120,10 +120,10 @@ struct DiscoveryView: View {
                 }
                 if let progress = task.progressFraction {
                     ProgressView(value: progress)
-                        .tint(.neonCyan)
+                        .tint(.appAccent)
                 } else {
                     ProgressView()
-                        .tint(.neonCyan)
+                        .tint(.appAccent)
                 }
                 Text("Recommendations will improve as analysis completes.")
                     .font(.appCaption)
@@ -131,7 +131,7 @@ struct DiscoveryView: View {
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 16).fill(Color.appElevated))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.neonCyan.opacity(0.3)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appAccent.opacity(0.3)))
             .padding(.horizontal, 20)
         case .ready:
             Label("Personalized by AudioMuse-AI", systemImage: "waveform.path.ecg")
@@ -239,11 +239,11 @@ struct DiscoveryView: View {
         VStack(spacing: 14) {
             if let progress = libraryStore.syncProgress {
                 ProgressView(value: progress)
-                    .tint(.neonCyan)
+                    .tint(.appAccent)
                     .frame(maxWidth: 300)
             } else {
                 ProgressView()
-                    .tint(.neonCyan)
+                    .tint(.appAccent)
                     .scaleEffect(1.3)
             }
             Text(libraryStore.syncMessage ?? "Finding music for you…")
@@ -276,7 +276,7 @@ struct DiscoveryView: View {
             }
             if let progress = libraryStore.syncProgress {
                 ProgressView(value: progress)
-                    .tint(.neonCyan)
+                    .tint(.appAccent)
             }
         }
         .padding(14)
@@ -288,7 +288,7 @@ struct DiscoveryView: View {
         VStack(spacing: 16) {
             Image(systemName: "sparkles")
                 .font(.system(size: 42))
-                .foregroundStyle(Color.neonCyan)
+                .foregroundStyle(Color.appAccent)
             Text("Nothing to recommend yet")
                 .font(.appHeadline)
                 .foregroundColor(.appText)
@@ -301,10 +301,10 @@ struct DiscoveryView: View {
                 Task { await viewModel.refresh() }
             }
             .font(.appSubheadline)
-            .foregroundColor(.black)
+            .foregroundColor(.appAccentText)
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
-            .background(Capsule().fill(Color.neonCyan))
+            .background(Capsule().fill(Color.appAccent))
         }
     }
 
@@ -342,7 +342,7 @@ private struct DiscoveryMixCard: View {
                 } else {
                     ZStack {
                         LinearGradient(
-                            colors: [Color.neonCyan.opacity(0.35), Color.neonPink.opacity(0.3)],
+                            colors: [Color.appAccent.opacity(0.35), Color.appSecondary.opacity(0.3)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -357,12 +357,12 @@ private struct DiscoveryMixCard: View {
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: "play.fill")
                     .font(.headline)
-                    .foregroundColor(.black)
+                    .foregroundColor(.appAccentText)
                     .frame(width: 42, height: 42)
-                    .background(Circle().fill(Color.neonCyan))
+                    .background(Circle().fill(Color.appAccent))
                     .padding(10)
             }
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appControlFill))
 
             Text(shelf.mixTitle)
                 .font(.appSubheadline)
@@ -396,7 +396,7 @@ private struct DiscoveryTrackCard: View {
             }
             .frame(width: 150, height: 150)
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appControlFill))
 
             Text(track.name)
                 .font(.appSubheadline)

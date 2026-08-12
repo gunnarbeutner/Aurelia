@@ -40,7 +40,7 @@ struct PlaylistSelectionSheet: View {
                         // Loading state
                         VStack(spacing: 16) {
                             ProgressView()
-                                .tint(.neonPink)
+                                .tint(.appSecondary)
                                 .scaleEffect(1.5)
                             Text("Loading playlists...")
                                 .font(.appBody)
@@ -93,7 +93,7 @@ struct PlaylistSelectionSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 16))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.neonPink.opacity(0.2), lineWidth: 1)
+                                        .stroke(Color.appSecondary.opacity(0.2), lineWidth: 1)
                                 )
                                 .padding(.horizontal, 20)
 
@@ -124,7 +124,7 @@ struct PlaylistSelectionSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(.neonPink)
+                    .foregroundColor(.appSecondary)
                     .disabled(isAdding)
                 }
             }
@@ -190,8 +190,8 @@ struct PlaylistSelectionRow: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color.neonPink.opacity(0.4),
-                                    Color.neonPurple.opacity(0.4)
+                                    Color.appSecondary.opacity(0.4),
+                                    Color.appTertiary.opacity(0.4)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -201,7 +201,7 @@ struct PlaylistSelectionRow: View {
 
                     Image(systemName: "music.note.list")
                         .font(.title3)
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(.appTextSecondary)
                 }
 
                 // Playlist info
@@ -221,12 +221,12 @@ struct PlaylistSelectionRow: View {
                 // Add button / Loading indicator
                 if isAdding {
                     ProgressView()
-                        .tint(.neonPink)
+                        .tint(.appSecondary)
                         .scaleEffect(0.8)
                 } else {
                     Image(systemName: "plus.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.neonPink)
+                        .foregroundColor(.appSecondary)
                 }
             }
             .padding(.horizontal, 16)

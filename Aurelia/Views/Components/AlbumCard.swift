@@ -30,7 +30,7 @@ struct AlbumCard: View {
                     .frame(maxWidth: .infinity)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                            .stroke(Color.appBorder, lineWidth: 1)
                     )
                     .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 } else {
@@ -60,7 +60,7 @@ struct AlbumCard: View {
                             .padding(.vertical, 2)
                             .background(Color.appElevated)
                             .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.05), lineWidth: 1))
+                            .overlay(Capsule().stroke(Color.appBorder, lineWidth: 1))
                             .fixedSize()
                     } else if let year = album.year {
                         Text(String(year))
@@ -70,7 +70,7 @@ struct AlbumCard: View {
                             .padding(.vertical, 2)
                             .background(Color.appElevated)
                             .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.05), lineWidth: 1))
+                            .overlay(Capsule().stroke(Color.appBorder, lineWidth: 1))
                             .fixedSize()
                     }
                 }
@@ -100,7 +100,7 @@ struct AlbumCard: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.appBorder, lineWidth: 1)
             )
             .overlay(
                 VStack(spacing: 4) {

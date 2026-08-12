@@ -57,9 +57,9 @@ struct PlaylistCard: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color.neonPink.opacity(0.5),
                         Color.appSecondary.opacity(0.5),
-                        Color.neonPurple.opacity(0.5)
+                        Color.appSecondary.opacity(0.5),
+                        Color.appTertiary.opacity(0.5)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -70,7 +70,7 @@ struct PlaylistCard: View {
             .overlay(
                 Image(systemName: "music.note.list")
                     .font(.title)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.appTextSecondary)
             )
     }
 }

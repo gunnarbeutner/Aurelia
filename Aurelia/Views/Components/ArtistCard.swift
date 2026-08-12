@@ -25,7 +25,7 @@ struct ArtistCard: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                                    .stroke(Color.appSubtleFill, lineWidth: 1)
                             )
                             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                     case .failure:
@@ -80,12 +80,12 @@ struct ArtistCard: View {
                 .frame(maxWidth: .infinity)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                        .stroke(Color.appSubtleFill, lineWidth: 1)
                 )
 
             Text(ArtistPlaceholderHelper.initials(for: artist.name))
                 .font(.system(.title, weight: .bold))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(.appTextSecondary)
         }
     }
 }

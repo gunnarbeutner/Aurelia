@@ -54,11 +54,11 @@ struct MiniPlayerView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 12)
-                .background(Color.white.opacity(0.05))
+                .background(Color.appSubtleFill)
                 .overlay(alignment: .center) {
                     Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(.appTextSecondary)
                 }
             }
         }
@@ -84,7 +84,7 @@ struct MiniPlayerView: View {
                     )
                     .frame(width: geo.size.width * miniPlayerProgress)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.1))
+                    .background(Color.appControlFill)
             }
             .frame(height: 2)
             .animation(.linear(duration: 0.3), value: miniPlayerProgress)
@@ -131,7 +131,7 @@ struct MiniPlayerView: View {
                 } label: {
                     Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(.appTextSecondary)
                         .frame(width: 36, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -144,7 +144,7 @@ struct MiniPlayerView: View {
                 } label: {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(canPlayNext ? .white.opacity(0.8) : .white.opacity(0.25))
+                        .foregroundColor(canPlayNext ? .appText : .appTextMuted)
                         .frame(width: 36, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -157,7 +157,7 @@ struct MiniPlayerView: View {
             .frame(minHeight: 56)
         }
         .background(
-            Color(hex: "0C0C12").opacity(0.88)
+            Color.appMidBackground.opacity(0.92)
                 .background(.ultraThinMaterial)
         )
         .offset(x: max(0, dragOffset))
@@ -212,7 +212,7 @@ struct MiniPlayerView: View {
                     Color.appElevated
                     Image(systemName: "music.note")
                         .font(.body.weight(.medium))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.appTextSecondary)
                 }
             }
         }

@@ -38,7 +38,7 @@ struct WaveformView: View {
                     )
                     context.fill(
                         path,
-                        with: .color(barProgress <= progress ? .neonCyan : .white.opacity(0.12))
+                        with: .color(barProgress <= progress ? .appAccent : .appBorder)
                     )
                 }
             }

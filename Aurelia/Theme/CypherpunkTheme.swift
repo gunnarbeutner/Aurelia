@@ -2,144 +2,48 @@
 //  CypherpunkTheme.swift
 //  Aurelia
 //
-//  Modern theme system with multiple color schemes
+//  Aurelia's adaptive visual system
 //
 
 import SwiftUI
-import Combine
 
-// MARK: - Theme Types
+// MARK: - Appearance
 
-enum AppTheme: String, CaseIterable, Identifiable {
-    case cypherpunk = "Cypherpunk"
+enum AppearancePreference: String, CaseIterable, Identifiable {
+    case system
+    case light
+    // Keep the existing raw value so current installations retain their choice.
+    case dark = "always_dark"
 
     var id: String { rawValue }
-    var displayName: String { rawValue }
-    var description: String { "Neon accents with dark backgrounds" }
-}
 
-// MARK: - Theme Manager
-
-class ThemeManager: ObservableObject {
-    static let shared = ThemeManager()
-
-    @Published var currentTheme: AppTheme {
-        didSet {
-            UserDefaults.standard.set(currentTheme.rawValue, forKey: "selectedTheme")
+    var displayName: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
         }
     }
 
-    private init() {
-        if let savedTheme = UserDefaults.standard.string(forKey: "selectedTheme"),
-           let theme = AppTheme(rawValue: savedTheme) {
-            currentTheme = theme
-        } else {
-            currentTheme = .cypherpunk
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 }
 
 // MARK: - Color Palette
 extension Color {
-    // Cypherpunk Theme - Neon Accents (matched to BRAND-GUIDE.md)
-    static let neonCyan = Color(hex: "00FFDD")       // Primary accent
-    static let neonPink = Color(hex: "FF3D85")       // Secondary accent
-    static let neonPurple = Color(hex: "8B5CF6")     // Tertiary
-    static let neonGreen = Color(red: 0.0, green: 1.0, blue: 0.25)
-    static let neonOrange = Color(red: 1.0, green: 0.6, blue: 0.0)
-    static let neonBlue = Color(red: 0.0, green: 0.4, blue: 1.0)
-
-    // Cypherpunk Theme - Dark Backgrounds (matched to BRAND-GUIDE.md)
-    static let darkBackground = Color(hex: "060609")  // Deep Black
-    static let darkMid = Color(hex: "0A0A10")         // Card
-    static let darkElevated = Color(hex: "0E0E16")    // Surface
-
-    // Bitcoin Theme - Backgrounds
-    static let matteBlack = Color(hex: "181818")
-    static let steelyGray = Color(hex: "33434b")
-
-    // Bitcoin Theme - Refined Palette (less orange-heavy)
-    static let mattaze = Color(hex: "cc6633")           // Rust/terracotta (toned down from bright orange)
-    static let deepBlue = Color(hex: "0d579b")          // Deep blue
-    static let lightGray = Color(hex: "ececec")         // Light gray text
-    static let cyphernyuk = Color(hex: "3d5a5a")        // Dark teal/green
-    static let goldBrass = Color(hex: "d5bb73")         // Gold/brass
-    static let bronze = Color(hex: "9f8247")            // Bronze/brown
-    static let bitcoinOrange = Color(hex: "f7931a")     // Pure bitcoin orange (used sparingly)
-
-    // Semantic Colors (Theme-aware)
-    static var appAccent: Color {
-        return neonCyan
-    }
-
-    static var appSecondary: Color {
-        return neonPink
-    }
-
-    static var appSuccess: Color {
-        return neonGreen
-    }
-
-    static var appWarning: Color {
-        return neonOrange
-    }
-
     static var appError: Color {
         return Color.red
     }
 
-    static var appBackground: Color {
-        return darkBackground
-    }
+    // Most semantic colors are generated directly from Assets.xcassets.
+    // Preserve the established surface spelling used throughout the app.
+    static var appMidBackground: Color { .appSurface }
 
-    static var appMidBackground: Color {
-        return darkMid
-    }
-
-    static var appElevated: Color {
-        return darkElevated
-    }
-
-    static var appText: Color {
-        return Color(hex: "EEEEF2")  // Brand primary text
-    }
-
-    static var appTextSecondary: Color {
-        return Color(hex: "8888AA")  // Brand secondary text
-    }
-
-    static var appTextMuted: Color {
-        return Color(hex: "555570")  // Brand muted text
-    }
-
-    static var appTertiary: Color {
-        return neonPurple
-    }
-
-    // Helper for hex colors
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (255, 0, 0, 0)
-        }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue:  Double(b) / 255,
-            opacity: Double(a) / 255
-        )
-    }
 }
 
 // MARK: - Typography (Brand Kit: Chakra Petch + Sora + JetBrains Mono)
@@ -236,11 +140,11 @@ struct CypherpunkButtonStyle: ButtonStyle {
                     if isProminent {
                         color.opacity(configuration.isPressed ? 0.6 : 0.8)
                     } else {
-                        Color.white.opacity(configuration.isPressed ? 0.05 : 0.1)
+                        Color.appControlFill.opacity(configuration.isPressed ? 0.6 : 1)
                     }
                 }
             )
-            .foregroundColor(isProminent ? .black : color)
+            .foregroundColor(isProminent ? .appAccentText : color)
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -255,40 +159,40 @@ struct CypherpunkButtonStyle: ButtonStyle {
 // MARK: - Preview
 #Preview {
     ZStack {
-        Color.darkBackground.ignoresSafeArea()
+        Color.appBackground.ignoresSafeArea()
 
         VStack(spacing: 30) {
             // Glass Card Example
             VStack(spacing: 12) {
                 Text("Now Playing")
                     .font(.appHeadline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.appText)
 
                 Text("Synthwave Dreams")
                     .font(.appBody)
                     .foregroundColor(.secondary)
             }
             .padding(30)
-            .glassCard(tint: .neonCyan)
+            .glassCard(tint: .appAccent)
 
             // Button Examples
             HStack(spacing: 20) {
                 Button("Play") {
                     // Action
                 }
-                .buttonStyle(CypherpunkButtonStyle(color: .neonCyan, isProminent: true))
+                .buttonStyle(CypherpunkButtonStyle(color: .appAccent, isProminent: true))
 
                 Button("Queue") {
                     // Action
                 }
-                .buttonStyle(CypherpunkButtonStyle(color: .neonPink))
+                .buttonStyle(CypherpunkButtonStyle(color: .appSecondary))
             }
 
             // Neon Text
             Text("Aurelia")
                 .font(.appTitle)
-                .foregroundColor(.neonCyan)
-                .neonGlow(color: .neonCyan, radius: 12)
+                .foregroundColor(.appAccent)
+                .neonGlow(color: .appAccent, radius: 12)
         }
         .padding()
     }

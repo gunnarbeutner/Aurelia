@@ -10,7 +10,6 @@ import UIKit
 
 struct SearchView: View {
     let searchFocusRequest: Int
-    @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var playerManager = PlayerManager.shared
     private let repository = LibraryRepository.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -127,7 +126,7 @@ struct SearchView: View {
                     Capsule().stroke(
                         isSearchFieldFocused
                             ? Color.appAccent.opacity(0.45)
-                            : Color.white.opacity(0.12),
+                            : Color.appBorder,
                         lineWidth: 1
                     )
                 )
@@ -473,7 +472,7 @@ struct SearchResultRow: View {
 
             Image(systemName: itemTypeIcon)
                 .font(.title2)
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(.appTextSecondary)
         }
     }
 
@@ -488,9 +487,9 @@ struct SearchResultRow: View {
 
     private var itemTypeColor: Color {
         switch result {
-        case .artist: return .neonCyan
-        case .album: return .neonPink
-        case .track: return .neonPurple
+        case .artist: return .appAccent
+        case .album: return .appSecondary
+        case .track: return .appTertiary
         case .playlist: return .appAccent
         }
     }

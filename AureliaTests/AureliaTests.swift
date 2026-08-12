@@ -14,6 +14,14 @@ import SwiftUI
 
 struct AureliaTests {
 
+    @Test func appearancePreferenceMapsSchemesAndPreservesExistingDarkValue() {
+        #expect(AppearancePreference.allCases == [.system, .light, .dark])
+        #expect(AppearancePreference.system.colorScheme == nil)
+        #expect(AppearancePreference.light.colorScheme == .light)
+        #expect(AppearancePreference.dark.colorScheme == .dark)
+        #expect(AppearancePreference(rawValue: "always_dark") == .dark)
+    }
+
     @Test func sqliteLibraryCachePersistsTypedMetadataAndScopesUsers() async throws {
         let databaseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

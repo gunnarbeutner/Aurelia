@@ -21,7 +21,6 @@ struct MainTabView: View {
     @State private var favoritesPath = NavigationPath()
     @State private var settingsPath = NavigationPath()
     @ObservedObject var playerManager = PlayerManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var navCoordinator = NavigationCoordinator.shared
     @ObservedObject var instantMixCoordinator = InstantMixCoordinator.shared
 
@@ -79,6 +78,7 @@ struct MainTabView: View {
                 .tag(4)
             }
             .tint(.appAccent)
+            .toolbar(showNowPlaying ? .hidden : .visible, for: .tabBar)
             #if targetEnvironment(macCatalyst)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if playerManager.currentTrack != nil {
@@ -107,7 +107,7 @@ struct MainTabView: View {
             if instantMixCoordinator.isLoading {
                 HStack(spacing: 10) {
                     ProgressView()
-                        .tint(.neonCyan)
+                        .tint(.appAccent)
                     Text("Creating Instant Mix…")
                         .font(.appCaption)
                         .foregroundColor(.appText)
@@ -115,7 +115,7 @@ struct MainTabView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.neonCyan.opacity(0.35)))
+                .overlay(Capsule().stroke(Color.appAccent.opacity(0.35)))
                 .allowsHitTesting(false)
                 .zIndex(2)
             }
@@ -350,7 +350,7 @@ struct SwipeToDismissPlayer<Content: View>: View {
 
     private var dismissHandle: some View {
         Capsule()
-            .fill(Color.white.opacity(0.45))
+            .fill(Color.appTextSecondary)
             .frame(width: 38, height: 5)
             .frame(width: 96, height: 28, alignment: .top)
             .contentShape(Rectangle())

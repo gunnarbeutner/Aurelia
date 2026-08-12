@@ -10,7 +10,6 @@ import SwiftUI
 struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var playerManager = PlayerManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @State private var showDeleteAllConfirmation = false
 
     var body: some View {
@@ -183,7 +182,6 @@ struct DownloadedTrackRow: View {
     let downloadedTrack: DownloadedTrack
     let onPlay: () -> Void
     let onDelete: () -> Void
-    @ObservedObject var themeManager = ThemeManager.shared
 
     var body: some View {
         Button {
@@ -243,7 +241,6 @@ struct DownloadedTrackRow: View {
 // MARK: - Downloaded Album Row
 struct DownloadedAlbumRow: View {
     let album: DownloadedAlbum
-    @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @State private var artworkImage: UIImage? = nil
 
@@ -271,7 +268,7 @@ struct DownloadedAlbumRow: View {
                         .overlay(
                             Image(systemName: "music.note")
                                 .font(.title2)
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(.appTextSecondary)
                         )
                 }
             }
@@ -329,7 +326,7 @@ struct DownloadedAlbumRow: View {
                 .fill(Color.appMidBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.appControlFill, lineWidth: 1)
                 )
         )
     }
@@ -411,7 +408,6 @@ struct DownloadedAlbumDetailView: View {
     let album: DownloadedAlbum
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var downloadManager = DownloadManager.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @State private var showDeleteAlbumConfirmation = false
     @State private var artworkImage: UIImage? = nil
     @Environment(\.dismiss) private var dismiss
@@ -473,7 +469,7 @@ struct DownloadedAlbumDetailView: View {
                         .overlay(
                             Image(systemName: "music.note")
                                 .font(.title)
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(.appTextSecondary)
                         )
                         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 }
@@ -556,7 +552,7 @@ struct DownloadedAlbumDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(Color.appControlFill, lineWidth: 1)
             )
         }
     }
@@ -621,7 +617,6 @@ struct DownloadedAlbumDetailView: View {
 struct DownloadedTrackRowInAlbum: View {
     let track: DownloadedTrack
     let onPlay: () -> Void
-    @ObservedObject var themeManager = ThemeManager.shared
 
     var body: some View {
         Button {

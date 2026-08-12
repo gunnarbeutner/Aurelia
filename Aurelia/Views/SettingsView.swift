@@ -49,12 +49,11 @@ enum StreamingQuality: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
-    @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject private var libraryStore = LibraryStore.shared
     @State private var showSignOutConfirmation = false
     @State private var showRebuildConfirmation = false
-    @AppStorage("preferredAppearance") private var preferredAppearance = "always_dark"
+    @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
 
     private var selectedQuality: StreamingQuality {
@@ -131,7 +130,7 @@ struct SettingsView: View {
                 HStack(spacing: 14) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.neonCyan)
+                        .foregroundColor(.appAccent)
                         .frame(width: 34)
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -155,7 +154,7 @@ struct SettingsView: View {
                         .fill(Color.appMidBackground)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                .stroke(Color.appControlFill, lineWidth: 1)
                         )
                 )
             }
@@ -207,81 +206,12 @@ struct SettingsView: View {
                 .font(.appHeadline)
                 .foregroundColor(.appAccent)
 
-            VStack(spacing: 12) {
-                ForEach(AppTheme.allCases) { theme in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            themeManager.currentTheme = theme
-                        }
-                    } label: {
-                        HStack(spacing: 16) {
-                            // Theme icon
-                            ZStack {
-                                Circle()
-                                    .fill(themeIconBackground(for: theme))
-                                    .frame(width: 44, height: 44)
-
-                                Image(systemName: themeIcon(for: theme))
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundColor(themeIconColor(for: theme))
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(theme.displayName)
-                                    .font(.appBody)
-                                    .foregroundColor(Color.appText)
-
-                                Text(theme.description)
-                                    .font(.appCaption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            // Checkmark if selected
-                            if themeManager.currentTheme == theme {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.appAccent)
-                            }
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(themeManager.currentTheme == theme ? Color.appMidBackground : Color.clear)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(
-                                            themeManager.currentTheme == theme ?
-                                            LinearGradient(
-                                                colors: [Color.appAccent.opacity(0.5), Color.appSecondary.opacity(0.5)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ) :
-                                            LinearGradient(
-                                                colors: [Color.white.opacity(0.1), Color.white.opacity(0.05)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ),
-                                            lineWidth: themeManager.currentTheme == theme ? 2 : 1
-                                        )
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Select \(theme.displayName) theme")
-                    .accessibilityAddTraits(themeManager.currentTheme == theme ? .isSelected : [])
-                }
-            }
-            
-            // Appearance Setting
             VStack(alignment: .leading, spacing: 12) {
                 Text("Color Scheme")
                     .font(.appBody)
                     .foregroundColor(.secondary)
-                    .padding(.top, 16)
-                
-                ForEach(["always_dark", "system"], id: \.self) { appearance in
+
+                ForEach(AppearancePreference.allCases) { appearance in
                     Button {
                         preferredAppearance = appearance
                     } label: {
@@ -318,7 +248,7 @@ struct SettingsView: View {
                                         .stroke(
                                             preferredAppearance == appearance ?
                                             Color.appAccent.opacity(0.5) :
-                                            Color.white.opacity(0.1),
+                                            Color.appBorder,
                                             lineWidth: 1
                                         )
                                 )
@@ -330,50 +260,24 @@ struct SettingsView: View {
         }
     }
 
-    // Helper functions for theme icons
-    private func themeIcon(for theme: AppTheme) -> String {
-        return "bolt.fill"
-    }
-
-    private func themeIconColor(for theme: AppTheme) -> Color {
-        return .neonCyan
-    }
-
-    private func themeIconBackground(for theme: AppTheme) -> Color {
-        return .neonCyan.opacity(0.2)
-    }
-    
     // Helper functions for appearance setting
-    private func appearanceIcon(for appearance: String) -> String {
+    private func appearanceIcon(for appearance: AppearancePreference) -> String {
         switch appearance {
-        case "always_dark":
-            return "moon.fill"
-        case "system":
-            return "circle.lefthalf.filled"
-        default:
-            return "moon.fill"
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
         }
     }
     
-    private func appearanceTitle(for appearance: String) -> String {
-        switch appearance {
-        case "always_dark":
-            return "Always Dark"
-        case "system":
-            return "System"
-        default:
-            return "Always Dark"
-        }
+    private func appearanceTitle(for appearance: AppearancePreference) -> String {
+        appearance.displayName
     }
     
-    private func appearanceDescription(for appearance: String) -> String {
+    private func appearanceDescription(for appearance: AppearancePreference) -> String {
         switch appearance {
-        case "always_dark":
-            return "Force dark mode for optimal cypherpunk aesthetic"
-        case "system":
-            return "Follow system light/dark mode setting"
-        default:
-            return "Force dark mode for optimal cypherpunk aesthetic"
+        case .system: return "Follow the system appearance"
+        case .light: return "Always use the light appearance"
+        case .dark: return "Always use the dark appearance"
         }
     }
 
@@ -411,7 +315,7 @@ struct SettingsView: View {
                                 .fill(selectedQuality == quality ? Color.appMidBackground : Color.clear)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(selectedQuality == quality ? Color.appAccent.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1)
+                                        .stroke(selectedQuality == quality ? Color.appAccent.opacity(0.5) : Color.appControlFill, lineWidth: 1)
                                 )
                         )
                     }
@@ -452,7 +356,7 @@ struct SettingsView: View {
                 }
 
                 Divider()
-                    .background(Color.white.opacity(0.1))
+                    .background(Color.appControlFill)
 
                 // Connection Status
                 HStack {
@@ -474,7 +378,7 @@ struct SettingsView: View {
                 }
 
                 Divider()
-                    .background(Color.white.opacity(0.1))
+                    .background(Color.appControlFill)
 
                 Button {
                     showRebuildConfirmation = true

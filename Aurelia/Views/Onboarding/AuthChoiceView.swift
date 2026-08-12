@@ -81,7 +81,7 @@ struct AuthChoiceView: View {
                             .frame(maxWidth: .infinity)
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.white.opacity(0.1))
+                                    .fill(Color.appControlFill)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 16)
                                             .stroke(Color.appAccent.opacity(0.3), lineWidth: 1)
@@ -122,7 +122,7 @@ struct AuthChoiceView: View {
                             .frame(maxWidth: .infinity)
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.white.opacity(0.05))
+                                    .fill(Color.appSubtleFill)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 16)
                                             .stroke(Color.appTertiary.opacity(0.2), lineWidth: 1)

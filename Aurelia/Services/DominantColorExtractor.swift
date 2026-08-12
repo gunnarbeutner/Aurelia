@@ -22,7 +22,7 @@ actor DominantColorExtractor {
     }
 
     private func extractAverage(from image: UIImage) -> Color {
-        guard let cgImage = image.cgImage else { return .appAccent }
+        guard let cgImage = image.cgImage else { return fallbackColor }
 
         let size = 10
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -36,7 +36,7 @@ actor DominantColorExtractor {
             bytesPerRow: size * 4,
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return .appAccent }
+        ) else { return fallbackColor }
 
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
 
@@ -55,5 +55,9 @@ actor DominantColorExtractor {
 
         // Boost saturation slightly so it's visible against dark bg
         return Color(red: min(r * 1.2, 1.0), green: min(g * 1.2, 1.0), blue: min(b * 1.2, 1.0))
+    }
+
+    private var fallbackColor: Color {
+        Color(red: 0, green: 0.478, blue: 0.420)
     }
 }

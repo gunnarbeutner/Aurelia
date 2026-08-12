@@ -78,7 +78,7 @@ struct ArtistListRow: View {
                 .frame(width: 52, height: 52)
             Text(ArtistPlaceholderHelper.initials(for: artist.name))
                 .font(.system(.callout, weight: .bold))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(.appTextSecondary)
         }
     }
 }

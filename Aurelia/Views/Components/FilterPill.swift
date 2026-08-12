@@ -19,7 +19,7 @@ struct FilterPill: View {
                 )
                 .overlay(
                     Capsule()
-                        .stroke(isSelected ? Color.clear : Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(isSelected ? Color.clear : Color.appControlFill, lineWidth: 1)
                 )
                 .shadow(color: isSelected ? Color.appAccent.opacity(0.3) : .clear, radius: 8, x: 0, y: 0)
         }
