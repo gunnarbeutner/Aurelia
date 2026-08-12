@@ -13,6 +13,34 @@ enum MiniPlayerLayout {
     static let contentClearance: CGFloat = tabBarClearance + expandedHeight + 8
 }
 
+/// Liquid Glass where the OS has it, the previous material chrome elsewhere.
+///
+/// The glass replaces the old fill rather than sitting behind it: at 0.92 alpha
+/// there was nothing left for it to refract, and glass with an opaque backing
+/// just reads as a flat panel.
+private struct MiniPlayerSurface: ViewModifier {
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            // Clipped as well as shaped, so the progress bar along the top
+            // follows the corners instead of squaring them off.
+            content
+                .clipShape(shape)
+                .glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(
+                    Color.appMidBackground.opacity(0.92)
+                        .background(.ultraThinMaterial)
+                )
+        }
+    }
+}
+
 struct MiniPlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var playbackProgress = PlayerManager.shared.playbackProgress
@@ -156,10 +184,7 @@ struct MiniPlayerView: View {
             .padding(.vertical, 8)
             .frame(minHeight: 56)
         }
-        .background(
-            Color.appMidBackground.opacity(0.92)
-                .background(.ultraThinMaterial)
-        )
+        .modifier(MiniPlayerSurface())
         .offset(x: max(0, dragOffset))
         .simultaneousGesture(
             DragGesture(minimumDistance: 15)
