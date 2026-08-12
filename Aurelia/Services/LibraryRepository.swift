@@ -184,18 +184,21 @@ nonisolated enum LibrarySearchFilter: Sendable {
     case artists
     case albums
     case tracks
+    case playlists
 }
 
 nonisolated enum LibrarySearchResult: Identifiable, Hashable, Sendable {
     case artist(Artist)
     case album(Album)
     case track(Track)
+    case playlist(Playlist)
 
     var id: String {
         switch self {
         case .artist(let artist): return "artist:\(artist.id)"
         case .album(let album): return "album:\(album.id)"
         case .track(let track): return "track:\(track.id)"
+        case .playlist(let playlist): return "playlist:\(playlist.id)"
         }
     }
 }
@@ -911,10 +914,11 @@ actor LibraryRepository: RecentTrackCaching {
 
         let allowedTypes: [LibraryItemType]
         switch filter {
-        case .all: allowedTypes = [.artist, .album, .track]
+        case .all: allowedTypes = [.artist, .album, .track, .playlist]
         case .artists: allowedTypes = [.artist]
         case .albums: allowedTypes = [.album]
         case .tracks: allowedTypes = [.track]
+        case .playlists: allowedTypes = [.playlist]
         }
         let placeholders = allowedTypes.map { _ in "?" }.joined(separator: ",")
         var arguments: StatementArguments = [tokens.joined(separator: " AND "), scope.serverKey, scope.userID]
@@ -947,6 +951,7 @@ actor LibraryRepository: RecentTrackCaching {
                 case LibraryItemType.artist.rawValue: return .artist(record.artist(isFavorite: favorite))
                 case LibraryItemType.album.rawValue: return .album(record.album(isFavorite: favorite))
                 case LibraryItemType.track.rawValue: return .track(record.track(isFavorite: favorite))
+                case LibraryItemType.playlist.rawValue: return .playlist(record.playlist(isFavorite: favorite))
                 default: return nil
                 }
             }

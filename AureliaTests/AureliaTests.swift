@@ -496,7 +496,8 @@ struct AureliaTests {
         let artist = Artist(id: "artist", name: "Björk", bio: nil, albumCount: 1, artworkURL: nil)
         let album = Album(id: "album", name: "Homogenic", artistName: "Björk", artistId: "artist", year: 1997, artworkURL: nil)
         let track = Track(id: "track", name: "Jóga", artistName: "Björk", albumName: "Homogenic", duration: 1, artworkURL: nil, albumId: "album", artistId: "artist")
-        let catalog = LibraryCatalog(albums: [album], artists: [artist], tracks: [track], playlists: [], genres: [], playlistEntries: [])
+        let playlist = Playlist(id: "playlist", name: "Iceland Essentials", trackCount: 1, artworkURL: nil, dateCreated: nil)
+        let catalog = LibraryCatalog(albums: [album], artists: [artist], tracks: [track], playlists: [playlist], genres: [], playlistEntries: [])
         try await repository.replaceCompleteLibrary(catalog, in: scope)
         try await repository.replaceCompleteLibrary(catalog, in: otherScope)
 
@@ -505,6 +506,9 @@ struct AureliaTests {
         #expect(try await repository.search("jog", filter: .tracks, in: scope).map(\.id) == ["track:track"])
         #expect(try await repository.search("hom", filter: .tracks, in: scope).map(\.id) == ["track:track"])
         #expect(try await repository.search("hom", filter: .all, in: scope).count == 2)
+        #expect(try await repository.search("iceland", filter: .playlists, in: scope).map(\.id) == ["playlist:playlist"])
+        #expect(try await repository.search("iceland", filter: .all, in: scope).map(\.id) == ["playlist:playlist"])
+        #expect(try await repository.search("iceland", filter: .albums, in: scope).isEmpty)
     }
 
     @Test func discoverySnapshotPersistsPerLibraryScope() async throws {

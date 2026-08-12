@@ -33,6 +33,7 @@ struct SearchView: View {
         case artists = "Artists"
         case albums = "Albums"
         case tracks = "Tracks"
+        case playlists = "Playlists"
     }
 
     var body: some View {
@@ -87,6 +88,9 @@ struct SearchView: View {
         }
         .navigationDestination(for: Artist.self) { artist in
             ArtistDetailView(artist: artist)
+        }
+        .navigationDestination(for: Playlist.self) { playlist in
+            PlaylistDetailView(playlist: playlist)
         }
         .rootTabNavigationTitle("Search")
     }
@@ -205,6 +209,15 @@ struct SearchView: View {
                         .contextMenu {
                             TrackContextMenu(track: track)
                         }
+                    case .playlist(let playlist):
+                        NavigationLink(value: playlist) {
+                            SearchResultRow(result: result)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("search-result-\(playlist.id)")
+                        .contextMenu {
+                            PlaylistContextMenu(playlist: playlist)
+                        }
                     }
                 }
 
@@ -258,8 +271,13 @@ struct SearchView: View {
 
     // MARK: - Actions
     private func performSearch(query: String) {
-        guard !query.isEmpty else {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchTask?.cancel()
+
+        guard !normalizedQuery.isEmpty else {
             searchResults = []
+            isSearching = false
+            searchTask = nil
             return
         }
 
@@ -272,22 +290,19 @@ struct SearchView: View {
         }
         #endif
 
-        // Cancel previous search task to avoid race conditions
-        searchTask?.cancel()
+        // Enter loading state before the debounce so an old empty result does
+        // not flash "No Results" while the user is still typing.
+        isSearching = true
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
             guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                isSearching = true
-            }
 
             do {
                 guard let scope = JellyfinService.shared.libraryScope else {
                     throw JellyfinError.notAuthenticated
                 }
                 let results = try await repository.search(
-                    query,
+                    normalizedQuery,
                     filter: selectedFilter.libraryFilter,
                     in: scope
                 )
@@ -343,6 +358,7 @@ private extension SearchView.SearchFilter {
         case .artists: return .artists
         case .albums: return .albums
         case .tracks: return .tracks
+        case .playlists: return .playlists
         }
     }
 }
@@ -466,6 +482,7 @@ struct SearchResultRow: View {
         case .artist: return "ARTIST"
         case .album: return "ALBUM"
         case .track: return "TRACK"
+        case .playlist: return "PLAYLIST"
         }
     }
 
@@ -474,6 +491,7 @@ struct SearchResultRow: View {
         case .artist: return .neonCyan
         case .album: return .neonPink
         case .track: return .neonPurple
+        case .playlist: return .appAccent
         }
     }
 
@@ -482,6 +500,7 @@ struct SearchResultRow: View {
         case .artist: return "person.circle.fill"
         case .album: return "square.stack.fill"
         case .track: return "music.note"
+        case .playlist: return "music.note.list"
         }
     }
 
@@ -490,6 +509,7 @@ struct SearchResultRow: View {
         case .artist(let artist): return artist.name
         case .album(let album): return album.name
         case .track(let track): return track.name
+        case .playlist(let playlist): return playlist.name
         }
     }
 
@@ -498,6 +518,8 @@ struct SearchResultRow: View {
         case .artist: return nil
         case .album(let album): return album.artistName
         case .track(let track): return track.artistName
+        case .playlist(let playlist):
+            return "\(playlist.trackCount) track\(playlist.trackCount == 1 ? "" : "s")"
         }
     }
 
@@ -506,6 +528,7 @@ struct SearchResultRow: View {
         case .artist(let artist): return artist.artworkURL
         case .album(let album): return album.artworkURL
         case .track(let track): return track.artworkURL
+        case .playlist(let playlist): return playlist.artworkURL
         }
     }
 }

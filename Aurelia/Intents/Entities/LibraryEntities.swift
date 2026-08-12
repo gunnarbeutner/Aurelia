@@ -107,8 +107,6 @@ struct PlaylistEntity: AppEntity {
     }
 }
 
-/// Playlists have no full-text search filter, so they are matched against the
-/// snapshot with the same exact-then-prefix rule the rest of the app uses.
 struct PlaylistEntityQuery: EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [PlaylistEntity] {
         guard let snapshot = await AureliaActions.snapshot() else { return [] }
@@ -117,11 +115,10 @@ struct PlaylistEntityQuery: EntityStringQuery {
     }
 
     func entities(matching string: String) async throws -> [PlaylistEntity] {
-        guard let snapshot = await AureliaActions.snapshot() else { return [] }
-        let wanted = AureliaActions.normalize(string)
-        return snapshot.playlists
-            .filter { AureliaActions.normalize($0.name).contains(wanted) }
-            .map(PlaylistEntity.init)
+        await AureliaActions.searchCatalog(string, filter: .playlists).compactMap {
+            if case .playlist(let playlist) = $0 { return PlaylistEntity(playlist) }
+            return nil
+        }
     }
 
     func suggestedEntities() async throws -> [PlaylistEntity] {

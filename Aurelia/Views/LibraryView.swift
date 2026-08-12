@@ -141,7 +141,6 @@ struct LibraryView: View {
     @State private var serverRecentAlbums: [Album]?
     @State private var artists: [Artist] = []
     @State private var playlists: [Playlist] = []
-    @State private var searchText = ""
     @AppStorage("librarySelectedFilter") private var selectedFilter: String = "Artists"
     @AppStorage("librarySortOption") private var sortOption: SortOption = .artistAsc
     @AppStorage("libraryViewModeArtists") private var viewModeArtists: String = ViewMode.list.rawValue
@@ -180,9 +179,6 @@ struct LibraryView: View {
     @State private var genreAlbums: [Album] = []
     @State private var isLoadingGenreAlbums = false
     
-    // Search debouncing
-    @State private var searchDebounceTask: Task<Void, Never>?
-
     // Scroll position restoration — persisted so it survives navigation pops
     // Scroll restoration handled by LibraryState.shared + ScrollViewReader
 
@@ -192,7 +188,7 @@ struct LibraryView: View {
             : [GridItem(.adaptive(minimum: 130), spacing: 16)]
     }
 
-    var filteredAndSortedAlbums: [Album] {
+    var displayedAlbums: [Album] {
         let sourceAlbums: [Album]
         if selectedFilter == "Recent" {
             if let serverRecentAlbums {
@@ -209,53 +205,25 @@ struct LibraryView: View {
             sourceAlbums = albums
         }
 
-        let filtered: [Album]
-        if searchText.isEmpty {
-            filtered = sourceAlbums
-        } else {
-            filtered = sourceAlbums.filter { album in
-                album.name.localizedCaseInsensitiveContains(searchText) ||
-                album.artistName.localizedCaseInsensitiveContains(searchText)
-            }
-        }
-
         if selectedFilter == "Recent" {
-            return filtered
+            return sourceAlbums
         }
 
-        return sortOption.sort(filtered)
+        return sortOption.sort(sourceAlbums)
     }
 
-    var filteredArtists: [Artist] {
-        var filtered = artists
-
-        // Apply favorites filter if needed
-        if selectedFilter == "Favorites" {
-            filtered = filtered.filter { $0.isFavorite }
-        }
-
-        // Apply search filter
-        if !searchText.isEmpty {
-            filtered = filtered.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-        }
-
-        return filtered.sorted { $0.name < $1.name }
-    }
-
-    var favoriteAlbums: [Album] {
-        albums.filter { $0.isFavorite }
+    var displayedArtists: [Artist] {
+        artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private var scrollIndexEntries: [LibraryScrollIndexEntry] {
-        guard searchText.isEmpty else { return [] }
-
         switch selectedFilter {
         case "Artists":
             return LibraryScrollIndexBuilder.alphabetical(
-                filteredArtists.map { (id: $0.id, title: $0.name) }
+                displayedArtists.map { (id: $0.id, title: $0.name) }
             )
         case "Albums":
-            let sortedAlbums = filteredAndSortedAlbums
+            let sortedAlbums = displayedAlbums
             switch sortOption {
             case .nameAsc, .nameDesc:
                 return LibraryScrollIndexBuilder.alphabetical(
@@ -321,98 +289,11 @@ struct LibraryView: View {
                 } else {
                     ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: scrollIndexEntries.count <= 1) {
-                        if selectedFilter == "Favorites" {
-                            // Favorites View - Show both artists and albums
-                            VStack(alignment: .leading, spacing: 20) {
-                                if !filteredArtists.isEmpty {
-                                    Text("Favorite Artists")
-                                        .font(.appHeadline)
-                                        .foregroundColor(Color.appText)
-                                        .padding(.horizontal, 20)
-                                        .padding(.top, 16)
-
-                                    if viewMode == .grid {
-                                        LazyVGrid(columns: columns, spacing: 16) {
-                                            ForEach(filteredArtists) { artist in
-                                                NavigationLink(value: artist) {
-                                                    ArtistCard(artist: artist)
-                                                }
-                                            }
-                                        }
-                                        .padding(.horizontal, 20)
-                                    } else {
-                                        LazyVStack(spacing: 0) {
-                                            ForEach(filteredArtists) { artist in
-                                                NavigationLink(value: artist) {
-                                                    ArtistListRow(artist: artist)
-                                                }
-                                                .padding(.horizontal, 20)
-
-                                                if artist.id != filteredArtists.last?.id {
-                                                    Divider()
-                                                        .background(Color.appAccent.opacity(0.2))
-                                                        .padding(.horizontal, 20)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if !favoriteAlbums.isEmpty {
-                                    Text("Favorite Albums")
-                                        .font(.appHeadline)
-                                        .foregroundColor(Color.appText)
-                                        .padding(.horizontal, 20)
-                                        .padding(.top, filteredArtists.isEmpty ? 16 : 24)
-
-                                    if viewMode == .grid {
-                                        LazyVGrid(columns: columns, spacing: 16) {
-                                            ForEach(favoriteAlbums) { album in
-                                                NavigationLink(value: album) {
-                                                    AlbumCard(album: album)
-                                                }
-                                                .accessibilityElement(children: .combine)
-                                                .accessibilityLabel("Album: \(album.name) by \(album.artistName)")
-                                                .accessibilityHint("Double tap to view album")
-                                            }
-                                        }
-                                        .padding(.horizontal, 20)
-                                    } else {
-                                        LazyVStack(spacing: 0) {
-                                            ForEach(favoriteAlbums) { album in
-                                                NavigationLink(value: album) {
-                                                    AlbumListRow(album: album)
-                                                }
-                                                .accessibilityElement(children: .combine)
-                                                .accessibilityLabel("Album: \(album.name) by \(album.artistName)")
-                                                .accessibilityHint("Double tap to view album")
-                                                .padding(.horizontal, 20)
-
-                                                if album.id != favoriteAlbums.last?.id {
-                                                    Divider()
-                                                        .background(Color.appAccent.opacity(0.2))
-                                                        .padding(.horizontal, 20)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if filteredArtists.isEmpty && favoriteAlbums.isEmpty {
-                                    ContentUnavailableView {
-                                        Label("No Favorites Yet", systemImage: "heart.slash")
-                                    } description: {
-                                        Text("Tap the heart icon on albums and artists to add them here")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, 100)
-                                }
-                            }
-                        } else if selectedFilter == "Artists" {
+                        if selectedFilter == "Artists" {
                             // Artists View
                             if viewMode == .grid {
                                 LazyVGrid(columns: columns, spacing: 16) {
-                                    ForEach(filteredArtists) { artist in
+                                    ForEach(displayedArtists) { artist in
                                         NavigationLink(value: artist) {
                                             ArtistCard(artist: artist)
                                         }
@@ -443,7 +324,7 @@ struct LibraryView: View {
                                 .padding(.top, 16)
                             } else {
                                 LazyVStack(spacing: 0) {
-                                    ForEach(filteredArtists) { artist in
+                                    ForEach(displayedArtists) { artist in
                                         NavigationLink(value: artist) {
                                             ArtistListRow(artist: artist)
                                         }
@@ -456,7 +337,7 @@ struct LibraryView: View {
                                         })
                                         .padding(.horizontal, 20)
 
-                                        if artist.id != filteredArtists.last?.id {
+                                        if artist.id != displayedArtists.last?.id {
                                             Divider()
                                                 .background(Color.appAccent.opacity(0.2))
                                                 .padding(.horizontal, 20)
@@ -623,7 +504,7 @@ struct LibraryView: View {
                             // Albums View (and Recent for now)
                             if viewMode == .grid {
                                 LazyVGrid(columns: columns, spacing: 16) {
-                                    ForEach(filteredAndSortedAlbums) { album in
+                                    ForEach(displayedAlbums) { album in
                                         NavigationLink(value: album) {
                                             AlbumCard(album: album)
                                         }
@@ -654,7 +535,7 @@ struct LibraryView: View {
                                 .padding(.top, 16)
                             } else {
                                 LazyVStack(spacing: 0) {
-                                    ForEach(filteredAndSortedAlbums) { album in
+                                    ForEach(displayedAlbums) { album in
                                         NavigationLink(value: album) {
                                             AlbumListRow(album: album)
                                         }
@@ -667,7 +548,7 @@ struct LibraryView: View {
                                         })
                                         .padding(.horizontal, 20)
 
-                                        if album.id != filteredAndSortedAlbums.last?.id {
+                                        if album.id != displayedAlbums.last?.id {
                                             Divider()
                                                 .background(Color.appAccent.opacity(0.2))
                                                 .padding(.horizontal, 20)
@@ -742,21 +623,6 @@ struct LibraryView: View {
                 serverRecentAlbums = libraryStore.recentAlbums
             }
         }
-        // Search moved inline to filterSection
-        .onChange(of: searchText) { _, newValue in
-            // Cancel previous search task
-            searchDebounceTask?.cancel()
-            
-            // Debounce search for large libraries (300ms delay)
-            searchDebounceTask = Task {
-                do {
-                    try await Task.sleep(nanoseconds: 300_000_000) // 300ms
-                    // Search logic is handled by computed properties, no additional action needed
-                } catch {
-                    // Task was cancelled, ignore
-                }
-            }
-        }
         .navigationDestination(for: Artist.self) { artist in
             ArtistDetailView(artist: artist)
         }
@@ -825,6 +691,10 @@ struct LibraryView: View {
             }
         }
         .onAppear {
+            let browseSections = ["Artists", "Albums", "Playlists", "Genres", "Recent"]
+            if !browseSections.contains(selectedFilter) {
+                selectedFilter = "Artists"
+            }
             if albums.isEmpty && artists.isEmpty {
                 Task {
                     await fetchLibrary()
@@ -971,52 +841,20 @@ struct LibraryView: View {
 
     // MARK: - Filter Section
     private var filterSection: some View {
-        VStack(spacing: 10) {
-            // Inline search
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.caption)
-                    .foregroundColor(.appTextSecondary)
-                TextField("Search", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .focusEffectDisabled()
-                    .font(.subheadline)
-                    .foregroundColor(Color.appText)
-                    .autocorrectionDisabled()
-                if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundColor(.appTextSecondary)
-                    }
+        HStack(spacing: 12) {
+            Picker("Library section", selection: $selectedFilter) {
+                ForEach(["Artists", "Albums", "Playlists", "Genres", "Recent"], id: \.self) { section in
+                    Text(section).tag(section)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .padding(.horizontal, 20)
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 720)
+            .accessibilityIdentifier("library-section-picker")
 
-            // Filter pills
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(["Artists", "Albums", "Playlists", "Genres", "Recent"], id: \.self) { filter in
-                        FilterPill(
-                            title: filter,
-                            isSelected: selectedFilter == filter
-                        ) {
-                            withAnimation(.spring(response: 0.3)) {
-                                selectedFilter = filter
-                            }
-                        }
-                        .accessibilityLabel("Filter: \(filter)")
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityAddTraits(selectedFilter == filter ? .isSelected : [])
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
         .padding(.bottom, 8)
     }
 
