@@ -8,29 +8,39 @@
 import SwiftUI
 
 struct WatchOnboardingView: View {
+    @ObservedObject private var connectivity = WatchConnectivityManager.shared
+
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            
-            Image(systemName: "iphone.and.watch")
-                .font(.title)
-                .foregroundColor(.blue)
-            
-            Text("Sign In Required")
-                .font(.headline)
-                .multilineTextAlignment(.center)
-            
-            Text("Please sign in on your iPhone first, then credentials will sync automatically.")
-                .font(.caption)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
-            
-            Spacer()
+        ScrollView {
+            VStack(spacing: 8) {
+                Image("AppIcon_Display")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .accessibilityHidden(true)
+
+                Text("Sign In Required")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+
+                Text("Open Aurelia on your iPhone, then sync again.")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Sync Again") {
+                    connectivity.requestCredentials()
+                    connectivity.requestLibrarySnapshot()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!connectivity.isPhoneReachable)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
-        .padding()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Sign in required. Please sign in on your iPhone first, then credentials will sync automatically.")
         .containerBackground(.black.gradient, for: .navigation)
     }
 }

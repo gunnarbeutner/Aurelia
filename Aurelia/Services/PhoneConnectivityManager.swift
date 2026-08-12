@@ -19,6 +19,9 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     private let playerManager = PlayerManager.shared
     private var pendingSnapshotFiles = Set<URL>()
     private var lastQueuedSnapshotDates: [String: Date] = [:]
+    private var activeReachableSnapshotID: String?
+
+    private static let reachableSnapshotChunkSize = 48 * 1024
 
     override init() {
         super.init()
@@ -89,13 +92,13 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         guard snapshot.hasCachedLibrary,
               let session,
               session.activationState == .activated,
-              session.isWatchAppInstalled else {
+              force || session.isWatchAppInstalled else {
             return
         }
 
         let generatedAt = snapshot.lastSyncedAt ?? Date()
         let transferKey = "\(scope.serverKey)\u{0}\(scope.userID)"
-        guard force || lastQueuedSnapshotDates[transferKey] != generatedAt else { return }
+        let isNewSnapshot = lastQueuedSnapshotDates[transferKey] != generatedAt
 
         let payload = PhoneWatchLibrarySnapshot(
             scope: .init(serverKey: scope.serverKey, userID: scope.userID),
@@ -131,6 +134,20 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
 
         do {
             let data = try JSONEncoder().encode(payload)
+
+            // transferFile is the durable path for real devices, but the
+            // simulator's IDS file transport can acknowledge a transfer
+            // without ever delivering it. A reachable Watch gets the same
+            // payload over ordered, acknowledged message chunks so it can use
+            // the phone's SQLite catalog immediately.
+            if session.isReachable, force || isNewSnapshot {
+                sendLibrarySnapshotReachably(data, using: session)
+            }
+
+            // Queue each catalog revision only once. Several WCSession state
+            // callbacks can fire together when a newly installed Watch wakes.
+            guard isNewSnapshot else { return }
+
             let fileURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("Aurelia-Watch-Library-\(UUID().uuidString)")
                 .appendingPathExtension("json")
@@ -148,6 +165,79 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         } catch {
             print("❌ Failed to prepare watch library snapshot: \(error.localizedDescription)")
         }
+    }
+
+    private func sendLibrarySnapshotReachably(_ data: Data, using session: WCSession) {
+        guard activeReachableSnapshotID == nil else { return }
+
+        let transferID = UUID().uuidString
+        activeReachableSnapshotID = transferID
+        let chunkCount = max(
+            1,
+            Int(ceil(Double(data.count) / Double(Self.reachableSnapshotChunkSize)))
+        )
+
+        sendLibrarySnapshotChunk(
+            data,
+            transferID: transferID,
+            chunkIndex: 0,
+            chunkCount: chunkCount,
+            using: session
+        )
+    }
+
+    private func sendLibrarySnapshotChunk(
+        _ data: Data,
+        transferID: String,
+        chunkIndex: Int,
+        chunkCount: Int,
+        using session: WCSession
+    ) {
+        guard activeReachableSnapshotID == transferID,
+              session.activationState == .activated,
+              session.isReachable else {
+            activeReachableSnapshotID = nil
+            return
+        }
+
+        let lowerBound = chunkIndex * Self.reachableSnapshotChunkSize
+        let upperBound = min(lowerBound + Self.reachableSnapshotChunkSize, data.count)
+        let chunk = data.subdata(in: lowerBound..<upperBound)
+
+        session.sendMessage(
+            [
+                "action": "librarySnapshotChunk",
+                "transferID": transferID,
+                "chunkIndex": chunkIndex,
+                "chunkCount": chunkCount,
+                "data": chunk
+            ],
+            replyHandler: { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, self.activeReachableSnapshotID == transferID else { return }
+                    let nextIndex = chunkIndex + 1
+                    if nextIndex == chunkCount {
+                        self.activeReachableSnapshotID = nil
+                        print("✅ Sent SQLite library snapshot directly to reachable watch")
+                    } else {
+                        self.sendLibrarySnapshotChunk(
+                            data,
+                            transferID: transferID,
+                            chunkIndex: nextIndex,
+                            chunkCount: chunkCount,
+                            using: session
+                        )
+                    }
+                }
+            },
+            errorHandler: { [weak self] error in
+                DispatchQueue.main.async {
+                    guard self?.activeReachableSnapshotID == transferID else { return }
+                    self?.activeReachableSnapshotID = nil
+                    print("⚠️ Direct watch snapshot transfer paused: \(error.localizedDescription)")
+                }
+            }
+        )
     }
 
     func syncLibraryDeltaToWatch(
@@ -322,6 +412,11 @@ extension PhoneConnectivityManager: WCSessionDelegate {
             "userName": jellyfin.currentUser?.Name ?? "User"
         ]
 
+        // A live reply can fail during a new pairing even though the request
+        // itself reached the phone. Refresh the durable application context as
+        // part of every request so the Watch can recover independently of the
+        // reply channel.
+        syncCredentialsToWatch()
         print("✅ Sending credentials to watch")
         replyHandler(credentials)
     }

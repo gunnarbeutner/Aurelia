@@ -10,6 +10,7 @@
 		7A1C00012F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
 		7A1C00042F40000100DB0001 /* GRDB in Frameworks (Watch) */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
 		7A1C00052F40000100DB0001 /* GRDB in Frameworks (Watch Tests) */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		7A1C00082F40000100DB0001 /* Aurelia Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6D1D0D042F3A7AA100995579 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D032F3A7AA100995579 /* WidgetKit.framework */; };
 		6D1D0D062F3A7AA100995579 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D052F3A7AA100995579 /* SwiftUI.framework */; };
 		6D1D0D112F3A7AA200995579 /* AureliaComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -58,6 +59,13 @@
 			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
 			remoteInfo = "Aurelia Watch";
 		};
+		7A1C00092F40000100DB0001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
+			remoteInfo = "Aurelia Watch";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -77,6 +85,7 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
+				7A1C00082F40000100DB0001 /* Aurelia Watch.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -321,6 +330,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				7A1C000A2F40000100DB0001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4BEDE7752EA2B830001E8050 /* Aurelia */,
@@ -756,6 +766,12 @@
 			isa = PBXTargetDependency;
 			target = 4BEDE7C32EA2BEC6001E8050 /* Aurelia Watch */;
 			targetProxy = 7A1C00062F40000100DB0001 /* PBXContainerItemProxy */;
+		};
+		7A1C000A2F40000100DB0001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = 4BEDE7C32EA2BEC6001E8050 /* Aurelia Watch */;
+			targetProxy = 7A1C00092F40000100DB0001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
