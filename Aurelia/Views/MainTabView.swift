@@ -167,7 +167,13 @@ struct MainTabView: View {
                     dismissNowPlaying()
                 }
                 selectedTab = 2
-                searchFocusRequest += 1
+                // Taking first responder in the same turn as the selection
+                // change beats Catalyst to committing the tab, which leaves the
+                // window chrome describing the tab we just left. Let the
+                // selection land, then ask for focus.
+                DispatchQueue.main.async {
+                    searchFocusRequest += 1
+                }
             },
             togglePlayer: {
                 guard playerManager.currentTrack != nil else { return }
