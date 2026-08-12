@@ -115,6 +115,19 @@ enum NowPlayingQueueProjection {
         guard start < queueCount else { return [] }
         return Array(start..<queueCount)
     }
+
+    static func partitionedUpNextIndices(
+        currentIndex: Int,
+        queueCount: Int,
+        autoplayStartIndex: Int?
+    ) -> (queued: [Int], autoplay: [Int]) {
+        let indices = upNextIndices(currentIndex: currentIndex, queueCount: queueCount)
+        guard let autoplayStartIndex else { return (indices, []) }
+        return (
+            indices.filter { $0 < autoplayStartIndex },
+            indices.filter { $0 >= autoplayStartIndex }
+        )
+    }
 }
 
 enum UpNextQueueInteraction {
@@ -830,6 +843,14 @@ struct NowPlayingView: View {
     @ViewBuilder
     private var upNextQueueContent: some View {
         let entries = nextTrackEntries()
+        let partition = NowPlayingQueueProjection.partitionedUpNextIndices(
+            currentIndex: playerManager.currentIndex,
+            queueCount: playerManager.queue.count,
+            autoplayStartIndex: playerManager.autoplayStartIndex
+        )
+        let queuedIndices = Set(partition.queued)
+        let queuedEntries = entries.filter { queuedIndices.contains($0.index) }
+        let autoplayEntries = entries.filter { !queuedIndices.contains($0.index) }
 
         if entries.isEmpty {
             queueEmptyState(
@@ -856,32 +877,56 @@ struct NowPlayingView: View {
             .padding(.horizontal, 4)
 
             LazyVStack(spacing: 10) {
-                ForEach(entries) { entry in
-                    UpNextQueueRow(
-                        track: entry.track,
-                        queueIndex: entry.index,
-                        verticalOffset: queueRowOffset(for: entry),
-                        isBeingReordered: draggedQueueEntryID == entry.id,
-                        isQueueReordering: draggedQueueEntryID != nil,
-                        onPlay: {
-                            playerManager.jumpToTrack(at: entry.index)
-                        },
-                        onDelete: {
-                            playerManager.removeFromQueue(at: entry.index)
-                        },
-                        onReorder: { translation, ended in
-                            reorderUpNext(
-                                initialIndex: entry.index,
-                                entryID: entry.id,
-                                translation: translation,
-                                ended: ended,
-                                upperBound: entries.last?.index ?? entry.index
-                            )
-                        }
-                    )
+                ForEach(queuedEntries) { entry in
+                    upNextRow(entry, isAutoplay: false, upperBound: queuedEntries.last?.index)
+                }
+
+                if !autoplayEntries.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "waveform.path.ecg")
+                        Text("Autoplay")
+                        Spacer()
+                        Text("Similar music from AudioMuse")
+                            .fontWeight(.regular)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.appAccent)
+                    .padding(.horizontal, 8)
+                    .padding(.top, queuedEntries.isEmpty ? 0 : 8)
+
+                    ForEach(autoplayEntries) { entry in
+                        upNextRow(entry, isAutoplay: true, upperBound: nil)
+                    }
                 }
             }
         }
+    }
+
+    private func upNextRow(
+        _ entry: QueueTrackEntry,
+        isAutoplay: Bool,
+        upperBound: Int?
+    ) -> some View {
+        UpNextQueueRow(
+            track: entry.track,
+            queueIndex: entry.index,
+            verticalOffset: isAutoplay ? 0 : queueRowOffset(for: entry),
+            isBeingReordered: !isAutoplay && draggedQueueEntryID == entry.id,
+            isQueueReordering: draggedQueueEntryID != nil,
+            isAutoplay: isAutoplay,
+            onPlay: { playerManager.jumpToTrack(at: entry.index) },
+            onDelete: { playerManager.removeFromQueue(at: entry.index) },
+            onReorder: { translation, ended in
+                guard !isAutoplay, let upperBound else { return }
+                reorderUpNext(
+                    initialIndex: entry.index,
+                    entryID: entry.id,
+                    translation: translation,
+                    ended: ended,
+                    upperBound: upperBound
+                )
+            }
+        )
     }
 
     private func queueEmptyState(
@@ -1122,6 +1167,7 @@ private struct UpNextQueueRow: View {
     let verticalOffset: CGFloat
     let isBeingReordered: Bool
     let isQueueReordering: Bool
+    let isAutoplay: Bool
     let onPlay: () -> Void
     let onDelete: () -> Void
     let onReorder: (_ translation: CGFloat, _ ended: Bool) -> Void
@@ -1208,13 +1254,21 @@ private struct UpNextQueueRow: View {
                     TrackContextMenu(track: track, queueIndex: queueIndex)
                 }
 
-                Image(systemName: "line.3.horizontal")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.appTextMuted)
-                    .frame(width: 44, height: 52)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel("Reorder \(track.name)")
-                    .highPriorityGesture(reorderGesture)
+                if isAutoplay {
+                    Image(systemName: "sparkles")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.appAccent.opacity(0.8))
+                        .frame(width: 44, height: 52)
+                        .accessibilityLabel("Added by Autoplay")
+                } else {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.appTextMuted)
+                        .frame(width: 44, height: 52)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel("Reorder \(track.name)")
+                        .highPriorityGesture(reorderGesture)
+                }
             }
             .frame(maxWidth: .infinity)
             .background(Color.appBackground.opacity(0.001))

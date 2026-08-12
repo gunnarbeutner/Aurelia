@@ -50,6 +50,7 @@ enum StreamingQuality: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject private var playerManager = PlayerManager.shared
     @ObservedObject private var libraryStore = LibraryStore.shared
     @State private var showSignOutConfirmation = false
     @State private var showRebuildConfirmation = false
@@ -78,6 +79,9 @@ struct SettingsView: View {
 
                     // Streaming Quality
                     streamingQualitySection
+
+                    // Queue continuation
+                    autoplaySection
 
                     // Offline storage
                     storageSection
@@ -409,6 +413,30 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    // MARK: - Autoplay Section
+
+    private var autoplaySection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Playback")
+                .font(.appHeadline)
+                .foregroundColor(.appAccent)
+
+            Toggle(isOn: $playerManager.continuePlayingSimilarMusic) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Continue Playing Similar Music")
+                        .font(.appBody)
+                        .foregroundColor(.appText)
+                    Text("Use AudioMuse to keep playing after your queue ends")
+                        .font(.appCaption)
+                        .foregroundColor(.appTextSecondary)
+                }
+            }
+            .tint(.appAccent)
+            .settingsCard()
+            .accessibilityIdentifier("continue-playing-similar-music")
         }
     }
 

@@ -98,6 +98,22 @@ class PlayerManager: NSObject, ObservableObject {
     @Published var shuffleEnabled = false
     @Published var repeatMode: RepeatMode = .off
     @Published var playbackRate: Float = 1.0
+    @Published var continuePlayingSimilarMusic = false {
+        didSet {
+            UserDefaults.standard.set(
+                continuePlayingSimilarMusic,
+                forKey: StateKey.continuePlayingSimilarMusic
+            )
+            if !continuePlayingSimilarMusic {
+                cancelAutoplaySuggestions(removeUpcoming: true)
+            } else {
+                primeAutoplayIfNeeded()
+            }
+        }
+    }
+    /// The first queue index supplied by automatic AudioMuse continuation.
+    /// Nil means every queued item was chosen explicitly by the listener.
+    @Published private(set) var autoplayStartIndex: Int?
 
     enum RepeatMode: String {
         case off = "off"
@@ -148,6 +164,8 @@ class PlayerManager: NSObject, ObservableObject {
         label: "de.beutner.Aurelia.player-state-persistence",
         qos: .utility
     )
+    private var autoplayRequestTask: Task<Void, Never>?
+    private var autoplayRequestSeedID: String?
 
     // MARK: - Playback State Persistence Keys
     private enum StateKey {
@@ -156,6 +174,8 @@ class PlayerManager: NSObject, ObservableObject {
         static let currentTime = "playerState_currentTime"
         static let shuffleEnabled = "playerState_shuffleEnabled"
         static let repeatMode = "playerState_repeatMode"
+        static let continuePlayingSimilarMusic = "continuePlayingSimilarMusic"
+        static let autoplayStartIndex = "playerState_autoplayStartIndex"
     }
 
     /// Recently played tracks (track-level, not just album IDs)
@@ -169,6 +189,9 @@ class PlayerManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        continuePlayingSimilarMusic = UserDefaults.standard.bool(
+            forKey: StateKey.continuePlayingSimilarMusic
+        )
         setupNotifications()
         // Configure audio session immediately when PlayerManager is created
         configureAudioSession()
@@ -193,6 +216,7 @@ class PlayerManager: NSObject, ObservableObject {
         let timeSnapshot = currentTime
         let shuffleSnapshot = shuffleEnabled
         let repeatSnapshot = repeatMode.rawValue
+        let autoplayStartSnapshot = autoplayStartIndex
         let write = {
             if let data = try? JSONEncoder().encode(queueSnapshot) {
                 UserDefaults.standard.set(data, forKey: StateKey.queue)
@@ -201,6 +225,11 @@ class PlayerManager: NSObject, ObservableObject {
             UserDefaults.standard.set(timeSnapshot, forKey: StateKey.currentTime)
             UserDefaults.standard.set(shuffleSnapshot, forKey: StateKey.shuffleEnabled)
             UserDefaults.standard.set(repeatSnapshot, forKey: StateKey.repeatMode)
+            if let autoplayStartSnapshot {
+                UserDefaults.standard.set(autoplayStartSnapshot, forKey: StateKey.autoplayStartIndex)
+            } else {
+                UserDefaults.standard.removeObject(forKey: StateKey.autoplayStartIndex)
+            }
         }
 
         if synchronously {
@@ -224,6 +253,9 @@ class PlayerManager: NSObject, ObservableObject {
         let savedTime = UserDefaults.standard.double(forKey: StateKey.currentTime)
         let savedShuffle = UserDefaults.standard.bool(forKey: StateKey.shuffleEnabled)
         let savedRepeatRaw = UserDefaults.standard.string(forKey: StateKey.repeatMode) ?? ""
+        let savedAutoplayStart = UserDefaults.standard.object(
+            forKey: StateKey.autoplayStartIndex
+        ) as? Int
 
         guard savedIndex < savedQueue.count else { return false }
 
@@ -233,6 +265,9 @@ class PlayerManager: NSObject, ObservableObject {
         currentTrack = savedQueue[savedIndex]
         shuffleEnabled = savedShuffle
         if let repeat_ = RepeatMode(rawValue: savedRepeatRaw) { repeatMode = repeat_ }
+        if let savedAutoplayStart, savedQueue.indices.contains(savedAutoplayStart) {
+            autoplayStartIndex = savedAutoplayStart
+        }
 
         // Store the saved time so we can seek when user hits play
         pendingSeekTime = savedTime
@@ -319,6 +354,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        cancelAutoplaySuggestions(removeUpcoming: true)
         pendingSeekTime = 0  // Fresh tap — always start from beginning
         queue = [track]
         currentIndex = 0
@@ -348,6 +384,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        cancelAutoplaySuggestions(removeUpcoming: true)
         pendingSeekTime = 0  // Fresh tap — always start from beginning
         originalQueue = validTracks
         originalIndex = min(index, validTracks.count - 1)
@@ -472,6 +509,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        discardUpcomingAutoplay()
         queue.append(track)
     }
 
@@ -482,6 +520,7 @@ class PlayerManager: NSObject, ObservableObject {
         if currentTrack == nil {
             play(tracks: tracks)
         } else {
+            discardUpcomingAutoplay()
             queue.append(contentsOf: tracks)
         }
     }
@@ -493,6 +532,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        discardUpcomingAutoplay()
         let insertIndex = min(currentIndex + 1, queue.count)
         queue.insert(track, at: insertIndex)
         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -508,6 +548,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        discardUpcomingAutoplay()
         let insertIndex = min(currentIndex + 1, queue.count)
         queue.insert(contentsOf: tracks, at: insertIndex)
         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -521,6 +562,7 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
+        discardUpcomingAutoplay()
         queue.append(track)
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
@@ -634,6 +676,11 @@ class PlayerManager: NSObject, ObservableObject {
         case .one:
             repeatMode = .off
         }
+        if repeatMode == .off {
+            primeAutoplayIfNeeded()
+        } else {
+            cancelAutoplaySuggestions(removeUpcoming: true)
+        }
     }
 
     func setPlaybackRate(_ rate: Float) {
@@ -653,6 +700,10 @@ class PlayerManager: NSObject, ObservableObject {
     /// Removes a track from the queue at the specified index
     func removeFromQueue(at index: Int) {
         guard index >= 0 && index < queue.count else { return }
+
+        if let start = autoplayStartIndex, index < start {
+            autoplayStartIndex = start - 1
+        }
 
         // If removing current track, skip to next
         if index == currentIndex {
@@ -756,6 +807,7 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Clears the entire queue
     func clearQueue() {
+        cancelAutoplaySuggestions(removeUpcoming: false)
         queue.removeAll()
         currentIndex = 0
         currentTrack = nil
@@ -774,6 +826,10 @@ class PlayerManager: NSObject, ObservableObject {
         guard firstUpcomingIndex < queue.count else { return }
 
         queue.removeSubrange(firstUpcomingIndex..<queue.endIndex)
+        autoplayStartIndex = nil
+        autoplayRequestTask?.cancel()
+        autoplayRequestTask = nil
+        autoplayRequestSeedID = nil
 
         // Do not let disabling shuffle resurrect tracks the user explicitly cleared.
         if shuffleEnabled {
@@ -914,6 +970,133 @@ class PlayerManager: NSObject, ObservableObject {
         updateNowPlayingInfo()
 
         logger.info("▶️ Started playing: \(track.name)")
+        primeAutoplayIfNeeded()
+    }
+
+    // MARK: - Automatic continuation
+
+    /// Starts preparing AudioMuse's continuation as soon as the final queued
+    /// song begins. Suggestions are appended to the real queue for gapless
+    /// playback, while `autoplayStartIndex` keeps them visually distinct.
+    private func primeAutoplayIfNeeded() {
+        guard continuePlayingSimilarMusic,
+              repeatMode == .off,
+              queue.indices.contains(currentIndex),
+              currentIndex == queue.count - 1 else { return }
+
+        let seed = queue[currentIndex]
+        guard autoplayRequestSeedID != seed.id else { return }
+
+        autoplayRequestTask?.cancel()
+        autoplayRequestSeedID = seed.id
+        autoplayRequestTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let items = try await jellyfinService.fetchInstantMix(itemId: seed.id, limit: 25)
+                try Task.checkCancellation()
+                let suggestions = items
+                    .filter { $0.Type == .Audio }
+                    .map { Track(from: $0, baseURL: self.jellyfinService.baseURL) }
+
+                await MainActor.run { [weak self] in
+                    self?.appendAutoplaySuggestions(suggestions, seedID: seed.id)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                logger.warning(
+                    "Unable to prepare AudioMuse continuation for \(seed.id, privacy: .private(mask: .hash)): \(error.localizedDescription)"
+                )
+                await MainActor.run { [weak self] in
+                    guard self?.autoplayRequestSeedID == seed.id else { return }
+                    self?.autoplayRequestTask = nil
+                    self?.autoplayRequestSeedID = nil
+                }
+            }
+        }
+    }
+
+    private func appendAutoplaySuggestions(_ suggestions: [Track], seedID: String) {
+        guard continuePlayingSimilarMusic,
+              repeatMode == .off,
+              autoplayRequestSeedID == seedID,
+              queue.indices.contains(currentIndex),
+              queue[currentIndex].id == seedID,
+              currentIndex == queue.count - 1 else {
+            autoplayRequestTask = nil
+            if autoplayRequestSeedID == seedID { autoplayRequestSeedID = nil }
+            return
+        }
+
+        let existingIDs = Set(queue.map(\.id))
+        var seen = existingIDs
+        let unique = suggestions.filter { track in
+            guard !seen.contains(track.id) else { return false }
+            seen.insert(track.id)
+            return true
+        }
+        guard !unique.isEmpty else {
+            autoplayRequestTask = nil
+            autoplayRequestSeedID = nil
+            return
+        }
+
+        autoplayStartIndex = autoplayStartIndex ?? queue.count
+        queue.append(contentsOf: unique)
+        autoplayRequestTask = nil
+        autoplayRequestSeedID = nil
+        savePlaybackState()
+
+        // The current player was created before these tracks existed. Extend
+        // its short preload window in place so priming never interrupts or
+        // seeks the final deliberately queued song.
+        while playerItems.count < 3 {
+            let nextIndex = currentIndex + playerItems.count
+            guard queue.indices.contains(nextIndex),
+                  let url = playbackURL(for: queue[nextIndex]) else { break }
+            let item = AVPlayerItem(url: url)
+            item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            item.preferredForwardBufferDuration = 15
+            player?.insert(item, after: nil)
+            playerItems.append(item)
+        }
+        updateNowPlayingInfo()
+    }
+
+    /// Explicit queue edits take precedence over an unplayed generated tail.
+    private func discardUpcomingAutoplay() {
+        autoplayRequestTask?.cancel()
+        autoplayRequestTask = nil
+        autoplayRequestSeedID = nil
+        guard let start = autoplayStartIndex else { return }
+        let removableStart = max(start, currentIndex + 1)
+        if removableStart < queue.count {
+            queue.removeSubrange(removableStart..<queue.endIndex)
+        }
+        autoplayStartIndex = nil
+
+        // AVQueuePlayer owns its own copies of preloaded successors. Remove
+        // those too, otherwise a discarded suggestion could still start even
+        // though it no longer appears in Up Next.
+        if let player, let currentItem = player.currentItem {
+            for item in playerItems where item !== currentItem {
+                player.remove(item)
+            }
+            playerItems = [currentItem]
+        } else {
+            playerItems.removeAll()
+        }
+    }
+
+    private func cancelAutoplaySuggestions(removeUpcoming: Bool) {
+        autoplayRequestTask?.cancel()
+        autoplayRequestTask = nil
+        autoplayRequestSeedID = nil
+        if removeUpcoming {
+            discardUpcomingAutoplay()
+        } else {
+            autoplayStartIndex = nil
+        }
     }
 
     // MARK: - Gapless Playback Setup
@@ -1067,6 +1250,7 @@ class PlayerManager: NSObject, ObservableObject {
 
             // Report playback start for the new track (gapless advance)
             startProgressReporting(for: newTrack)
+            primeAutoplayIfNeeded()
         } else {
             logger.error("❌ currentIndex \(self.currentIndex) out of bounds for queue size \(self.queue.count)")
         }

@@ -420,7 +420,17 @@ final class DiscoveryViewModel: ObservableObject {
 
         do {
             let previousShelves = shelves
-            let recentTracks = try await fetchRecentlyPlayedTracks()
+            let fetchedRecentTracks = try await fetchRecentlyPlayedTracks()
+            // A full library sync and this lightweight refresh can overlap.
+            // Some Jellyfin versions briefly return only the currently playing
+            // item while their user-data index is being rebuilt. Put fresh
+            // results first, but never let that transient partial window erase
+            // the last known-good Recently Played shelf.
+            let recentTracks = Self.mergingRecentTracks(
+                fresh: fetchedRecentTracks,
+                retained: self.recentTracks,
+                limit: 20
+            )
             let discoveryCandidates: [DiscoveryCandidate]
             if let candidateProvider, let snapshotScope {
                 discoveryCandidates = await candidateProvider.discoveryCandidates(in: snapshotScope)
@@ -630,6 +640,14 @@ final class DiscoveryViewModel: ObservableObject {
     private static func uniqueRecentTracks(_ tracks: [Track]) -> [Track] {
         var itemIds = Set<String>()
         return tracks.filter { itemIds.insert($0.id).inserted }
+    }
+
+    static func mergingRecentTracks(
+        fresh: [Track],
+        retained: [Track],
+        limit: Int
+    ) -> [Track] {
+        Array(uniqueRecentTracks(fresh + retained).prefix(limit))
     }
 
     private func fetchRecentlyPlayedTracks() async throws -> [Track] {
