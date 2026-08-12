@@ -114,6 +114,10 @@ struct ServerSetupView: View {
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
                     .tint(.appAccent)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        connect()
+                    }
                     .accessibilityLabel("Server URL")
 
                 if !serverURL.isEmpty {
@@ -142,9 +146,7 @@ struct ServerSetupView: View {
     // MARK: - Connect Button
     private var connectButton: some View {
         Button {
-            Task {
-                await validateAndConnect()
-            }
+            connect()
         } label: {
             HStack(spacing: 12) {
                 if isValidating {
@@ -195,6 +197,14 @@ struct ServerSetupView: View {
     }
 
     // MARK: - Validation
+    private func connect() {
+        guard !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !isValidating else { return }
+        Task {
+            await validateAndConnect()
+        }
+    }
+
     private func validateAndConnect() async {
         isValidating = true
         errorMessage = ""
