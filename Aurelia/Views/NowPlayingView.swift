@@ -23,8 +23,21 @@ enum NowPlayingLayout {
         max(0, screenWidth - horizontalPadding * 2)
     }
 
-    static func artworkSize(for screenWidth: CGFloat) -> CGFloat {
-        min(screenWidth * 0.65, 320)
+    /// Share of the available width the artwork may occupy.
+    static let artworkWidthFraction: CGFloat = 0.65
+    /// Share of the viewport height the artwork may occupy. The rest of the
+    /// column — title, progress, controls — needs the remainder, so this is what
+    /// stops a tall narrow window from pushing the controls off screen.
+    static let artworkHeightFraction: CGFloat = 0.45
+
+    /// Sizes the artwork against both axes so it grows with the window instead
+    /// of stopping at a fixed ceiling. Width alone was capped at 320pt, which
+    /// left large and split-screen windows with a small square and a lot of
+    /// empty vertical space.
+    static func artworkSize(forWidth width: CGFloat, height: CGFloat) -> CGFloat {
+        let byWidth = width * artworkWidthFraction
+        guard height > 0 else { return max(0, byWidth) }
+        return max(0, min(byWidth, height * artworkHeightFraction))
     }
 
     static func regularColumnWidths(for screenWidth: CGFloat) -> (player: CGFloat, queue: CGFloat) {
@@ -342,7 +355,10 @@ struct NowPlayingView: View {
 
     // MARK: - Artwork Section (responsive)
     private func artworkSection(screenWidth: CGFloat, screenHeight: CGFloat) -> some View {
-        let artSize = NowPlayingLayout.artworkSize(for: screenWidth)
+        let artSize = NowPlayingLayout.artworkSize(
+            forWidth: screenWidth,
+            height: screenHeight
+        )
 
         return ZStack {
             if let track = playerManager.currentTrack,

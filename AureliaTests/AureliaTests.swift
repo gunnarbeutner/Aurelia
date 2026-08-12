@@ -1189,10 +1189,34 @@ struct AureliaTests {
         }
     }
 
+    @Test @MainActor func nowPlayingArtworkScalesWithTheViewportOnBothAxes() {
+        // A taller window earns a bigger square, with no fixed ceiling.
+        let phone = NowPlayingLayout.artworkSize(forWidth: 393, height: 852)
+        let splitWindow = NowPlayingLayout.artworkSize(forWidth: 700, height: 1000)
+        let largeWindow = NowPlayingLayout.artworkSize(forWidth: 1200, height: 1400)
+        #expect(splitWindow > phone)
+        #expect(largeWindow > splitWindow)
+        #expect(largeWindow > 320)
+
+        // Height is the binding constraint in a short, wide viewport, so the
+        // controls below the artwork keep their room.
+        let shortWide = NowPlayingLayout.artworkSize(forWidth: 1400, height: 500)
+        #expect(shortWide <= 500 * NowPlayingLayout.artworkHeightFraction + 0.001)
+
+        // Width binds in a tall, narrow one.
+        let tallNarrow = NowPlayingLayout.artworkSize(forWidth: 380, height: 1200)
+        #expect(tallNarrow <= 380 * NowPlayingLayout.artworkWidthFraction + 0.001)
+
+        #expect(NowPlayingLayout.artworkSize(forWidth: 0, height: 0) == 0)
+    }
+
     @Test @MainActor func nowPlayingArtworkRemainsCenteredAtIPhoneWidths() {
         for screenWidth in [320.0, 375.0, 393.0, 430.0] {
             let contentWidth = NowPlayingLayout.contentWidth(for: screenWidth)
-            let artworkWidth = NowPlayingLayout.artworkSize(for: screenWidth)
+            let artworkWidth = NowPlayingLayout.artworkSize(
+                forWidth: screenWidth,
+                height: 852
+            )
             let artworkOrigin = NowPlayingLayout.horizontalPadding
                 + (contentWidth - artworkWidth) / 2
 
