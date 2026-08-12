@@ -406,6 +406,7 @@ struct SwipeToDismissPlayer<Content: View>: View {
     let onDismiss: () -> Void
     @ViewBuilder let content: () -> Content
     @State private var dragOffset: CGFloat = 0
+    @State private var isScrollAtTop = true
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -415,6 +416,17 @@ struct SwipeToDismissPlayer<Content: View>: View {
                 dismissHandle
             }
         }
+            // Simultaneous, so the queue below still scrolls: the whole player
+            // starts a dismissal, but only from the top of its scroll. Further
+            // down, a downward drag means "scroll back up" and nothing else.
+            .simultaneousGesture(
+                dismissDragGesture,
+                including: isScrollAtTop ? .all : .subviews
+            )
+            .onPreferenceChange(PlayerScrollAtTopKey.self) { atTop in
+                isScrollAtTop = atTop
+            }
+            .environment(\.playerIsDismissing, dragOffset > 0)
             .offset(y: isPresented ? dragOffset : hiddenOffset)
             .onChange(of: isPresented) { _, _ in
                 dragOffset = 0
@@ -428,37 +440,69 @@ struct SwipeToDismissPlayer<Content: View>: View {
             .frame(width: 96, height: 28, alignment: .top)
             .padding(.top, 12)
             .contentShape(Rectangle())
-            .gesture(
-                // Measure in a stationary coordinate space. Measuring inside
-                // the layer being offset feeds the movement back into the
-                // gesture and makes pointer drags lag and oscillate.
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        dragOffset = PlayerDismissalInteraction.offset(
-                            for: value.translation
-                        )
-                    }
-                    .onEnded { value in
-                        if PlayerDismissalInteraction.shouldDismiss(
-                            translation: value.translation,
-                            predictedEndTranslation: value.predictedEndTranslation
-                        ) {
-                            onDismiss()
-                        } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                                dragOffset = 0
-                            }
-                        }
-                    }
-            )
+            .gesture(dismissDragGesture)
             .accessibilityElement()
             .accessibilityLabel("Dismiss now playing")
             .accessibilityHint("Swipe down to close the player")
             .accessibilityIdentifier("now-playing-dismiss-handle")
     }
+
+    private var dismissDragGesture: some Gesture {
+        // Measure in a stationary coordinate space. Measuring inside the layer
+        // being offset feeds the movement back into the gesture and makes
+        // pointer drags lag and oscillate.
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .onChanged { value in
+                dragOffset = PlayerDismissalInteraction.offset(
+                    for: value.translation
+                )
+            }
+            .onEnded { value in
+                if PlayerDismissalInteraction.shouldDismiss(
+                    translation: value.translation,
+                    predictedEndTranslation: value.predictedEndTranslation
+                ) {
+                    onDismiss()
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        dragOffset = 0
+                    }
+                }
+            }
+    }
+}
+
+/// Whether the player's scroll view is at its top, reported upward so the
+/// dismissal drag can stand down once the listener is reading the queue.
+struct PlayerScrollAtTopKey: PreferenceKey {
+    static let defaultValue = true
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = nextValue()
+    }
+}
+
+private struct PlayerIsDismissingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Set while a dismissal drag is under way. The player's scroll view stands
+    /// down for the duration — the drag is simultaneous with it, so otherwise
+    /// the content slides under the finger while the whole screen is moving.
+    var playerIsDismissing: Bool {
+        get { self[PlayerIsDismissingKey.self] }
+        set { self[PlayerIsDismissingKey.self] = newValue }
+    }
 }
 
 enum PlayerDismissalInteraction {
+    /// Rubber-banding puts the content slightly past its resting place, so
+    /// "at the top" cannot be an exact zero.
+    static func isAtTop(contentOffset: CGFloat) -> Bool {
+        contentOffset >= -1
+    }
+
     static func offset(for translation: CGSize) -> CGFloat {
         // Once dismissal begins, incidental sideways movement must not snap
         // the player back to zero. Only upward movement is resisted.

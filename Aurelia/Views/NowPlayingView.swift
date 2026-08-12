@@ -49,6 +49,10 @@ enum NowPlayingLayout {
     /// title and album wrap to.
     static let compactChromeEstimate: CGFloat = 400
 
+    /// Roughly a modern iPhone's display radius. Only ever seen while the
+    /// player is in motion, so it does not have to match a device exactly.
+    static let dragCornerRadius: CGFloat = 44
+
     /// Small enough to be unusual, large enough to stay a recognisable cover.
     /// Reached only when the column is too short to give the artwork its share,
     /// where the content scrolls rather than shrinking to a sliver.
@@ -269,6 +273,9 @@ struct NowPlayingView: View {
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     /// Measured height of everything in the compact column except the artwork.
     @State private var chromeHeight = NowPlayingLayout.compactChromeEstimate
+    /// Stationary reference for reading how far the player has been scrolled.
+    private static let scrollSpace = "now-playing-scroll-space"
+    @Environment(\.playerIsDismissing) private var isDismissing
     var onDismiss: (() -> Void)?
     var embedsAirPlayButton = true
 
@@ -368,7 +375,23 @@ struct NowPlayingView: View {
             }
             .frame(width: contentWidth)
             .padding(.horizontal, NowPlayingLayout.horizontalPadding)
+            // Reported upward so the pull-to-dismiss drag knows to stand down
+            // once the listener has scrolled into the queue.
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: PlayerScrollAtTopKey.self,
+                        value: PlayerDismissalInteraction.isAtTop(
+                            contentOffset: proxy.frame(in: .named(Self.scrollSpace)).minY
+                        )
+                    )
+                }
+            )
         }
+        // The dismissal drag runs simultaneously with this scroll, so without
+        // this the content slides under the finger while the whole screen moves.
+        .scrollDisabled(isDismissing)
+        .coordinateSpace(name: Self.scrollSpace)
         .onPreferenceChange(PlayerChromeHeightKey.self) { height in
             guard height > 0 else { return }
             chromeHeight = height
@@ -483,17 +506,24 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Background (blurred album art like PWA)
+    /// The player is an opaque slab the size of the whole screen, rounded to
+    /// match the display once it detaches and starts moving.
+    ///
+    /// The clip sits *inside* `ignoresSafeArea`, which is the whole trick:
+    /// that modifier proposes the larger, screen-sized rect to its child, so
+    /// the child rounds at the screen's corners. Applied the other way round —
+    /// as a mask or a clip wrapped around it — the shape is laid out in the
+    /// inset rect instead, and everything drawn past that rect is cut away
+    /// rather than rounded.
     private var backgroundLayer: some View {
         ZStack {
             Color.appBackground
-                .ignoresSafeArea()
 
             // Blurred album art background
             if let track = playerManager.currentTrack,
                let artworkURLString = track.artworkURL,
                let artworkURL = URL(string: artworkURLString) {
                 ViewportBlurredArtwork(url: artworkURL)
-                .ignoresSafeArea()
                 .animation(.easeInOut(duration: 0.8), value: track.id)
             }
 
@@ -507,16 +537,30 @@ struct NowPlayingView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .ignoresSafeArea()
 
             // Dominant color tint
             if let dominantColor = dominantColor {
                 dominantColor
                     .opacity(0.15)
-                    .ignoresSafeArea()
                     .animation(.easeInOut(duration: 0.8), value: self.dominantColor != nil)
             }
         }
+        // Square at rest: the corners coincide with the display's own, and a
+        // radius that did not match the device exactly would show a permanent
+        // notch of the tab behind.
+        //
+        // The clip sits *inside* `ignoresSafeArea`, which proposes the larger,
+        // screen-sized rect to its child so the rounding lands at the screen's
+        // corners. Wrapped around the outside — as a mask, or as a clip over an
+        // explicit frame — the shape is laid out in the inset rect instead and
+        // cuts the background off rather than rounding it.
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: isDismissing ? NowPlayingLayout.dragCornerRadius : 0,
+                style: .continuous
+            )
+        )
+        .ignoresSafeArea()
     }
 
     // MARK: - Top Bar
