@@ -37,7 +37,7 @@ enum AureliaActions {
 
     /// Matches the artist shuffle cap used by the artist screen so a scripted
     /// shuffle behaves like the button.
-    static let artistShuffleLimit = 200
+    nonisolated static let artistShuffleLimit = 200
 
     // MARK: - Playback
 
