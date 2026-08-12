@@ -107,7 +107,10 @@ struct ServerSetupView: View {
                     .font(.title3)
 
                 TextField("https://jellyfin.example.com", text: $serverURL)
+                    .textFieldStyle(.plain)
+                    .focusEffectDisabled()
                     .foregroundColor(Color.appText)
+                    .textContentType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)

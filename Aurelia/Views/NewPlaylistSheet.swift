@@ -76,6 +76,8 @@ struct NewPlaylistSheet: View {
                             .padding(.horizontal, 4)
 
                         TextField("My Awesome Playlist", text: $playlistName)
+                            .textFieldStyle(.plain)
+                            .focusEffectDisabled()
                             .font(.appBody)
                             .foregroundColor(Color.appText)
                             .padding(16)

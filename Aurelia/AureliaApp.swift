@@ -24,6 +24,15 @@ struct AureliaApp: App {
     private let watchConnectivity = PhoneConnectivityManager.shared
 
     init() {
+        // Catalyst draws an AppKit-style focus halo around every bridged text
+        // field, which fights the custom field chrome. SwiftUI's
+        // .focusEffectDisabled() does not reach the UITextField underneath, so
+        // clear the effect on the appearance proxy instead.
+        #if targetEnvironment(macCatalyst)
+        UITextField.appearance().focusEffect = nil
+        UITextView.appearance().focusEffect = nil
+        #endif
+
         // Brand kit fonts: Chakra Petch, Sora, JetBrains Mono (registered via Info.plist)
         // Request notification permissions for download completion alerts
         #if DEBUG

@@ -99,6 +99,8 @@ struct PasswordLoginView: View {
                                     .foregroundColor(.neonCyan)
 
                                 TextField("Username", text: $username)
+                                    .textFieldStyle(.plain)
+                                    .focusEffectDisabled()
                                     .foregroundColor(Color.appText)
                                     .textContentType(.username)
                                     .textInputAutocapitalization(.never)
@@ -141,6 +143,8 @@ struct PasswordLoginView: View {
                                     .foregroundColor(.neonCyan)
 
                                 SecureField("Password", text: $password)
+                                    .textFieldStyle(.plain)
+                                    .focusEffectDisabled()
                                     .foregroundColor(Color.appText)
                                     .textContentType(.password)
                                     .tint(.appAccent)
