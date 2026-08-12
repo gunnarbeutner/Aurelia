@@ -23,6 +23,31 @@ final class PlaybackProgress: ObservableObject {
     }
 }
 
+enum PlaybackRestartRecovery {
+    static func synchronizedPreviousTime(
+        observerTime: Double,
+        authoritativeTime: Double,
+        threshold: Double = 5
+    ) -> Double {
+        abs(observerTime - authoritativeTime) > threshold
+            ? authoritativeTime
+            : observerTime
+    }
+
+    static func shouldRecover(
+        newTime: Double,
+        previousTime: Double,
+        trackedTrackID: String?,
+        currentTrackID: String?,
+        isSeeking: Bool
+    ) -> Bool {
+        !isSeeking
+            && newTime < previousTime - 30
+            && previousTime > 60
+            && trackedTrackID == currentTrackID
+    }
+}
+
 /// Manages audio playback with AVPlayer and iOS Now Playing integration
 /// Handles background audio, interruptions, and remote controls
 class PlayerManager: NSObject, ObservableObject {
@@ -950,10 +975,11 @@ class PlayerManager: NSObject, ObservableObject {
         stopProgressReporting(reportStopped: true)
 
         guard repeatMode != .one else {
-            // Repeat current track
-            seek(to: 0)
-            player?.play()
-            isPlaying = true
+            // AVQueuePlayer may already have advanced past (and removed) the
+            // finished item by the time this notification arrives. Rebuild the
+            // current stream so repeat-one always starts from the real 0:00.
+            pendingSeekTime = 0
+            playCurrentTrack()
             return
         }
 
@@ -1075,15 +1101,22 @@ class PlayerManager: NSObject, ObservableObject {
 
             // Sync local tracker with any external seek (e.g. user seeking backward)
             // so the restart detector doesn't misread a legitimate seek as a stream restart
-            if self.lastValidPlaybackTime > 0 && abs(lastValidTime - self.lastValidPlaybackTime) > 5.0 {
-                lastValidTime = self.lastValidPlaybackTime
-            }
+            lastValidTime = PlaybackRestartRecovery.synchronizedPreviousTime(
+                observerTime: lastValidTime,
+                authoritativeTime: self.lastValidPlaybackTime
+            )
 
             // Detect unexpected stream restarts WITHIN THE SAME TRACK.
             // Only trigger if: not currently seeking, jumped back 30+ seconds (not a user seek),
             // was well into the track (>60s), and it's the same track.
             // Tightened from 10s to 30s to avoid fighting legitimate user seeks.
-            if !self.isSeeking && newTime < lastValidTime - 30.0 && lastValidTime > 60.0 && lastTrackedTrackId == self.currentTrack?.id {
+            if PlaybackRestartRecovery.shouldRecover(
+                newTime: newTime,
+                previousTime: lastValidTime,
+                trackedTrackID: lastTrackedTrackId,
+                currentTrackID: self.currentTrack?.id,
+                isSeeking: self.isSeeking
+            ) {
                 self.logger.error("🚨 UNEXPECTED RESTART DETECTED: Time jumped from \(lastValidTime)s to \(newTime)s")
                 self.logger.error("   Track: '\(self.currentTrack?.name ?? "unknown")'")
                 self.logger.error("   This indicates the AVPlayer stream restarted on its own")

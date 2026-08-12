@@ -1045,6 +1045,29 @@ struct AureliaTests {
         withExtendedLifetime((playerManagerObservation, progressObservation)) {}
     }
 
+    @Test func explicitSeekToZeroDoesNotTriggerRestartRecovery() {
+        let synchronizedTime = PlaybackRestartRecovery.synchronizedPreviousTime(
+            observerTime: 177,
+            authoritativeTime: 0
+        )
+
+        #expect(synchronizedTime == 0)
+        #expect(!PlaybackRestartRecovery.shouldRecover(
+            newTime: 0,
+            previousTime: synchronizedTime,
+            trackedTrackID: "track",
+            currentTrackID: "track",
+            isSeeking: false
+        ))
+        #expect(PlaybackRestartRecovery.shouldRecover(
+            newTime: 0,
+            previousTime: 177,
+            trackedTrackID: "track",
+            currentTrackID: "track",
+            isSeeking: false
+        ))
+    }
+
     @Test @MainActor func imageMemoryCacheHitsAreSynchronous() {
         let url = URL(string: "https://aurelia.test/artwork/\(UUID().uuidString)")!
         let image = UIImage()
