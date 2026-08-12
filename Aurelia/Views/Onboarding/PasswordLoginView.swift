@@ -37,27 +37,8 @@ struct PasswordLoginView: View {
             .ignoresSafeArea()
 
             VStack {
-                // Back button
-                HStack {
-                    Button {
-                        onBack()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                        .font(.body)
-                        .foregroundColor(Color.appText)
-                        .padding(12)
-                        .background(
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                        )
-                    }
-                    .accessibilityLabel("Go back")
-                    .padding(.leading, 20)
-                    .padding(.top, 8)
-                    Spacer()
+                OnboardingBackButton {
+                    onBack()
                 }
 
                 VStack(spacing: 0) {

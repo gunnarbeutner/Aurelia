@@ -30,27 +30,8 @@ struct AuthChoiceView: View {
             .ignoresSafeArea()
 
             VStack {
-                // Back button
-                HStack {
-                    Button {
-                        onBack()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                        .font(.body)
-                        .foregroundColor(Color.appText)
-                        .padding(12)
-                        .background(
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                        )
-                    }
-                    .accessibilityLabel("Go back to server setup")
-                    .padding(.leading, 20)
-                    .padding(.top, 60)
-                    Spacer()
+                OnboardingBackButton(accessibilityLabel: "Go back to server setup") {
+                    onBack()
                 }
 
                 Spacer()

@@ -43,29 +43,9 @@ struct QuickConnectView: View {
 
             // Back Button
             VStack {
-                HStack {
-                    Button {
-                        pollingTask?.cancel()
-                        onBack()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.title3)
-                            .foregroundColor(Color.appText)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(Color.appMidBackground)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.appAccent.opacity(0.5), lineWidth: 1)
-                                    )
-                            )
-                            .neonGlow(color: .appAccent, radius: 8)
-                    }
-                    .padding(.leading, 20)
-                    .padding(.top, 60)
-
-                    Spacer()
+                OnboardingBackButton {
+                    pollingTask?.cancel()
+                    onBack()
                 }
 
                 Spacer()
