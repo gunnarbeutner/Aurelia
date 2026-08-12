@@ -122,13 +122,6 @@ struct DiscoveryView: View {
             await viewModel.refresh()
             await viewModel.updateAudioMuseStatus()
         }
-        .overlay(alignment: .topTrailing) {
-            if viewModel.isRefreshing {
-                ProgressView()
-                    .tint(.appAccent)
-                    .padding(20)
-            }
-        }
     }
 
     @ViewBuilder
