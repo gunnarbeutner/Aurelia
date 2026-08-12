@@ -1572,3 +1572,74 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
 private enum FakeError: Error {
     case unavailable
 }
+
+/// Covers the shared action layer that backs both the AppleScript commands and
+/// the App Intents surface.
+struct AureliaActionTests {
+
+    @Test func nameMatchingPrefersExactThenPrefixIgnoringCaseAndDiacritics() {
+        let albums = [
+            Album(id: "1", name: "Homogenic Remixes", artistName: "Björk", artistId: "b", year: nil, artworkURL: nil),
+            Album(id: "2", name: "Homogenic", artistName: "Björk", artistId: "b", year: nil, artworkURL: nil),
+            Album(id: "3", name: "Vespertine", artistName: "Björk", artistId: "b", year: nil, artworkURL: nil)
+        ]
+
+        // An exact match wins even when a prefix match comes first in the list.
+        #expect(AureliaActions.match("Homogenic", in: albums, name: \.name)?.id == "2")
+        // Prefixes still resolve when nothing matches exactly.
+        #expect(AureliaActions.match("Homogenic Rem", in: albums, name: \.name)?.id == "1")
+        // Case and diacritics are folded, and surrounding whitespace ignored.
+        #expect(AureliaActions.match("  vespertine ", in: albums, name: \.name)?.id == "3")
+        #expect(AureliaActions.match("Nothing Here", in: albums, name: \.name) == nil)
+    }
+
+    @Test func artistMatchingFoldsDiacritics() {
+        let artists = [
+            Artist(id: "b", name: "Björk", bio: nil, albumCount: 2, artworkURL: nil),
+            Artist(id: "k", name: "Kraftwerk", bio: nil, albumCount: 9, artworkURL: nil)
+        ]
+        #expect(AureliaActions.match("bjork", in: artists, name: \.name)?.id == "b")
+        #expect(AureliaActions.match("KRAFTWERK", in: artists, name: \.name)?.id == "k")
+    }
+
+    /// Every failure has to name itself — a silent no-op is what made the player
+    /// look unreliable to out-of-process callers in the first place.
+    @Test func outcomesReportFailuresExplicitly() {
+        #expect(AureliaActions.Outcome.noTrack.message == "no track")
+        #expect(AureliaActions.Outcome.notSignedIn.message == "not signed in")
+        #expect(AureliaActions.Outcome.noMatch.message == "no match")
+        #expect(AureliaActions.Outcome.empty.message == "nothing to play")
+        #expect(AureliaActions.Outcome.ok("playing Homogenic").message == "playing Homogenic")
+    }
+
+    @Test func entitiesCarryTheLibraryNamesShortcutsDisplays() {
+        let album = Album(
+            id: "album",
+            name: "Homogenic",
+            artistName: "Björk",
+            artistId: "b",
+            year: 1997,
+            artworkURL: nil
+        )
+        let artist = Artist(id: "b", name: "Björk", bio: nil, albumCount: 1, artworkURL: nil)
+        let playlist = Playlist(
+            id: "p",
+            name: "Iceland",
+            trackCount: 3,
+            artworkURL: nil,
+            dateCreated: nil
+        )
+
+        #expect(AlbumEntity(album).id == "album")
+        #expect(AlbumEntity(album).name == "Homogenic")
+        #expect(AlbumEntity(album).artistName == "Björk")
+        #expect(ArtistEntity(artist).name == "Björk")
+        #expect(PlaylistEntity(playlist).name == "Iceland")
+    }
+
+    /// The artist shuffle intent must not queue an unbounded library; the
+    /// artist screen caps it and the action layer mirrors that.
+    @Test func artistShuffleCapMatchesTheArtistScreen() {
+        #expect(AureliaActions.artistShuffleLimit == 200)
+    }
+}

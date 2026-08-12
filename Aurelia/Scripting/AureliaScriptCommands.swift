@@ -8,12 +8,11 @@
 #if targetEnvironment(macCatalyst)
 import Foundation
 
-/// Bridges Apple events to app state.
+/// Adapts Apple events onto ``AureliaActions``.
 ///
-/// Every command reports what actually happened rather than leaving the caller
-/// to infer it from the view hierarchy, and anything that changes presentation
-/// applies without animation so the result is settled by the time the command
-/// returns. Commands that navigate suspend the Apple event until the push
+/// Only presentation and navigation live here — everything else is shared with
+/// the App Intents surface. Commands that change presentation apply without
+/// animation, and commands that navigate suspend the Apple event until the push
 /// lands, so a script never races the UI.
 enum AureliaScripting {
     /// Player state as reported to scripts.
@@ -47,51 +46,11 @@ enum AureliaScripting {
         return presented ? .presented : .hidden
     }
 
-    // MARK: - Playback
-
-    @MainActor
-    static func play() -> String {
-        let player = PlayerManager.shared
-        guard player.currentTrack != nil else { return PlayerState.noTrack.rawValue }
-        player.play()
-        return "playing"
-    }
-
-    @MainActor
-    static func pause() -> String {
-        let player = PlayerManager.shared
-        guard player.currentTrack != nil else { return PlayerState.noTrack.rawValue }
-        player.pause()
-        return "paused"
-    }
-
-    @MainActor
-    static func skip(forward: Bool) -> String {
-        let player = PlayerManager.shared
-        guard player.currentTrack != nil else { return PlayerState.noTrack.rawValue }
-        if forward {
-            player.playNext()
-        } else {
-            player.playPrevious()
-        }
-        return nowPlaying()
-    }
-
-    @MainActor
-    static func nowPlaying() -> String {
-        guard let track = PlayerManager.shared.currentTrack else {
-            return PlayerState.noTrack.rawValue
-        }
-        return [track.name, track.artistName, track.albumName]
-            .filter { !$0.isEmpty }
-            .joined(separator: " — ")
-    }
-
     // MARK: - Navigation
 
     @MainActor
     static func selectTab(named name: String) -> String {
-        let wanted = normalize(name)
+        let wanted = AureliaActions.normalize(name)
         guard let index = tabNames.firstIndex(where: { $0 == wanted }) else {
             return "unknown tab"
         }
@@ -99,12 +58,10 @@ enum AureliaScripting {
         return tabNames[index]
     }
 
-    /// Resolves against the local catalog — the library is fully in SQLite, so
-    /// this needs no network round trip — then waits for the push to land.
     @MainActor
     static func showArtist(named name: String) async -> String {
-        guard let snapshot = await catalogSnapshot() else { return "not signed in" }
-        guard let artist = match(name, in: snapshot.artists, name: \.name) else {
+        guard await AureliaActions.snapshot() != nil else { return "not signed in" }
+        guard let artist = await AureliaActions.findArtist(named: name) else {
             return "no match"
         }
         NavigationCoordinator.shared.pendingArtistNavigation = artist
@@ -113,35 +70,12 @@ enum AureliaScripting {
 
     @MainActor
     static func showAlbum(named name: String) async -> String {
-        guard let snapshot = await catalogSnapshot() else { return "not signed in" }
-        guard let album = match(name, in: snapshot.albums, name: \.name) else {
+        guard await AureliaActions.snapshot() != nil else { return "not signed in" }
+        guard let album = await AureliaActions.findAlbum(named: name) else {
             return "no match"
         }
         NavigationCoordinator.shared.pendingAlbumNavigation = album
         return await waitForNavigation()
-    }
-
-    // MARK: - Helpers
-
-    @MainActor
-    private static func catalogSnapshot() async -> LibrarySnapshot? {
-        guard let scope = JellyfinService.shared.libraryScope else { return nil }
-        return try? await LibraryRepository.shared.librarySnapshot(
-            in: scope,
-            includeTracks: false
-        )
-    }
-
-    /// Exact match wins; otherwise fall back to a prefix so callers can pass a
-    /// recognisable fragment rather than an exact title.
-    private static func match<T>(
-        _ query: String,
-        in items: [T],
-        name: KeyPath<T, String>
-    ) -> T? {
-        let wanted = normalize(query)
-        return items.first { normalize($0[keyPath: name]) == wanted }
-            ?? items.first { normalize($0[keyPath: name]).hasPrefix(wanted) }
     }
 
     @MainActor
@@ -153,11 +87,6 @@ enum AureliaScripting {
             try? await Task.sleep(for: .milliseconds(50))
         }
         return "timed out"
-    }
-
-    private static func normalize(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 }
 
@@ -201,31 +130,31 @@ final class AureliaPlayerStateCommand: NSScriptCommand {
 
 final class AureliaPlayCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
-        scriptResult { AureliaScripting.play() }
+        scriptResult { AureliaActions.resume().message }
     }
 }
 
 final class AureliaPauseCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
-        scriptResult { AureliaScripting.pause() }
+        scriptResult { AureliaActions.pause().message }
     }
 }
 
 final class AureliaNextTrackCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
-        scriptResult { AureliaScripting.skip(forward: true) }
+        scriptResult { AureliaActions.skip(forward: true).message }
     }
 }
 
 final class AureliaPreviousTrackCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
-        scriptResult { AureliaScripting.skip(forward: false) }
+        scriptResult { AureliaActions.skip(forward: false).message }
     }
 }
 
 final class AureliaNowPlayingCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
-        scriptResult { AureliaScripting.nowPlaying() }
+        scriptResult { AureliaActions.nowPlayingDescription() }
     }
 }
 
