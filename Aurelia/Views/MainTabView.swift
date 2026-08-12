@@ -15,7 +15,11 @@ struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showNowPlaying = false
     @State private var searchFocusRequest = 0
+    @State private var discoverPath = NavigationPath()
     @State private var libraryPath = NavigationPath()
+    @State private var searchPath = NavigationPath()
+    @State private var favoritesPath = NavigationPath()
+    @State private var settingsPath = NavigationPath()
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var navCoordinator = NavigationCoordinator.shared
@@ -25,7 +29,7 @@ struct MainTabView: View {
         ZStack {
             TabView(selection: $selectedTab) {
                 tabContent(for: 0) {
-                    NavigationStack {
+                    NavigationStack(path: $discoverPath) {
                         DiscoveryView()
                     }
                 }
@@ -45,7 +49,7 @@ struct MainTabView: View {
                 .tag(1)
                 
                 tabContent(for: 2) {
-                    NavigationStack {
+                    NavigationStack(path: $searchPath) {
                         SearchView(searchFocusRequest: searchFocusRequest)
                     }
                 }
@@ -55,7 +59,7 @@ struct MainTabView: View {
                 .tag(2)
                 
                 tabContent(for: 3) {
-                    NavigationStack {
+                    NavigationStack(path: $favoritesPath) {
                         FavoritesView(isActive: selectedTab == 3)
                     }
                 }
@@ -65,7 +69,7 @@ struct MainTabView: View {
                 .tag(3)
                 
                 tabContent(for: 4) {
-                    NavigationStack {
+                    NavigationStack(path: $settingsPath) {
                         SettingsView()
                     }
                 }
@@ -156,6 +160,7 @@ struct MainTabView: View {
         AureliaCommandActions(
             selectedTab: selectedTab,
             isPlayerPresented: showNowPlaying,
+            canNavigateBack: showNowPlaying || selectedNavigationDepth > 0,
             selectTab: { tab in
                 if showNowPlaying {
                     dismissNowPlaying()
@@ -181,8 +186,41 @@ struct MainTabView: View {
                     showNowPlaying.toggle()
                 }
             },
-            dismissPlayer: dismissNowPlaying
+            navigateBack: navigateBack
         )
+    }
+
+    private var selectedNavigationDepth: Int {
+        switch selectedTab {
+        case 0: discoverPath.count
+        case 1: libraryPath.count
+        case 2: searchPath.count
+        case 3: favoritesPath.count
+        case 4: settingsPath.count
+        default: 0
+        }
+    }
+
+    private func navigateBack() {
+        if showNowPlaying {
+            dismissNowPlaying()
+            return
+        }
+
+        switch selectedTab {
+        case 0 where !discoverPath.isEmpty:
+            discoverPath.removeLast()
+        case 1 where !libraryPath.isEmpty:
+            libraryPath.removeLast()
+        case 2 where !searchPath.isEmpty:
+            searchPath.removeLast()
+        case 3 where !favoritesPath.isEmpty:
+            favoritesPath.removeLast()
+        case 4 where !settingsPath.isEmpty:
+            settingsPath.removeLast()
+        default:
+            break
+        }
     }
 
     private func dismissNowPlaying() {

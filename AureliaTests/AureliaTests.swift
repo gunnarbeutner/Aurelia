@@ -1398,6 +1398,8 @@ struct AureliaTests {
         #expect(AureliaShortcuts.seekForward.modifiers == [.option, .command])
         #expect(AureliaShortcuts.focusSearch.key == "f")
         #expect(AureliaShortcuts.focusSearch.modifiers == .command)
+        #expect(AureliaShortcuts.navigateBack.key == .escape)
+        #expect(AureliaShortcuts.navigateBack.modifiers.isEmpty)
         #expect(AureliaShortcuts.tab(5).key == "5")
         #expect(AureliaShortcuts.tab(5).modifiers == .command)
     }

@@ -7,6 +7,10 @@
 
 import SwiftUI
 
+private enum SettingsDestination: Hashable {
+    case downloads
+}
+
 enum StreamingQuality: String, CaseIterable, Identifiable {
     case low = "low"
     case medium = "medium"
@@ -91,6 +95,12 @@ struct SettingsView: View {
             }
         }
         .rootTabNavigationTitle("Settings")
+        .navigationDestination(for: SettingsDestination.self) { destination in
+            switch destination {
+            case .downloads:
+                DownloadsView()
+            }
+        }
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
             Button("Sign Out", role: .destructive) {
                 jellyfinService.signOut()
@@ -117,9 +127,7 @@ struct SettingsView: View {
                 .font(.appHeadline)
                 .foregroundColor(.appAccent)
 
-            NavigationLink {
-                DownloadsView()
-            } label: {
+            NavigationLink(value: SettingsDestination.downloads) {
                 HStack(spacing: 14) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.title2)

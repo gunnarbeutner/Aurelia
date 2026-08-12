@@ -10,10 +10,11 @@ import SwiftUI
 struct AureliaCommandActions {
     let selectedTab: Int
     let isPlayerPresented: Bool
+    let canNavigateBack: Bool
     let selectTab: (Int) -> Void
     let focusSearch: () -> Void
     let togglePlayer: () -> Void
-    let dismissPlayer: () -> Void
+    let navigateBack: () -> Void
 }
 
 private struct AureliaCommandActionsKey: FocusedValueKey {
@@ -34,7 +35,7 @@ enum AureliaShortcuts {
     static let seekBackward = KeyboardShortcut(.leftArrow, modifiers: [.option, .command])
     static let seekForward = KeyboardShortcut(.rightArrow, modifiers: [.option, .command])
     static let togglePlayer = KeyboardShortcut("u", modifiers: [.option, .command])
-    static let closePlayer = KeyboardShortcut(.escape, modifiers: [])
+    static let navigateBack = KeyboardShortcut(.escape, modifiers: [])
     static let focusSearch = KeyboardShortcut("f", modifiers: .command)
 
     static func tab(_ number: Int) -> KeyboardShortcut {
@@ -94,6 +95,14 @@ struct AureliaCommands: Commands {
         }
 
         CommandMenu("Navigate") {
+            Button("Back") {
+                actions?.navigateBack()
+            }
+            .keyboardShortcut(AureliaShortcuts.navigateBack)
+            .disabled(actions?.canNavigateBack != true)
+
+            Divider()
+
             Button("Search") {
                 actions?.focusSearch()
             }
@@ -115,13 +124,6 @@ struct AureliaCommands: Commands {
             }
             .keyboardShortcut(AureliaShortcuts.togglePlayer)
             .disabled(actions == nil || playerManager.currentTrack == nil)
-
-            if actions?.isPlayerPresented == true {
-                Button("Close Player") {
-                    actions?.dismissPlayer()
-                }
-                .keyboardShortcut(AureliaShortcuts.closePlayer)
-            }
         }
     }
 
