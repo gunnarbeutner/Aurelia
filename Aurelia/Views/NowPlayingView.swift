@@ -37,6 +37,34 @@ enum NowPlayingLayout {
     static let regularSingleColumnArtworkWidthFraction: CGFloat = 0.50
     static let regularSingleColumnArtworkHeightFraction: CGFloat = 0.36
 
+    /// Gap above the artwork and above the queue in the single column. Named
+    /// because the artwork is sized from what the rest of the column leaves,
+    /// which means the arithmetic has to account for them.
+    static let artworkTopSpacing: CGFloat = 16
+    static let queueTopSpacing: CGFloat = 24
+
+    /// Starting guess for the height of everything in the compact column that
+    /// is not artwork. Only used for the first layout pass — the real height is
+    /// measured, since it moves with Dynamic Type and with how many lines the
+    /// title and album wrap to.
+    static let compactChromeEstimate: CGFloat = 400
+
+    /// Small enough to be unusual, large enough to stay a recognisable cover.
+    /// Reached only when the column is too short to give the artwork its share,
+    /// where the content scrolls rather than shrinking to a sliver.
+    static let compactMinimumArtworkSize: CGFloat = 140
+
+    /// The artwork takes whatever the rest of the column leaves rather than a
+    /// fixed share of the viewport, so it grows to fill the first page instead
+    /// of stranding a band of empty space above the queue.
+    static func compactArtworkSize(
+        contentWidth: CGFloat,
+        availableHeight: CGFloat
+    ) -> CGFloat {
+        guard contentWidth > 0 else { return 0 }
+        return min(contentWidth, max(compactMinimumArtworkSize, availableHeight))
+    }
+
     /// Sizes the artwork against both axes so it grows with the window instead
     /// of stopping at a fixed ceiling. Width alone was capped at 320pt, which
     /// left large and split-screen windows with a small square and a lot of
@@ -92,6 +120,33 @@ enum NowPlayingLayout {
     ) -> Bool {
         guard !isCompactWidth, screenHeight > 0 else { return false }
         return screenWidth / screenHeight >= minimumTwoColumnAspectRatio
+    }
+}
+
+/// Totals the height of the compact player's non-artwork parts. Reported from
+/// two places — the top bar and the block under the artwork — so the values sum
+/// rather than replace each other.
+private struct PlayerChromeHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value += nextValue()
+    }
+}
+
+private extension View {
+    /// Measuring beats a constant here: the block's height moves with Dynamic
+    /// Type and with how many lines the title and album wrap to, and the
+    /// artwork is sized from whatever it leaves.
+    func reportingPlayerChromeHeight() -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PlayerChromeHeightKey.self,
+                    value: proxy.size.height
+                )
+            }
+        )
     }
 }
 
@@ -212,6 +267,8 @@ struct NowPlayingView: View {
     @State private var reorderTargetIndex: Int?
     @State private var reorderTranslation: CGFloat = 0
     @ObservedObject var sleepTimer = SleepTimerManager.shared
+    /// Measured height of everything in the compact column except the artwork.
+    @State private var chromeHeight = NowPlayingLayout.compactChromeEstimate
     var onDismiss: (() -> Void)?
     var embedsAirPlayButton = true
 
@@ -243,39 +300,69 @@ struct NowPlayingView: View {
     }
 
     private func compactContent(in geometry: GeometryProxy) -> some View {
-        let artworkSize = NowPlayingLayout.singleColumnArtworkSize(
-            forWidth: geometry.size.width,
-            height: geometry.size.height,
-            isCompactWidth: horizontalSizeClass == .compact
+        let contentWidth = NowPlayingLayout.contentWidth(for: geometry.size.width)
+        // The iOS tab bar floats over this view rather than insetting it, so
+        // its height has to come off the page or the queue shows through from
+        // behind the bar.
+        let pageHeight = max(
+            0,
+            geometry.size.height
+                - (horizontalSizeClass == .compact ? MiniPlayerLayout.tabBarClearance : 0)
+        )
+        let artworkSize = NowPlayingLayout.compactArtworkSize(
+            contentWidth: contentWidth,
+            availableHeight: pageHeight
+                - chromeHeight
+                - NowPlayingLayout.artworkTopSpacing
+                - NowPlayingLayout.queueTopSpacing
         )
 
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
-                topBar
-                    .padding(.top, horizontalSizeClass == .compact ? 20 : 8)
+                VStack(spacing: 0) {
+                    topBar
+                        .padding(.top, horizontalSizeClass == .compact ? 20 : 8)
+                        .reportingPlayerChromeHeight()
 
-                artworkSection(size: artworkSize)
-                .padding(.top, 16)
+                    // Any height the artwork could not take — because it hit
+                    // the width first — is split above and below, centring the
+                    // player rather than parking it against the top bar.
+                    Spacer(minLength: 0)
 
-                trackInfoSection
-                    .padding(.top, 20)
+                    artworkSection(size: artworkSize)
+                    .padding(.top, NowPlayingLayout.artworkTopSpacing)
 
-                progressSection
-                    .padding(.top, 24)
+                    VStack(spacing: 0) {
+                        trackInfoSection
+                            .padding(.top, 20)
 
-                controlsSection
-                    .padding(.top, 20)
+                        progressSection
+                            .padding(.top, 24)
 
-                secondaryActionsSection
-                    .padding(.top, 16)
+                        controlsSection
+                            .padding(.top, 20)
+
+                        secondaryActionsSection
+                            .padding(.top, 16)
+                    }
+                    .reportingPlayerChromeHeight()
+
+                    Spacer(minLength: NowPlayingLayout.queueTopSpacing)
+                }
+                // One page for the player, so the queue reads as a second
+                // screen instead of peeking out from under the tab bar.
+                .frame(minHeight: pageHeight, alignment: .top)
 
                 queueSection
-                    .padding(.top, 24)
 
                 Spacer().frame(height: 40)
             }
-            .frame(width: NowPlayingLayout.contentWidth(for: geometry.size.width))
+            .frame(width: contentWidth)
             .padding(.horizontal, NowPlayingLayout.horizontalPadding)
+        }
+        .onPreferenceChange(PlayerChromeHeightKey.self) { height in
+            guard height > 0 else { return }
+            chromeHeight = height
         }
         .accessibilityIdentifier("now-playing-scroll")
     }

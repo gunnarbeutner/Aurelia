@@ -2081,6 +2081,42 @@ struct AureliaActionTests {
         #expect(try await repository.offlineContainers(forTrackIDs: [], in: scope) == OfflineContainerIDs())
     }
 
+    /// The compact player fills its page: artwork takes whatever the rest of
+    /// the column leaves, so the queue starts on the next screen rather than
+    /// peeking out from a band of dead space.
+    @Test func compactArtworkTakesWhatTheColumnLeaves() {
+        let contentWidth: CGFloat = 353
+
+        // Height is the binding constraint on a phone-shaped page.
+        #expect(
+            NowPlayingLayout.compactArtworkSize(
+                contentWidth: contentWidth,
+                availableHeight: 300
+            ) == 300
+        )
+        // A tall page runs out of width first, and the remainder is what the
+        // surrounding spacers turn into centring.
+        #expect(
+            NowPlayingLayout.compactArtworkSize(
+                contentWidth: contentWidth,
+                availableHeight: 900
+            ) == contentWidth
+        )
+        // A column too short to give the artwork anything keeps it recognisable
+        // and lets the content scroll instead.
+        #expect(
+            NowPlayingLayout.compactArtworkSize(
+                contentWidth: contentWidth,
+                availableHeight: -40
+            ) == NowPlayingLayout.compactMinimumArtworkSize
+        )
+        // The floor never wins against a genuinely narrow column.
+        #expect(
+            NowPlayingLayout.compactArtworkSize(contentWidth: 100, availableHeight: -40) == 100
+        )
+        #expect(NowPlayingLayout.compactArtworkSize(contentWidth: 0, availableHeight: 400) == 0)
+    }
+
     @Test func offlineCatalogAnswersPerSubject() {
         let catalog = OfflineCatalog(
             trackIDs: ["t1"],
