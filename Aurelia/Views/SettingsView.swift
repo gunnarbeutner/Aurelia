@@ -434,7 +434,10 @@ struct SettingsView: View {
                         .foregroundColor(.appTextSecondary)
                 }
             }
-            .tint(.appAccent)
+            // A filled switch is a far larger field of colour than the accent
+            // carries anywhere else, and at full strength against a near-black
+            // card it shouts louder than the setting it describes.
+            .tint(.appAccentMuted)
             .settingsCard()
             .accessibilityIdentifier("continue-playing-similar-music")
         }
