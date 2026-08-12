@@ -2096,6 +2096,38 @@ struct AureliaActionTests {
         #expect(AutoplayPriming.shouldPrime(currentIndex: 5, queueCount: 5) == false)
     }
 
+    /// A continuation adds one batch, not everything the mix returned. More is
+    /// asked for than a batch needs, because songs already queued get dropped.
+    @Test func autoplayBatchIsCappedAndDeduplicated() {
+        func track(_ id: String) -> Track {
+            Track(
+                id: id,
+                name: id,
+                artistName: "Artist",
+                albumName: "Album",
+                duration: 200,
+                artworkURL: nil
+            )
+        }
+        let mix = (0..<AutoplayPriming.requestSize).map { track("mix-\($0)") }
+
+        let full = AutoplayPriming.batch(from: mix, excluding: [])
+        #expect(full.count == AutoplayPriming.batchSize)
+        #expect(full.first?.id == "mix-0")
+
+        // Over-requesting is what absorbs the songs the queue already holds, so
+        // a batch still fills up after they are dropped.
+        let alreadyQueued = Set((0..<8).map { "mix-\($0)" })
+        let trimmed = AutoplayPriming.batch(from: mix, excluding: alreadyQueued)
+        #expect(trimmed.count == AutoplayPriming.batchSize)
+        #expect(trimmed.allSatisfy { !alreadyQueued.contains($0.id) })
+
+        // A mix that repeats itself must not pad the batch with duplicates.
+        let repetitive = [track("a"), track("a"), track("b")]
+        #expect(AutoplayPriming.batch(from: repetitive, excluding: []).map(\.id) == ["a", "b"])
+        #expect(AutoplayPriming.batch(from: [], excluding: []).isEmpty)
+    }
+
     /// A suggestion stops being a suggestion once it plays — the listener is in
     /// it now, so the run reverts to being the queue rather than having the
     /// marker creep down the list one song at a time.

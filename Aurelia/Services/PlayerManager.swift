@@ -54,6 +54,28 @@ enum AutoplayPriming {
     /// that a long deliberate queue is not buried under suggestions early on.
     static let leadTime = 3
 
+    /// Songs one continuation adds. The queue keeps extending in batches this
+    /// size, so it only has to be enough to play on while the next one is
+    /// fetched — a longer run of guesses just buries Up Next.
+    static let batchSize = 20
+
+    /// More than a batch needs, because the mix arrives with items that get
+    /// dropped: songs already queued, and anything that is not audio.
+    static let requestSize = 30
+
+    /// Trims a mix down to one batch — deduplicated against what is queued,
+    /// and capped. Non-audio entries are already gone by this point.
+    static func batch(from suggestions: [Track], excluding excluded: Set<String>) -> [Track] {
+        var seen = excluded
+        var batch: [Track] = []
+        for track in suggestions {
+            guard batch.count < batchSize else { break }
+            guard seen.insert(track.id).inserted else { continue }
+            batch.append(track)
+        }
+        return batch
+    }
+
     static func shouldPrime(currentIndex: Int, queueCount: Int) -> Bool {
         guard queueCount > 0, currentIndex >= 0, currentIndex < queueCount else { return false }
         return queueCount - 1 - currentIndex <= leadTime
@@ -1053,7 +1075,10 @@ class PlayerManager: NSObject, ObservableObject {
         autoplayRequestTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let items = try await jellyfinService.fetchInstantMix(itemId: seed.id, limit: 50)
+                let items = try await jellyfinService.fetchInstantMix(
+                    itemId: seed.id,
+                    limit: AutoplayPriming.requestSize
+                )
                 try Task.checkCancellation()
                 let suggestions = items
                     .filter { $0.Type == .Audio }
@@ -1097,13 +1122,10 @@ class PlayerManager: NSObject, ObservableObject {
         // Finished queue entries are history, not upcoming duplicates. An
         // AudioMuse continuation of a Daily Mix often overlaps that source
         // mix; excluding every historical item could discard the whole result.
-        let existingIDs = Set(queue[currentIndex...].map(\.id))
-        var seen = existingIDs
-        let unique = suggestions.filter { track in
-            guard !seen.contains(track.id) else { return false }
-            seen.insert(track.id)
-            return true
-        }
+        let unique = AutoplayPriming.batch(
+            from: suggestions,
+            excluding: Set(queue[currentIndex...].map(\.id))
+        )
         guard !unique.isEmpty else {
             logger.info(
                 "AudioMuse returned \(suggestions.count) continuation items for \(seedID, privacy: .private(mask: .hash)), but none were new relative to the current/upcoming queue"
