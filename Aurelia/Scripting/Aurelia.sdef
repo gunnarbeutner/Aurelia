@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="Aurelia Terminology">
+    <suite name="Aurelia Suite" code="Aurl" description="Commands for driving Aurelia's interface.">
+
+        <command name="show player" code="AurlShwP" description="Present the Now Playing view.">
+            <cocoa class="Aurelia.AureliaShowPlayerCommand"/>
+            <result type="text" description="Resulting player state: presented, hidden, or no track."/>
+        </command>
+
+        <command name="hide player" code="AurlHidP" description="Dismiss the Now Playing view.">
+            <cocoa class="Aurelia.AureliaHidePlayerCommand"/>
+            <result type="text" description="Resulting player state: presented, hidden, or no track."/>
+        </command>
+
+        <command name="player state" code="AurlStaP" description="Report whether the Now Playing view is presented.">
+            <cocoa class="Aurelia.AureliaPlayerStateCommand"/>
+            <result type="text" description="presented, hidden, or no track."/>
+        </command>
+
+    </suite>
+</dictionary>

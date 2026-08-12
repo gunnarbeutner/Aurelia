@@ -19,6 +19,14 @@ class NavigationCoordinator: ObservableObject {
     /// Set this to navigate to an album after dismissing NowPlaying
     @Published var pendingAlbumNavigation: Album?
 
+    /// Presentation requested from outside the view tree, currently by
+    /// AppleScript. The view clears it once applied.
+    @Published var pendingPlayerPresentation: Bool?
+
+    /// Mirrors the player's real presentation state so out-of-process callers
+    /// can read it directly instead of inferring it from the view hierarchy.
+    @Published var isPlayerPresented = false
+
     // MARK: - Media Navigation
 
     /// Navigates to the album associated with a track. Track metadata from

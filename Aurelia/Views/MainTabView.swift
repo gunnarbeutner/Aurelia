@@ -153,6 +153,21 @@ struct MainTabView: View {
                 libraryPath.append(album)
             }
         }
+        .onChange(of: navCoordinator.pendingPlayerPresentation) { _, request in
+            guard let request else { return }
+            navCoordinator.pendingPlayerPresentation = nil
+            guard playerManager.currentTrack != nil else { return }
+            // Applied without animation: a scripted caller should find the
+            // player settled by the time the command returns, rather than
+            // racing the presentation spring.
+            showNowPlaying = request
+        }
+        .onChange(of: showNowPlaying) { _, presented in
+            navCoordinator.isPlayerPresented = presented
+        }
+        .onAppear {
+            navCoordinator.isPlayerPresented = showNowPlaying
+        }
         .focusedSceneValue(\.appCommandActions, commandActions)
     }
 
