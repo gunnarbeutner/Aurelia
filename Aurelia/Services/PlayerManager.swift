@@ -992,7 +992,7 @@ class PlayerManager: NSObject, ObservableObject {
         autoplayRequestTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let items = try await jellyfinService.fetchInstantMix(itemId: seed.id, limit: 25)
+                let items = try await jellyfinService.fetchInstantMix(itemId: seed.id, limit: 50)
                 try Task.checkCancellation()
                 let suggestions = items
                     .filter { $0.Type == .Audio }
@@ -1028,7 +1028,10 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
-        let existingIDs = Set(queue.map(\.id))
+        // Finished queue entries are history, not upcoming duplicates. An
+        // AudioMuse continuation of a Daily Mix often overlaps that source
+        // mix; excluding every historical item could discard the whole result.
+        let existingIDs = Set(queue[currentIndex...].map(\.id))
         var seen = existingIDs
         let unique = suggestions.filter { track in
             guard !seen.contains(track.id) else { return false }
@@ -1036,6 +1039,9 @@ class PlayerManager: NSObject, ObservableObject {
             return true
         }
         guard !unique.isEmpty else {
+            logger.info(
+                "AudioMuse returned \(suggestions.count) continuation items for \(seedID, privacy: .private(mask: .hash)), but none were new relative to the current/upcoming queue"
+            )
             autoplayRequestTask = nil
             autoplayRequestSeedID = nil
             return
