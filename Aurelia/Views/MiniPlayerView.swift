@@ -131,7 +131,7 @@ struct MiniPlayerView: View {
                 } label: {
                     Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.appTextSecondary)
+                        .foregroundColor(.appText)
                         .frame(width: 36, height: 44)
                 }
                 .buttonStyle(.plain)
