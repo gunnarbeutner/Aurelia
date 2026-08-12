@@ -197,6 +197,295 @@ struct AureliaTests {
         #expect(empty.hasCachedLibrary)
     }
 
+    @Test func stagedFullSyncSurvivesTerminationAndStaysHiddenUntilPromoted() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let stale = Album(
+            id: "stale",
+            name: "Previous Catalog",
+            artistName: "Old Artist",
+            artistId: "old",
+            year: 1990,
+            artworkURL: nil,
+            genreIDs: nil
+        )
+        let artist = Artist(id: "artist", name: "Björk", bio: nil, albumCount: 1, artworkURL: nil)
+        let album = Album(
+            id: "album",
+            name: "Homogenic",
+            artistName: artist.name,
+            artistId: artist.id,
+            year: 1997,
+            artworkURL: nil,
+            genreIDs: ["electronic"]
+        )
+        let track = Track(
+            id: "track",
+            name: "Jóga",
+            artistName: artist.name,
+            albumName: album.name,
+            duration: 300,
+            artworkURL: nil,
+            indexNumber: 2,
+            albumId: album.id,
+            artistId: artist.id,
+            artistIDs: [artist.id],
+            genreIDs: ["electronic"]
+        )
+        let playlist = Playlist(
+            id: "playlist",
+            name: "Iceland",
+            trackCount: 1,
+            artworkURL: nil,
+            dateCreated: nil
+        )
+
+        // A previously synced catalog the interrupted sync must not disturb.
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [stale], artists: [], tracks: [], playlists: [],
+                genres: [], playlistEntries: []
+            ),
+            in: scope
+        )
+        let baselineRevision = try #require(try await repository.syncState(in: scope)).catalogRevision
+
+        // Stage the first two pages of a new full sync.
+        try await repository.appendStagedChunk(
+            LibraryCatalog(
+                albums: [album], artists: [], tracks: [], playlists: [],
+                genres: [Genre(id: "electronic", name: "Electronic", albumCount: 1)],
+                playlistEntries: []
+            ),
+            stage: "albums",
+            nextOffset: 1,
+            detail: nil,
+            startedAt: startedAt,
+            in: scope
+        )
+        try await repository.appendStagedChunk(
+            LibraryCatalog(
+                albums: [], artists: [artist], tracks: [], playlists: [],
+                genres: [], playlistEntries: []
+            ),
+            stage: "artists",
+            nextOffset: 1,
+            detail: nil,
+            startedAt: startedAt,
+            in: scope
+        )
+
+        // Readers keep seeing the previous complete catalog, never a partial one.
+        let midway = try await repository.librarySnapshot(in: scope)
+        #expect(midway.albums.map(\.id) == [stale.id])
+        #expect(midway.artists.isEmpty)
+        #expect(try await repository.syncState(in: scope)?.catalogRevision == baselineRevision)
+        #expect(try await repository.search("Homogenic", filter: .all, in: scope).isEmpty)
+
+        // Reopening the file stands in for a relaunch after termination.
+        let reopened = try LibraryRepository(databaseURL: databaseURL)
+        let resumed = try #require(try await reopened.stagingProgress(in: scope))
+        #expect(resumed.stage == "artists")
+        #expect(resumed.nextOffset == 1)
+        #expect(resumed.startedAt == startedAt)
+
+        // Resume where the previous run died rather than restarting.
+        try await reopened.appendStagedChunk(
+            LibraryCatalog(
+                albums: [], artists: [], tracks: [track], playlists: [playlist],
+                genres: [], playlistEntries: [
+                    LibraryPlaylistEntry(playlistID: playlist.id, track: track, position: 0)
+                ]
+            ),
+            stage: "playlistEntries",
+            nextOffset: 1,
+            detail: playlist.id,
+            startedAt: startedAt,
+            in: scope
+        )
+        #expect(try await reopened.stagedPlaylistIDs(in: scope) == [playlist.id])
+
+        try await reopened.promoteStagedLibrary(in: scope, syncedAt: startedAt)
+
+        // The staged catalog is now live, in one step, with relationships intact.
+        let promoted = try await reopened.librarySnapshot(in: scope, includeTracks: true)
+        #expect(promoted.albums.map(\.id) == [album.id])
+        #expect(promoted.artists.map(\.id) == [artist.id])
+        #expect(promoted.tracks.map(\.id) == [track.id])
+        #expect(try await reopened.tracks(forArtist: artist.id, in: scope).map(\.id) == [track.id])
+        #expect(try await reopened.albums(inGenre: "electronic", in: scope).map(\.id) == [album.id])
+        #expect(try await reopened.tracks(inPlaylist: playlist.id, in: scope).map(\.id) == [track.id])
+        #expect(try await reopened.search("Homogenic", filter: .all, in: scope).isEmpty == false)
+        #expect(try await reopened.syncState(in: scope)?.catalogRevision == baselineRevision + 1)
+
+        // Promotion consumes the staged rows and the cursor.
+        #expect(try await reopened.stagingProgress(in: scope) == nil)
+        #expect(try await reopened.stagedPlaylistIDs(in: scope).isEmpty)
+    }
+
+    @Test func discardedStagingLeavesTheLiveCatalogUntouched() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let live = Album(
+            id: "live",
+            name: "Live Catalog",
+            artistName: "Artist",
+            artistId: "artist",
+            year: 2001,
+            artworkURL: nil,
+            genreIDs: nil
+        )
+
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [live], artists: [], tracks: [], playlists: [],
+                genres: [], playlistEntries: []
+            ),
+            in: scope
+        )
+        try await repository.appendStagedChunk(
+            LibraryCatalog(
+                albums: [Album(
+                    id: "abandoned",
+                    name: "Abandoned",
+                    artistName: "Artist",
+                    artistId: "artist",
+                    year: 2002,
+                    artworkURL: nil,
+                    genreIDs: nil
+                )],
+                artists: [], tracks: [], playlists: [], genres: [], playlistEntries: []
+            ),
+            stage: "albums",
+            nextOffset: 1,
+            detail: nil,
+            startedAt: Date(),
+            in: scope
+        )
+
+        try await repository.resetStagedLibrary(in: scope)
+
+        #expect(try await repository.stagingProgress(in: scope) == nil)
+        let snapshot = try await repository.librarySnapshot(in: scope)
+        #expect(snapshot.albums.map(\.id) == [live.id])
+    }
+
+    @Test func incrementalDeltaIsAtomicPreservesStateAndAdvancesRevision() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let original = Track(
+            id: "track",
+            name: "Old Name",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 60,
+            artworkURL: nil,
+            albumId: "album",
+            artistId: "artist"
+        )
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [], artists: [], tracks: [original],
+                playlists: [], genres: [], playlistEntries: []
+            ),
+            in: scope,
+            syncedAt: Date(timeIntervalSince1970: 100)
+        )
+        await repository.setFavorite(true, for: original, in: scope)
+        let before = try #require(try await repository.syncState(in: scope))
+
+        var changedTrack = original
+        changedTrack = Track(
+            id: changedTrack.id,
+            name: "New Name",
+            artistName: changedTrack.artistName,
+            albumName: changedTrack.albumName,
+            duration: changedTrack.duration,
+            artworkURL: changedTrack.artworkURL,
+            albumId: changedTrack.albumId,
+            artistId: changedTrack.artistId
+        )
+        let watermark = Date(timeIntervalSince1970: 200)
+        let commit = try await repository.applyDelta(
+            LibraryDelta(
+                tracks: [changedTrack],
+                metadataWatermark: watermark,
+                userDataWatermark: watermark
+            ),
+            in: scope
+        )
+
+        #expect(commit.baseRevision == before.catalogRevision)
+        #expect(commit.revision == before.catalogRevision + 1)
+        #expect(try await repository.search("new", filter: .tracks, in: scope).count == 1)
+        #expect(try await repository.search("old", filter: .tracks, in: scope).isEmpty)
+        #expect(await repository.favoriteSnapshot(in: scope).tracks.first?.isFavorite == true)
+        let after = try #require(try await repository.syncState(in: scope))
+        #expect(after.metadataWatermark == watermark)
+
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                userData: [
+                    LibraryUserDataChange(
+                        itemID: original.id,
+                        isFavorite: false,
+                        lastPlayedAt: nil,
+                        playCount: nil,
+                        playbackPositionTicks: nil
+                    )
+                ],
+                metadataWatermark: watermark,
+                userDataWatermark: watermark
+            ),
+            in: scope
+        )
+        #expect(await repository.favoriteSnapshot(in: scope).tracks.isEmpty)
+
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                removedItemIDs: [original.id],
+                metadataWatermark: watermark,
+                userDataWatermark: watermark
+            ),
+            in: scope
+        )
+        #expect(try await repository.search("new", filter: .tracks, in: scope).isEmpty)
+    }
+
+    @Test func watermarkOnlyDeltaDoesNotCreateAWatchRevision() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: []
+            ),
+            in: scope
+        )
+        let before = try #require(try await repository.syncState(in: scope))
+        let watermark = Date(timeIntervalSince1970: 900)
+        let commit = try await repository.applyDelta(
+            LibraryDelta(metadataWatermark: watermark, userDataWatermark: watermark),
+            in: scope
+        )
+        #expect(!commit.changed)
+        #expect(commit.revision == before.catalogRevision)
+        #expect(try await repository.syncState(in: scope)?.metadataWatermark == watermark)
+    }
+
     @Test func sqliteFTSSupportsPrefixesDiacriticsFiltersAndScopes() async throws {
         let databaseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

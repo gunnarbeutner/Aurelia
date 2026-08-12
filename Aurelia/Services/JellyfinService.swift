@@ -322,7 +322,21 @@ class JellyfinService: ObservableObject {
         ).Items
     }
 
-    func fetchMusicItemsPage(includeItemTypes: String = "MusicAlbum,Playlist", artistIds: String? = nil, parentId: String? = nil, excludeItemTypes: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
+    func fetchMusicItemsPage(
+        includeItemTypes: String = "MusicAlbum,Playlist",
+        artistIds: String? = nil,
+        parentId: String? = nil,
+        excludeItemTypes: String? = nil,
+        limit: Int? = nil,
+        startIndex: Int? = nil,
+        ids: [String]? = nil,
+        minDateLastSaved: Date? = nil,
+        minDateLastSavedForUser: Date? = nil,
+        enableUserData: Bool = true,
+        enableImages: Bool = true,
+        enableTotalRecordCount: Bool = true,
+        fields: String? = nil
+    ) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = UserDefaults.standard.string(forKey: "jellyfinUserId") else {
             throw JellyfinError.notAuthenticated
@@ -334,7 +348,10 @@ class JellyfinService: ObservableObject {
             URLQueryItem(name: "Recursive", value: "true"),
             URLQueryItem(name: "SortBy", value: "SortName"),
             URLQueryItem(name: "SortOrder", value: "Ascending"),
-            URLQueryItem(name: "Fields", value: Self.libraryMetadataFields)
+            URLQueryItem(name: "Fields", value: fields ?? Self.libraryMetadataFields),
+            URLQueryItem(name: "EnableUserData", value: String(enableUserData)),
+            URLQueryItem(name: "EnableImages", value: String(enableImages)),
+            URLQueryItem(name: "EnableTotalRecordCount", value: String(enableTotalRecordCount))
         ]
 
         // Add pagination if specified
@@ -359,6 +376,22 @@ class JellyfinService: ObservableObject {
         if let excludeItemTypes = excludeItemTypes {
             components.queryItems?.append(URLQueryItem(name: "ExcludeItemTypes", value: excludeItemTypes))
         }
+        if let ids, !ids.isEmpty {
+            components.queryItems?.append(URLQueryItem(name: "Ids", value: ids.joined(separator: ",")))
+        }
+        if let minDateLastSaved {
+            components.queryItems?.append(
+                URLQueryItem(name: "MinDateLastSaved", value: Self.jellyfinDate(minDateLastSaved))
+            )
+        }
+        if let minDateLastSavedForUser {
+            components.queryItems?.append(
+                URLQueryItem(
+                    name: "MinDateLastSavedForUser",
+                    value: Self.jellyfinDate(minDateLastSavedForUser)
+                )
+            )
+        }
 
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
@@ -374,6 +407,24 @@ class JellyfinService: ObservableObject {
         }
 
         return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
+    }
+
+    /// Fetches changed items in bounded ID batches. Jellyfin accepts a
+    /// comma-separated `Ids` filter, but keeping the request small avoids URL
+    /// length limits on reverse proxies.
+    func fetchMusicItems(ids: [String]) async throws -> [BaseItemDto] {
+        var result: [BaseItemDto] = []
+        for start in stride(from: 0, to: ids.count, by: 100) {
+            let end = min(start + 100, ids.count)
+            let page = try await fetchMusicItemsPage(
+                includeItemTypes: "Audio,MusicAlbum,Playlist,MusicArtist",
+                limit: end - start,
+                ids: Array(ids[start..<end]),
+                enableTotalRecordCount: false
+            )
+            result.append(contentsOf: page.Items)
+        }
+        return result
     }
 
     /// Fetches all artists in the music library
@@ -1270,6 +1321,31 @@ class JellyfinService: ObservableObject {
         return url
     }
 
+    private static func jellyfinDate(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    func makeLibraryWebSocketRequest(path: String = "socket") throws -> URLRequest {
+        guard let token = authToken else { throw JellyfinError.notAuthenticated }
+        guard path == "socket" || path == "embywebsocket" else {
+            throw JellyfinError.invalidURL
+        }
+        var components = try buildURLComponents(path: path)
+        components.scheme = components.scheme == "https" ? "wss" : "ws"
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "deviceId", value: deviceId)
+        ]
+        var request = URLRequest(url: try buildURL(from: components))
+        request.setValue(
+            generateAuthorizationHeader(token: token),
+            forHTTPHeaderField: "X-Emby-Authorization"
+        )
+        return request
+    }
+
     /// Generates authorization header for Jellyfin API
     private func generateAuthorizationHeader(token: String?) -> String {
         let deviceName = UIDevice.current.model // "iPhone" or "iPad"
@@ -1361,6 +1437,9 @@ class JellyfinService: ObservableObject {
         // Stop playback before signing out
         PlayerManager.shared.pause()
         PlayerManager.shared.clearQueue()
+        Task { @MainActor in
+            LibrarySyncCoordinator.shared.stopEventMonitoring()
+        }
 
         isAuthenticated = false
         currentUser = nil

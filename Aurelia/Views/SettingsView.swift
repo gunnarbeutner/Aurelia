@@ -47,7 +47,9 @@ struct SettingsView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var themeManager = ThemeManager.shared
     @ObservedObject var downloadManager = DownloadManager.shared
+    @ObservedObject private var libraryStore = LibraryStore.shared
     @State private var showSignOutConfirmation = false
+    @State private var showRebuildConfirmation = false
     @AppStorage("preferredAppearance") private var preferredAppearance = "always_dark"
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
 
@@ -97,6 +99,14 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to sign out? You'll need to reconnect to your Jellyfin server.")
+        }
+        .confirmationDialog("Rebuild Local Library", isPresented: $showRebuildConfirmation) {
+            Button("Rebuild", role: .destructive) {
+                Task { await libraryStore.rebuild() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This performs a complete Jellyfin metadata download. Routine refreshes will remain incremental.")
         }
     }
 
@@ -455,6 +465,34 @@ struct SettingsView: View {
 
                     Spacer()
                 }
+
+                Divider()
+                    .background(Color.white.opacity(0.1))
+
+                Button {
+                    showRebuildConfirmation = true
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundColor(.appTertiary)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Rebuild Local Library")
+                                .font(.appBody)
+                                .foregroundColor(.appText)
+                            Text(libraryStore.syncMessage ?? "Use only to repair the local cache")
+                                .font(.appCaption)
+                                .foregroundColor(.appTextSecondary)
+                        }
+                        Spacer()
+                        if libraryStore.isRefreshing {
+                            ProgressView(value: libraryStore.syncProgress)
+                                .frame(width: 70)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(libraryStore.isRefreshing || !jellyfinService.isAuthenticated)
             }
             .padding()
             .background(

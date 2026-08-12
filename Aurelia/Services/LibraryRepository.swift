@@ -29,6 +29,27 @@ nonisolated struct LibraryScope: Hashable, Sendable {
         }
         self.userID = trimmedUserID
     }
+
+    private init(serverKey: String, userID: String) {
+        self.serverKey = serverKey
+        self.userID = userID
+    }
+
+    /// Scope a full sync accumulates into before it is promoted. Jellyfin user
+    /// IDs are GUIDs, so the suffix cannot collide with a live scope, and every
+    /// read filters on the exact pair — staged rows stay invisible to the UI.
+    var staging: LibraryScope {
+        LibraryScope(serverKey: serverKey, userID: userID + "|staging")
+    }
+}
+
+/// Where a resumable full sync left off. `detail` carries the playlist being
+/// paged while the sync is in the playlist-entry stage.
+nonisolated struct LibraryStagingProgress: Equatable, Sendable {
+    let stage: String
+    let nextOffset: Int
+    let detail: String?
+    let startedAt: Date
 }
 
 nonisolated struct LibrarySnapshot: Sendable {
@@ -38,8 +59,17 @@ nonisolated struct LibrarySnapshot: Sendable {
     let playlists: [Playlist]
     let genres: [Genre]
     let lastSyncedAt: Date?
+    let revision: Int64
 
     var hasCachedLibrary: Bool { lastSyncedAt != nil }
+}
+
+nonisolated struct LibrarySyncState: Equatable, Sendable {
+    let librarySyncedAt: Date
+    let metadataWatermark: Date
+    let userDataWatermark: Date
+    let lastReconciledAt: Date?
+    let catalogRevision: Int64
 }
 
 nonisolated struct LibraryPlaylistEntry: Hashable, Sendable {
@@ -55,6 +85,98 @@ nonisolated struct LibraryCatalog: Sendable {
     let playlists: [Playlist]
     let genres: [Genre]
     let playlistEntries: [LibraryPlaylistEntry]
+    let userData: [LibraryUserDataChange]
+
+    init(
+        albums: [Album],
+        artists: [Artist],
+        tracks: [Track],
+        playlists: [Playlist],
+        genres: [Genre],
+        playlistEntries: [LibraryPlaylistEntry],
+        userData: [LibraryUserDataChange] = []
+    ) {
+        self.albums = albums
+        self.artists = artists
+        self.tracks = tracks
+        self.playlists = playlists
+        self.genres = genres
+        self.playlistEntries = playlistEntries
+        self.userData = userData
+    }
+}
+
+/// One transactional update to the local catalog. Reference inventories are
+/// optional because artists and genres are reconciled less frequently than
+/// ordinary item metadata.
+nonisolated struct LibraryDelta: Sendable {
+    var albums: [Album] = []
+    var artists: [Artist] = []
+    var tracks: [Track] = []
+    var playlists: [Playlist] = []
+    var genres: [Genre] = []
+    var userData: [LibraryUserDataChange] = []
+    var refreshedPlaylistIDs = Set<String>()
+    var playlistEntries: [LibraryPlaylistEntry] = []
+    var removedItemIDs = Set<String>()
+    var replacementArtists: [Artist]?
+    var replacementGenres: [Genre]?
+    var metadataWatermark: Date
+    var userDataWatermark: Date
+    var reconciledAt: Date?
+
+    init(
+        albums: [Album] = [],
+        artists: [Artist] = [],
+        tracks: [Track] = [],
+        playlists: [Playlist] = [],
+        genres: [Genre] = [],
+        userData: [LibraryUserDataChange] = [],
+        refreshedPlaylistIDs: Set<String> = [],
+        playlistEntries: [LibraryPlaylistEntry] = [],
+        removedItemIDs: Set<String> = [],
+        replacementArtists: [Artist]? = nil,
+        replacementGenres: [Genre]? = nil,
+        metadataWatermark: Date,
+        userDataWatermark: Date,
+        reconciledAt: Date? = nil
+    ) {
+        self.albums = albums
+        self.artists = artists
+        self.tracks = tracks
+        self.playlists = playlists
+        self.genres = genres
+        self.userData = userData
+        self.refreshedPlaylistIDs = refreshedPlaylistIDs
+        self.playlistEntries = playlistEntries
+        self.removedItemIDs = removedItemIDs
+        self.replacementArtists = replacementArtists
+        self.replacementGenres = replacementGenres
+        self.metadataWatermark = metadataWatermark
+        self.userDataWatermark = userDataWatermark
+        self.reconciledAt = reconciledAt
+    }
+
+    var changeCount: Int {
+        albums.count + artists.count + tracks.count + playlists.count + genres.count
+            + userData.count + removedItemIDs.count + refreshedPlaylistIDs.count
+            + (replacementArtists?.count ?? 0) + (replacementGenres?.count ?? 0)
+    }
+}
+
+nonisolated struct LibraryUserDataChange: Hashable, Sendable {
+    let itemID: String
+    let isFavorite: Bool?
+    let lastPlayedAt: Date?
+    let playCount: Int?
+    let playbackPositionTicks: Int64?
+}
+
+nonisolated struct LibraryDeltaCommit: Sendable {
+    let baseRevision: Int64
+    let revision: Int64
+    let changed: Bool
+    let removedItemIDs: Set<String>
 }
 
 nonisolated enum LibrarySearchFilter: Sendable {
@@ -159,23 +281,25 @@ actor LibraryRepository: RecentTrackCaching {
 
     // MARK: - Library snapshots
 
-    func librarySnapshot(in scope: LibraryScope) throws -> LibrarySnapshot {
+    func librarySnapshot(in scope: LibraryScope, includeTracks: Bool = true) throws -> LibrarySnapshot {
         try database.read { db in
             let favorites = try Self.favoriteItemIDs(db, scope: scope)
             let albums = try Self.items(db, scope: scope, type: .album)
                 .map { $0.album(isFavorite: favorites.contains($0.itemID)) }
             let artists = try Self.items(db, scope: scope, type: .artist)
                 .map { $0.artist(isFavorite: favorites.contains($0.itemID)) }
-            let tracks = try Self.items(db, scope: scope, type: .track)
-                .map { $0.track(isFavorite: favorites.contains($0.itemID)) }
+            let tracks = includeTracks
+                ? try Self.items(db, scope: scope, type: .track)
+                    .map { $0.track(isFavorite: favorites.contains($0.itemID)) }
+                : []
             let playlists = try Self.items(db, scope: scope, type: .playlist)
                 .map { $0.playlist(isFavorite: favorites.contains($0.itemID)) }
             let genres = try Self.items(db, scope: scope, type: .genre)
                 .map { $0.genre() }
-            let syncedAt = try Date.fetchOne(
+            let syncRow = try Row.fetchOne(
                 db,
                 sql: """
-                    SELECT librarySyncedAt
+                    SELECT librarySyncedAt, catalogRevision
                     FROM librarySyncState
                     WHERE serverKey = ? AND userID = ?
                     """,
@@ -187,7 +311,36 @@ actor LibraryRepository: RecentTrackCaching {
                 tracks: tracks,
                 playlists: playlists,
                 genres: genres,
-                lastSyncedAt: syncedAt
+                lastSyncedAt: syncRow?["librarySyncedAt"],
+                revision: syncRow?["catalogRevision"] ?? 0
+            )
+        }
+    }
+
+    func syncState(in scope: LibraryScope) throws -> LibrarySyncState? {
+        try database.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT librarySyncedAt, metadataWatermark, userDataWatermark,
+                           lastReconciledAt, catalogRevision
+                    FROM librarySyncState
+                    WHERE serverKey = ? AND userID = ?
+                    """,
+                arguments: [scope.serverKey, scope.userID]
+            ) else { return nil }
+            let librarySyncedAt: Date = row["librarySyncedAt"]
+            return LibrarySyncState(
+                librarySyncedAt: librarySyncedAt,
+                // The first post-migration delta deliberately overlaps the
+                // prior successful sync. This closes the small window between
+                // the server query and the old full-catalog commit.
+                metadataWatermark: row["metadataWatermark"]
+                    ?? librarySyncedAt.addingTimeInterval(-86_400),
+                userDataWatermark: row["userDataWatermark"]
+                    ?? librarySyncedAt.addingTimeInterval(-86_400),
+                lastReconciledAt: row["lastReconciledAt"],
+                catalogRevision: row["catalogRevision"] ?? 0
             )
         }
     }
@@ -219,12 +372,22 @@ actor LibraryRepository: RecentTrackCaching {
             try Self.save(playlists: playlists, db: db, scope: scope)
             try db.execute(
                 sql: """
-                    INSERT INTO librarySyncState (serverKey, userID, librarySyncedAt)
-                    VALUES (?, ?, ?)
+                    INSERT INTO librarySyncState (
+                        serverKey, userID, librarySyncedAt,
+                        metadataWatermark, userDataWatermark, lastReconciledAt,
+                        catalogRevision
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1)
                     ON CONFLICT(serverKey, userID) DO UPDATE SET
-                        librarySyncedAt = excluded.librarySyncedAt
+                        librarySyncedAt = excluded.librarySyncedAt,
+                        metadataWatermark = excluded.metadataWatermark,
+                        userDataWatermark = excluded.userDataWatermark,
+                        lastReconciledAt = excluded.lastReconciledAt,
+                        catalogRevision = librarySyncState.catalogRevision + 1
                     """,
-                arguments: [scope.serverKey, scope.userID, syncedAt]
+                arguments: [
+                    scope.serverKey, scope.userID, syncedAt,
+                    syncedAt, syncedAt, syncedAt
+                ]
             )
         }
     }
@@ -238,27 +401,40 @@ actor LibraryRepository: RecentTrackCaching {
         syncedAt: Date = Date()
     ) throws {
         try database.write { db in
-            try db.execute(
-                sql: "DELETE FROM itemArtist WHERE serverKey = ? AND userID = ?",
-                arguments: [scope.serverKey, scope.userID]
-            )
-            try db.execute(
-                sql: "DELETE FROM itemGenre WHERE serverKey = ? AND userID = ?",
-                arguments: [scope.serverKey, scope.userID]
-            )
-            try db.execute(
-                sql: "DELETE FROM playlistEntry WHERE serverKey = ? AND userID = ?",
-                arguments: [scope.serverKey, scope.userID]
-            )
-            try db.execute(
-                sql: "DELETE FROM libraryItemFTS WHERE serverKey = ? AND userID = ?",
-                arguments: [scope.serverKey, scope.userID]
-            )
-            try db.execute(
-                sql: "DELETE FROM libraryItem WHERE serverKey = ? AND userID = ?",
-                arguments: [scope.serverKey, scope.userID]
-            )
+            try Self.deleteCatalogRows(db, scope: scope)
+            try Self.write(catalog: catalog, db: db, scope: scope)
 
+            try Self.rebuildSearchIndex(db, scope: scope)
+            try db.execute(
+                sql: """
+                    INSERT INTO librarySyncState (
+                        serverKey, userID, librarySyncedAt,
+                        metadataWatermark, userDataWatermark, lastReconciledAt,
+                        catalogRevision
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                    ON CONFLICT(serverKey, userID) DO UPDATE SET
+                        librarySyncedAt = excluded.librarySyncedAt,
+                        metadataWatermark = excluded.metadataWatermark,
+                        userDataWatermark = excluded.userDataWatermark,
+                        lastReconciledAt = excluded.lastReconciledAt,
+                        catalogRevision = librarySyncState.catalogRevision + 1
+                    """,
+                arguments: [
+                    scope.serverKey, scope.userID, syncedAt,
+                    syncedAt, syncedAt, syncedAt
+                ]
+            )
+        }
+    }
+
+    /// Writes catalog rows and their relationships into `scope`. Shared by the
+    /// one-shot full replace and by staged page-at-a-time accumulation, so both
+    /// paths produce byte-identical rows.
+    private static func write(
+        catalog: LibraryCatalog,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
             try Self.save(albums: catalog.albums, db: db, scope: scope)
             try Self.save(artists: catalog.artists, db: db, scope: scope)
             try Self.save(tracks: catalog.tracks, db: db, scope: scope)
@@ -318,16 +494,314 @@ actor LibraryRepository: RecentTrackCaching {
                 )
             }
 
+            // The initial catalog response already contains Jellyfin user
+            // state. Persist all of it during the same transaction so the
+            // first SQLite-backed UI snapshot does not need a second pass to
+            // recover favorites, play history, or resume positions.
+            for change in catalog.userData {
+                try Self.updateUserState(
+                    db,
+                    scope: scope,
+                    itemID: change.itemID,
+                    isFavorite: change.isFavorite,
+                    lastPlayedAt: change.lastPlayedAt,
+                    playCount: change.playCount,
+                    playbackPositionTicks: change.playbackPositionTicks
+                )
+            }
+    }
+
+    // MARK: - Resumable full sync
+
+    /// Where an interrupted full sync left off, or nil when none is staged.
+    func stagingProgress(in scope: LibraryScope) throws -> LibraryStagingProgress? {
+        try database.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                    SELECT stage, nextOffset, detail, startedAt
+                    FROM librarySyncProgress
+                    WHERE serverKey = ? AND userID = ?
+                    """,
+                arguments: [scope.serverKey, scope.userID]
+            ) else { return nil }
+            return LibraryStagingProgress(
+                stage: row["stage"],
+                nextOffset: row["nextOffset"],
+                detail: row["detail"],
+                startedAt: row["startedAt"]
+            )
+        }
+    }
+
+    /// Discards a partial sync so the next one starts from a clean slate.
+    func resetStagedLibrary(in scope: LibraryScope) throws {
+        let staging = scope.staging
+        try database.write { db in
+            try Self.deleteCatalogRows(db, scope: staging)
+            try db.execute(
+                sql: "DELETE FROM librarySyncProgress WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+        }
+    }
+
+    /// Persists one page into the staging scope and advances the cursor in the
+    /// same transaction, so the recorded position never runs ahead of the rows.
+    func appendStagedChunk(
+        _ chunk: LibraryCatalog,
+        stage: String,
+        nextOffset: Int,
+        detail: String?,
+        startedAt: Date,
+        in scope: LibraryScope
+    ) throws {
+        let staging = scope.staging
+        try database.write { db in
+            try Self.write(catalog: chunk, db: db, scope: staging)
+            try db.execute(
+                sql: """
+                    INSERT INTO librarySyncProgress (
+                        serverKey, userID, stage, nextOffset, detail, startedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(serverKey, userID) DO UPDATE SET
+                        stage = excluded.stage,
+                        nextOffset = excluded.nextOffset,
+                        detail = excluded.detail
+                    """,
+                arguments: [
+                    scope.serverKey, scope.userID,
+                    stage, nextOffset, detail, startedAt
+                ]
+            )
+        }
+    }
+
+    /// Playlist IDs already staged, ordered deterministically so a resumed sync
+    /// walks them in the same order it did before being interrupted.
+    func stagedPlaylistIDs(in scope: LibraryScope) throws -> [String] {
+        let staging = scope.staging
+        return try database.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT itemID FROM libraryItem
+                    WHERE serverKey = ? AND userID = ? AND itemType = ?
+                    ORDER BY itemID
+                    """,
+                arguments: [
+                    staging.serverKey,
+                    staging.userID,
+                    LibraryItemType.playlist.rawValue
+                ]
+            )
+        }
+    }
+
+    /// Promotes a fully staged catalog in one transaction: the live rows are
+    /// replaced by re-keying the staged rows, so readers see either the previous
+    /// complete catalog or the new one, never a partial merge.
+    func promoteStagedLibrary(in scope: LibraryScope, syncedAt: Date) throws {
+        let staging = scope.staging
+        try database.write { db in
+            try Self.deleteCatalogRows(db, scope: scope)
+
+            for table in ["libraryItem", "userItemState", "itemArtist", "itemGenre", "playlistEntry"] {
+                try db.execute(
+                    sql: """
+                        UPDATE \(table) SET userID = ?
+                        WHERE serverKey = ? AND userID = ?
+                        """,
+                    arguments: [scope.userID, staging.serverKey, staging.userID]
+                )
+            }
+
             try Self.rebuildSearchIndex(db, scope: scope)
             try db.execute(
                 sql: """
-                    INSERT INTO librarySyncState (serverKey, userID, librarySyncedAt)
-                    VALUES (?, ?, ?)
+                    INSERT INTO librarySyncState (
+                        serverKey, userID, librarySyncedAt,
+                        metadataWatermark, userDataWatermark, lastReconciledAt,
+                        catalogRevision
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1)
                     ON CONFLICT(serverKey, userID) DO UPDATE SET
-                        librarySyncedAt = excluded.librarySyncedAt
+                        librarySyncedAt = excluded.librarySyncedAt,
+                        metadataWatermark = excluded.metadataWatermark,
+                        userDataWatermark = excluded.userDataWatermark,
+                        lastReconciledAt = excluded.lastReconciledAt,
+                        catalogRevision = librarySyncState.catalogRevision + 1
                     """,
-                arguments: [scope.serverKey, scope.userID, syncedAt]
+                arguments: [
+                    scope.serverKey, scope.userID, syncedAt,
+                    syncedAt, syncedAt, syncedAt
+                ]
             )
+            try db.execute(
+                sql: "DELETE FROM librarySyncProgress WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+        }
+    }
+
+    private static func deleteCatalogRows(_ db: Database, scope: LibraryScope) throws {
+        for table in [
+            "itemArtist", "itemGenre", "playlistEntry",
+            "libraryItemFTS", "libraryItem", "userItemState"
+        ] {
+            try db.execute(
+                sql: "DELETE FROM \(table) WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+        }
+    }
+
+    /// Applies a routine Jellyfin delta as one SQLite transaction. UI readers
+    /// see either the previous revision or the complete new revision.
+    func applyDelta(_ delta: LibraryDelta, in scope: LibraryScope) throws -> LibraryDeltaCommit {
+        try database.write { db in
+            let baseRevision = try Int64.fetchOne(
+                db,
+                sql: """
+                    SELECT catalogRevision FROM librarySyncState
+                    WHERE serverKey = ? AND userID = ?
+                    """,
+                arguments: [scope.serverKey, scope.userID]
+            ) ?? 0
+            var removed = delta.removedItemIDs
+            if let replacementArtists = delta.replacementArtists {
+                let current = try Self.itemIDs(db, scope: scope, type: .artist)
+                removed.formUnion(current.subtracting(replacementArtists.map(\.id)))
+            }
+            if let replacementGenres = delta.replacementGenres {
+                let current = try Self.itemIDs(db, scope: scope, type: .genre)
+                removed.formUnion(current.subtracting(replacementGenres.map(\.id)))
+            }
+            let changed = delta.changeCount > 0
+                || !removed.isEmpty
+                || delta.replacementArtists != nil
+                || delta.replacementGenres != nil
+            let revision = changed ? baseRevision + 1 : baseRevision
+            for itemID in removed {
+                try Self.deleteItem(itemID, db: db, scope: scope)
+            }
+
+            let artists = delta.replacementArtists ?? delta.artists
+            let genres = delta.replacementGenres ?? delta.genres
+            for artist in artists {
+                try LibraryItemRecord(artist: artist, scope: scope).save(db)
+            }
+            for genre in genres {
+                try LibraryItemRecord(genre: genre, scope: scope).save(db)
+            }
+            for album in delta.albums {
+                try LibraryItemRecord(album: album, scope: scope).save(db)
+                try Self.replaceRelations(for: album, db: db, scope: scope)
+            }
+            for track in delta.tracks {
+                try LibraryItemRecord(track: track, scope: scope).save(db)
+                try Self.replaceRelations(for: track, db: db, scope: scope)
+            }
+            for playlist in delta.playlists {
+                try LibraryItemRecord(playlist: playlist, scope: scope).save(db)
+            }
+
+            for playlistID in delta.refreshedPlaylistIDs {
+                try db.execute(
+                    sql: "DELETE FROM playlistEntry WHERE serverKey = ? AND userID = ? AND playlistID = ?",
+                    arguments: [scope.serverKey, scope.userID, playlistID]
+                )
+            }
+            for entry in delta.playlistEntries {
+                try LibraryItemRecord(track: entry.track, scope: scope).save(db)
+                try db.execute(
+                    sql: """
+                        INSERT INTO playlistEntry (
+                            serverKey, userID, playlistID, itemID, entryID, position
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(serverKey, userID, playlistID, itemID) DO UPDATE SET
+                            entryID = excluded.entryID,
+                            position = excluded.position
+                        """,
+                    arguments: [
+                        scope.serverKey, scope.userID, entry.playlistID,
+                        entry.track.id, entry.track.playlistEntryID, entry.position
+                    ]
+                )
+            }
+
+            for change in delta.userData {
+                try Self.updateUserState(
+                    db,
+                    scope: scope,
+                    itemID: change.itemID,
+                    isFavorite: change.isFavorite,
+                    lastPlayedAt: change.lastPlayedAt,
+                    playCount: change.playCount,
+                    playbackPositionTicks: change.playbackPositionTicks
+                )
+            }
+
+            let changedIDs = Set(delta.albums.map(\.id))
+                .union(artists.map(\.id))
+                .union(delta.tracks.map(\.id))
+                .union(delta.playlists.map(\.id))
+                .union(genres.map(\.id))
+                .union(delta.playlistEntries.map(\.track.id))
+            try Self.refreshSearchIndex(
+                itemIDs: changedIDs.union(removed),
+                db: db,
+                scope: scope
+            )
+
+            let completedAt = Date()
+            try db.execute(
+                sql: """
+                    INSERT INTO librarySyncState (
+                        serverKey, userID, librarySyncedAt,
+                        metadataWatermark, userDataWatermark, lastReconciledAt,
+                        catalogRevision
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(serverKey, userID) DO UPDATE SET
+                        librarySyncedAt = excluded.librarySyncedAt,
+                        metadataWatermark = excluded.metadataWatermark,
+                        userDataWatermark = excluded.userDataWatermark,
+                        lastReconciledAt = COALESCE(
+                            excluded.lastReconciledAt,
+                            librarySyncState.lastReconciledAt
+                        ),
+                        catalogRevision = excluded.catalogRevision
+                    """,
+                arguments: [
+                    scope.serverKey, scope.userID, completedAt,
+                    delta.metadataWatermark, delta.userDataWatermark,
+                    delta.reconciledAt, revision
+                ]
+            )
+            return LibraryDeltaCommit(
+                baseRevision: baseRevision,
+                revision: revision,
+                changed: changed,
+                removedItemIDs: removed
+            )
+        }
+    }
+
+    func primaryCatalogItemIDs(in scope: LibraryScope) throws -> Set<String> {
+        try database.read { db in
+            Set(try String.fetchAll(
+                db,
+                sql: """
+                    SELECT itemID FROM libraryItem
+                    WHERE serverKey = ? AND userID = ?
+                      AND itemType IN (?, ?, ?)
+                    """,
+                arguments: [
+                    scope.serverKey, scope.userID,
+                    LibraryItemType.track.rawValue,
+                    LibraryItemType.album.rawValue,
+                    LibraryItemType.playlist.rawValue
+                ]
+            ))
         }
     }
 
@@ -1007,6 +1481,25 @@ actor LibraryRepository: RecentTrackCaching {
                 table.primaryKey(["serverKey", "userID"])
             }
         }
+        migrator.registerMigration("supportIncrementalLibrarySync") { db in
+            try db.alter(table: "librarySyncState") { table in
+                table.add(column: "metadataWatermark", .datetime)
+                table.add(column: "userDataWatermark", .datetime)
+                table.add(column: "lastReconciledAt", .datetime)
+                table.add(column: "catalogRevision", .integer).notNull().defaults(to: 0)
+            }
+        }
+        migrator.registerMigration("resumableFullSync") { db in
+            try db.create(table: "librarySyncProgress") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("stage", .text).notNull()
+                table.column("nextOffset", .integer).notNull()
+                table.column("detail", .text)
+                table.column("startedAt", .datetime).notNull()
+                table.primaryKey(["serverKey", "userID"])
+            }
+        }
         return migrator
     }
 
@@ -1047,6 +1540,97 @@ actor LibraryRepository: RecentTrackCaching {
                 """,
             arguments: [scope.serverKey, scope.userID]
         ))
+    }
+
+    private static func itemIDs(
+        _ db: Database,
+        scope: LibraryScope,
+        type: LibraryItemType
+    ) throws -> Set<String> {
+        Set(try String.fetchAll(
+            db,
+            sql: """
+                SELECT itemID FROM libraryItem
+                WHERE serverKey = ? AND userID = ? AND itemType = ?
+                """,
+            arguments: [scope.serverKey, scope.userID, type.rawValue]
+        ))
+    }
+
+    private static func deleteItem(
+        _ itemID: String,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        let arguments: StatementArguments = [scope.serverKey, scope.userID, itemID]
+        try db.execute(
+            sql: "DELETE FROM itemArtist WHERE serverKey = ? AND userID = ? AND (itemID = ? OR artistID = ?)",
+            arguments: [scope.serverKey, scope.userID, itemID, itemID]
+        )
+        try db.execute(
+            sql: "DELETE FROM itemGenre WHERE serverKey = ? AND userID = ? AND (itemID = ? OR genreID = ?)",
+            arguments: [scope.serverKey, scope.userID, itemID, itemID]
+        )
+        try db.execute(
+            sql: "DELETE FROM playlistEntry WHERE serverKey = ? AND userID = ? AND (playlistID = ? OR itemID = ?)",
+            arguments: [scope.serverKey, scope.userID, itemID, itemID]
+        )
+        try db.execute(
+            sql: "DELETE FROM libraryItemFTS WHERE serverKey = ? AND userID = ? AND itemID = ?",
+            arguments: arguments
+        )
+        try db.execute(
+            sql: "DELETE FROM libraryItem WHERE serverKey = ? AND userID = ? AND itemID = ?",
+            arguments: arguments
+        )
+        try db.execute(
+            sql: "DELETE FROM userItemState WHERE serverKey = ? AND userID = ? AND itemID = ?",
+            arguments: arguments
+        )
+    }
+
+    private static func replaceRelations(
+        for album: Album,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        try clearRelations(itemID: album.id, db: db, scope: scope)
+        if let artistID = album.artistId {
+            try saveArtistLink(itemID: album.id, artistID: artistID, position: 0, db: db, scope: scope)
+        }
+        for genreID in album.genreIDs ?? [] {
+            try saveGenreLink(itemID: album.id, genreID: genreID, db: db, scope: scope)
+        }
+    }
+
+    private static func replaceRelations(
+        for track: Track,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        try clearRelations(itemID: track.id, db: db, scope: scope)
+        let artistIDs = track.artistIDs ?? track.artistId.map { [$0] } ?? []
+        for (position, artistID) in artistIDs.enumerated() {
+            try saveArtistLink(itemID: track.id, artistID: artistID, position: position, db: db, scope: scope)
+        }
+        for genreID in track.genreIDs ?? [] {
+            try saveGenreLink(itemID: track.id, genreID: genreID, db: db, scope: scope)
+        }
+    }
+
+    private static func clearRelations(
+        itemID: String,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        try db.execute(
+            sql: "DELETE FROM itemArtist WHERE serverKey = ? AND userID = ? AND itemID = ?",
+            arguments: [scope.serverKey, scope.userID, itemID]
+        )
+        try db.execute(
+            sql: "DELETE FROM itemGenre WHERE serverKey = ? AND userID = ? AND itemID = ?",
+            arguments: [scope.serverKey, scope.userID, itemID]
+        )
     }
 
     private static func save(albums: [Album], db: Database, scope: LibraryScope) throws {
@@ -1144,6 +1728,32 @@ actor LibraryRepository: RecentTrackCaching {
                 """,
             arguments: [scope.serverKey, scope.userID]
         )
+    }
+
+    private static func refreshSearchIndex(
+        itemIDs: Set<String>,
+        db: Database,
+        scope: LibraryScope
+    ) throws {
+        for itemID in itemIDs {
+            try db.execute(
+                sql: "DELETE FROM libraryItemFTS WHERE serverKey = ? AND userID = ? AND itemID = ?",
+                arguments: [scope.serverKey, scope.userID, itemID]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO libraryItemFTS (
+                        serverKey, userID, itemID, itemType,
+                        name, sortName, artistName, albumName
+                    )
+                    SELECT serverKey, userID, itemID, itemType,
+                           name, COALESCE(sortName, name), artistName, albumName
+                    FROM libraryItem
+                    WHERE serverKey = ? AND userID = ? AND itemID = ?
+                    """,
+                arguments: [scope.serverKey, scope.userID, itemID]
+            )
+        }
     }
 
     private static func updateUserState(

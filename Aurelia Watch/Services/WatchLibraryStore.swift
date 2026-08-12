@@ -30,11 +30,20 @@ nonisolated struct WatchLibraryScope: Codable, Hashable, Sendable {
 /// Versioned, credential-free payload transferred from the phone and also
 /// produced by the Watch's direct Jellyfin fallback.
 nonisolated struct WatchLibraryTransferSnapshot: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
+
+    enum Mode: String, Codable, Sendable {
+        case full
+        case delta
+    }
 
     let version: Int
     let scope: WatchLibraryScope
     let generatedAt: Date
+    let mode: Mode
+    let baseRevision: Int64?
+    let revision: Int64
+    let removedItemIDs: [String]
     let artists: [WatchArtist]
     let albums: [WatchAlbum]
     let tracks: [WatchTrack]
@@ -42,6 +51,10 @@ nonisolated struct WatchLibraryTransferSnapshot: Codable, Sendable {
     init(
         scope: WatchLibraryScope,
         generatedAt: Date = Date(),
+        mode: Mode = .full,
+        baseRevision: Int64? = nil,
+        revision: Int64 = 0,
+        removedItemIDs: [String] = [],
         artists: [WatchArtist],
         albums: [WatchAlbum],
         tracks: [WatchTrack]
@@ -49,6 +62,10 @@ nonisolated struct WatchLibraryTransferSnapshot: Codable, Sendable {
         version = Self.currentVersion
         self.scope = scope
         self.generatedAt = generatedAt
+        self.mode = mode
+        self.baseRevision = baseRevision
+        self.revision = revision
+        self.removedItemIDs = removedItemIDs
         self.artists = artists
         self.albums = albums
         self.tracks = tracks
@@ -91,26 +108,51 @@ actor WatchLibraryRepository {
         }
 
         try database.write { db in
-            if let existingDate = try Date.fetchOne(
+            let currentRow = try Row.fetchOne(
                 db,
                 sql: """
-                    SELECT syncedAt FROM watchLibrarySyncState
+                    SELECT syncedAt, catalogRevision FROM watchLibrarySyncState
                     WHERE serverKey = ? AND userID = ?
                     """,
                 arguments: [snapshot.scope.serverKey, snapshot.scope.userID]
-            ), existingDate > snapshot.generatedAt {
+            )
+            let existingDate: Date? = currentRow?["syncedAt"]
+            let currentRevision: Int64 = currentRow?["catalogRevision"] ?? 0
+            if let existingDate, existingDate > snapshot.generatedAt {
                 return
+            }
+
+            if snapshot.mode == .delta,
+               snapshot.baseRevision != currentRevision {
+                throw WatchLibraryStoreError.revisionMismatch
             }
 
             let scopeArguments: StatementArguments = [
                 snapshot.scope.serverKey,
                 snapshot.scope.userID
             ]
-            for table in ["watchTrackArtist", "watchTrack", "watchAlbumArtist", "watchAlbum", "watchArtist"] {
-                try db.execute(
-                    sql: "DELETE FROM \(table) WHERE serverKey = ? AND userID = ?",
-                    arguments: scopeArguments
-                )
+            if snapshot.mode == .full {
+                for table in ["watchTrackArtist", "watchTrack", "watchAlbumArtist", "watchAlbum", "watchArtist"] {
+                    try db.execute(
+                        sql: "DELETE FROM \(table) WHERE serverKey = ? AND userID = ?",
+                        arguments: scopeArguments
+                    )
+                }
+            } else {
+                for itemID in snapshot.removedItemIDs {
+                    for statement in [
+                        "DELETE FROM watchTrackArtist WHERE serverKey = ? AND userID = ? AND (trackID = ? OR artistID = ?)",
+                        "DELETE FROM watchAlbumArtist WHERE serverKey = ? AND userID = ? AND (albumID = ? OR artistID = ?)",
+                        "DELETE FROM watchTrack WHERE serverKey = ? AND userID = ? AND itemID = ?",
+                        "DELETE FROM watchAlbum WHERE serverKey = ? AND userID = ? AND itemID = ?",
+                        "DELETE FROM watchArtist WHERE serverKey = ? AND userID = ? AND itemID = ?"
+                    ] {
+                        let arguments: StatementArguments = statement.contains(" OR ")
+                            ? [snapshot.scope.serverKey, snapshot.scope.userID, itemID, itemID]
+                            : [snapshot.scope.serverKey, snapshot.scope.userID, itemID]
+                        try db.execute(sql: statement, arguments: arguments)
+                    }
+                }
             }
 
             for artist in snapshot.artists {
@@ -118,6 +160,8 @@ actor WatchLibraryRepository {
                     sql: """
                         INSERT INTO watchArtist (serverKey, userID, itemID, name)
                         VALUES (?, ?, ?, ?)
+                        ON CONFLICT(serverKey, userID, itemID) DO UPDATE SET
+                            name = excluded.name
                         """,
                     arguments: [snapshot.scope.serverKey, snapshot.scope.userID, artist.id, artist.name]
                 )
@@ -125,10 +169,19 @@ actor WatchLibraryRepository {
 
             for album in snapshot.albums {
                 try db.execute(
+                    sql: "DELETE FROM watchAlbumArtist WHERE serverKey = ? AND userID = ? AND albumID = ?",
+                    arguments: [snapshot.scope.serverKey, snapshot.scope.userID, album.id]
+                )
+                try db.execute(
                     sql: """
                         INSERT INTO watchAlbum
                             (serverKey, userID, itemID, name, artist, artistID, productionYear)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(serverKey, userID, itemID) DO UPDATE SET
+                            name = excluded.name,
+                            artist = excluded.artist,
+                            artistID = excluded.artistID,
+                            productionYear = excluded.productionYear
                         """,
                     arguments: [
                         snapshot.scope.serverKey,
@@ -159,11 +212,24 @@ actor WatchLibraryRepository {
 
             for track in snapshot.tracks {
                 try db.execute(
+                    sql: "DELETE FROM watchTrackArtist WHERE serverKey = ? AND userID = ? AND trackID = ?",
+                    arguments: [snapshot.scope.serverKey, snapshot.scope.userID, track.id]
+                )
+                try db.execute(
                     sql: """
                         INSERT INTO watchTrack
                             (serverKey, userID, itemID, name, artist, album, albumID, duration,
                              indexNumber, parentIndexNumber, isFavorite)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(serverKey, userID, itemID) DO UPDATE SET
+                            name = excluded.name,
+                            artist = excluded.artist,
+                            album = excluded.album,
+                            albumID = excluded.albumID,
+                            duration = excluded.duration,
+                            indexNumber = excluded.indexNumber,
+                            parentIndexNumber = excluded.parentIndexNumber,
+                            isFavorite = excluded.isFavorite
                         """,
                     arguments: [
                         snapshot.scope.serverKey,
@@ -199,17 +265,20 @@ actor WatchLibraryRepository {
 
             try db.execute(
                 sql: """
-                    INSERT INTO watchLibrarySyncState (serverKey, userID, syncedAt, snapshotVersion)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO watchLibrarySyncState (
+                        serverKey, userID, syncedAt, snapshotVersion, catalogRevision
+                    ) VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(serverKey, userID) DO UPDATE SET
                         syncedAt = excluded.syncedAt,
-                        snapshotVersion = excluded.snapshotVersion
+                        snapshotVersion = excluded.snapshotVersion,
+                        catalogRevision = excluded.catalogRevision
                     """,
                 arguments: [
                     snapshot.scope.serverKey,
                     snapshot.scope.userID,
                     snapshot.generatedAt,
-                    snapshot.version
+                    snapshot.version,
+                    snapshot.revision
                 ]
             )
         }
@@ -231,6 +300,14 @@ actor WatchLibraryRepository {
             return WatchLibraryTransferSnapshot(
                 scope: scope,
                 generatedAt: generatedAt,
+                revision: try Int64.fetchOne(
+                    db,
+                    sql: """
+                        SELECT catalogRevision FROM watchLibrarySyncState
+                        WHERE serverKey = ? AND userID = ?
+                        """,
+                    arguments: [scope.serverKey, scope.userID]
+                ) ?? 0,
                 artists: try Self.artists(db, scope: scope),
                 albums: try Self.albums(db, scope: scope),
                 tracks: try Self.tracks(db, scope: scope)
@@ -436,7 +513,18 @@ actor WatchLibraryRepository {
                 table.column("userID", .text).notNull()
                 table.column("syncedAt", .datetime).notNull()
                 table.column("snapshotVersion", .integer).notNull()
+                table.column("catalogRevision", .integer).notNull().defaults(to: 0)
                 table.primaryKey(["serverKey", "userID"])
+            }
+        }
+        migrator.registerMigration("addWatchCatalogRevision") { db in
+            // Fresh databases already include the column above. Existing
+            // version-one caches need it added exactly once.
+            let columns = try db.columns(in: "watchLibrarySyncState")
+            if !columns.contains(where: { $0.name == "catalogRevision" }) {
+                try db.alter(table: "watchLibrarySyncState") { table in
+                    table.add(column: "catalogRevision", .integer).notNull().defaults(to: 0)
+                }
             }
         }
         return migrator
@@ -445,11 +533,14 @@ actor WatchLibraryRepository {
 
 enum WatchLibraryStoreError: LocalizedError {
     case unsupportedSnapshotVersion(Int)
+    case revisionMismatch
 
     var errorDescription: String? {
         switch self {
         case .unsupportedSnapshotVersion(let version):
             return "Unsupported library snapshot version \(version)."
+        case .revisionMismatch:
+            return "The Watch library needs a complete snapshot."
         }
     }
 }
@@ -507,6 +598,9 @@ final class WatchLibraryStore: ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+            if case WatchLibraryStoreError.revisionMismatch = error {
+                WatchConnectivityManager.shared.requestLibrarySnapshot()
+            }
         }
     }
 

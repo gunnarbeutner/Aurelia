@@ -93,9 +93,17 @@ The watch app automatically syncs credentials from your iPhone. Just open Aureli
 Aurelia uses a service-oriented architecture with singleton services:
 
 - **JellyfinService** - API client for all Jellyfin server communication
+- **LibraryRepository** - transactional GRDB/SQLite catalog used by every library UI
+- **LibrarySyncCoordinator** - timestamp deltas, foreground event invalidation, and periodic deletion reconciliation
 - **PlayerManager** - Audio playback engine with gapless queue management
 - **KeychainService** - Secure credential storage
 - **WatchConnectivityManager** - iPhone ↔ Watch communication
+
+The first sign-in imports the complete music catalog. Later foreground and
+pull-to-refresh syncs request only metadata and user-state changes since the
+last committed watermark. A periodic lightweight ID inventory reconciles
+deletions, and **Settings → Rebuild Local Library** remains available for
+explicit recovery. Sync progress is shown without blocking cached browsing.
 
 See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
 

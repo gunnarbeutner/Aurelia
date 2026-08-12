@@ -92,6 +92,9 @@ struct AureliaApp: App {
         case .active:
             // App became active (foreground)
             print("🟢 App became active")
+            Task { @MainActor in
+                LibrarySyncCoordinator.shared.startEventMonitoring()
+            }
 
         case .inactive:
             // App is transitioning (e.g., control center, notification)
@@ -100,6 +103,9 @@ struct AureliaApp: App {
         case .background:
             // App went to background - CRITICAL for background audio
             print("🔵 App entered background - Audio should continue playing")
+            Task { @MainActor in
+                LibrarySyncCoordinator.shared.stopEventMonitoring()
+            }
 
             // Save playback state so we can restore on next launch
             PlayerManager.shared.savePlaybackState()

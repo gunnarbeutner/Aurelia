@@ -42,6 +42,7 @@ struct AureliaWatchTests {
         let snapshot = WatchLibraryTransferSnapshot(
             scope: scope,
             generatedAt: Date(timeIntervalSince1970: 1234),
+            revision: 1,
             artists: [artist],
             albums: [album],
             tracks: [track]
@@ -56,6 +57,30 @@ struct AureliaWatchTests {
         #expect(try await repository.albums(for: artist, in: scope) == [album])
         #expect(try await repository.tracks(for: artist, in: scope) == [track])
         #expect(try await repository.tracks(inAlbum: album.id, in: scope) == [track])
+
+        let changedTrack = WatchTrack(
+            id: track.id,
+            name: "Changed Track",
+            artist: track.artist,
+            artistIds: track.artistIds,
+            album: track.album,
+            albumId: track.albumId,
+            duration: track.duration,
+            indexNumber: track.indexNumber,
+            parentIndexNumber: track.parentIndexNumber,
+            isFavorite: false
+        )
+        try await repository.replace(with: WatchLibraryTransferSnapshot(
+            scope: scope,
+            generatedAt: Date(timeIntervalSince1970: 1235),
+            mode: .delta,
+            baseRevision: 1,
+            revision: 2,
+            artists: [],
+            albums: [],
+            tracks: [changedTrack]
+        ))
+        #expect(try await repository.tracks(inAlbum: album.id, in: scope) == [changedTrack])
 
         let otherScope = try #require(WatchLibraryScope(baseURL: "https://music.example", userID: "user-b"))
         #expect(try await repository.snapshot(in: otherScope) == nil)

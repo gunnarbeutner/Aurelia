@@ -100,6 +100,7 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         let payload = PhoneWatchLibrarySnapshot(
             scope: .init(serverKey: scope.serverKey, userID: scope.userID),
             generatedAt: generatedAt,
+            revision: snapshot.revision,
             artists: snapshot.artists.map {
                 .init(id: $0.id, name: $0.name)
             },
@@ -149,9 +150,80 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         }
     }
 
+    func syncLibraryDeltaToWatch(
+        _ delta: LibraryDelta,
+        commit: LibraryDeltaCommit,
+        scope: LibraryScope
+    ) {
+        guard let session,
+              session.activationState == .activated,
+              session.isWatchAppInstalled else { return }
+        let payload = PhoneWatchLibrarySnapshot(
+            scope: .init(serverKey: scope.serverKey, userID: scope.userID),
+            generatedAt: Date(),
+            mode: .delta,
+            baseRevision: commit.baseRevision,
+            revision: commit.revision,
+            removedItemIDs: Array(commit.removedItemIDs),
+            artists: (delta.replacementArtists ?? delta.artists).map {
+                .init(id: $0.id, name: $0.name)
+            },
+            albums: delta.albums.map {
+                .init(
+                    id: $0.id,
+                    name: $0.name,
+                    artist: $0.artistName,
+                    artistId: $0.artistId,
+                    year: $0.year
+                )
+            },
+            tracks: delta.tracks.map {
+                .init(
+                    id: $0.id,
+                    name: $0.name,
+                    artist: $0.artistName,
+                    artistIds: $0.artistIDs ?? $0.artistId.map { [$0] } ?? [],
+                    album: $0.albumName,
+                    albumId: $0.albumId ?? "",
+                    duration: $0.duration,
+                    indexNumber: $0.indexNumber,
+                    parentIndexNumber: $0.parentIndexNumber,
+                    isFavorite: $0.isFavorite
+                )
+            }
+        )
+        transferLibraryPayload(payload, using: session)
+    }
+
+    private func transferLibraryPayload(
+        _ payload: PhoneWatchLibrarySnapshot,
+        using session: WCSession
+    ) {
+        do {
+            let data = try JSONEncoder().encode(payload)
+            let fileURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Aurelia-Watch-Library-\(UUID().uuidString)")
+                .appendingPathExtension("json")
+            try data.write(to: fileURL, options: .atomic)
+            pendingSnapshotFiles.insert(fileURL)
+            session.transferFile(
+                fileURL,
+                metadata: [
+                    "type": "librarySnapshot",
+                    "version": PhoneWatchLibrarySnapshot.currentVersion
+                ]
+            )
+        } catch {
+            print("❌ Failed to prepare watch library update: \(error.localizedDescription)")
+        }
+    }
+
     func syncCurrentLibrarySnapshotToWatch(force: Bool = false) async {
         guard let scope = JellyfinService.shared.libraryScope,
-              let snapshot = try? await LibraryRepository.shared.librarySnapshot(in: scope) else {
+              let snapshot = try? await LibraryRepository.shared.librarySnapshot(
+                in: scope,
+                includeTracks: true
+              ) else {
             return
         }
         syncLibrarySnapshotToWatch(snapshot: snapshot, scope: scope, force: force)
@@ -256,11 +328,20 @@ extension PhoneConnectivityManager: WCSessionDelegate {
 }
 
 private nonisolated struct PhoneWatchLibrarySnapshot: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
+
+    enum Mode: String, Codable, Sendable {
+        case full
+        case delta
+    }
 
     let version: Int
     let scope: PhoneWatchLibraryScope
     let generatedAt: Date
+    let mode: Mode
+    let baseRevision: Int64?
+    let revision: Int64
+    let removedItemIDs: [String]
     let artists: [PhoneWatchArtist]
     let albums: [PhoneWatchAlbum]
     let tracks: [PhoneWatchTrack]
@@ -268,6 +349,10 @@ private nonisolated struct PhoneWatchLibrarySnapshot: Codable, Sendable {
     init(
         scope: PhoneWatchLibraryScope,
         generatedAt: Date,
+        mode: Mode = .full,
+        baseRevision: Int64? = nil,
+        revision: Int64,
+        removedItemIDs: [String] = [],
         artists: [PhoneWatchArtist],
         albums: [PhoneWatchAlbum],
         tracks: [PhoneWatchTrack]
@@ -275,6 +360,10 @@ private nonisolated struct PhoneWatchLibrarySnapshot: Codable, Sendable {
         version = Self.currentVersion
         self.scope = scope
         self.generatedAt = generatedAt
+        self.mode = mode
+        self.baseRevision = baseRevision
+        self.revision = revision
+        self.removedItemIDs = removedItemIDs
         self.artists = artists
         self.albums = albums
         self.tracks = tracks
