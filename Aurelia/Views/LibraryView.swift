@@ -143,7 +143,7 @@ struct LibraryView: View {
     @State private var playlists: [Playlist] = []
     @State private var searchText = ""
     @AppStorage("librarySelectedFilter") private var selectedFilter: String = "Artists"
-    @AppStorage("librarySortOption") private var sortOption: SortOption = .nameAsc
+    @AppStorage("librarySortOption") private var sortOption: SortOption = .artistAsc
     @AppStorage("libraryViewModeArtists") private var viewModeArtists: String = ViewMode.list.rawValue
     @AppStorage("libraryViewModeAlbums") private var viewModeAlbums: String = ViewMode.grid.rawValue
 

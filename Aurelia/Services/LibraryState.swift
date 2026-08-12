@@ -14,7 +14,7 @@ class LibraryState: ObservableObject {
 
     // Filter + view mode — persisted across sessions
     @AppStorage("librarySelectedFilter") var selectedFilter: String = "Artists"
-    @AppStorage("librarySortOption") var sortOption: String = SortOption.nameAsc.rawValue
+    @AppStorage("librarySortOption") var sortOption: String = SortOption.artistAsc.rawValue
     @AppStorage("libraryViewMode") var viewModeRaw: String = ViewMode.list.rawValue
 
     var viewMode: ViewMode {
