@@ -1388,14 +1388,19 @@ private struct UpNextQueueRow: View {
 
     private var horizontalSwipe: some Gesture {
         DragGesture(
-            minimumDistance: 12,
+            // Give the enclosing vertical ScrollView time to begin first.
+            // At the old 12-point threshold both recognizers entered the
+            // arena together, so a fast vertical flick was swallowed while
+            // the queue was stationary. A horizontal delete swipe still has
+            // ample travel to cross this threshold.
+            minimumDistance: 28,
             coordinateSpace: .named(Self.coordinateSpaceName)
         )
             .onChanged { value in
                 guard !isQueueReordering,
                       !isReorderGestureActive else { return }
                 if swipeAxis == nil {
-                    swipeAxis = abs(value.translation.width) > abs(value.translation.height)
+                    swipeAxis = abs(value.translation.width) > abs(value.translation.height) * 1.2
                         ? .horizontal
                         : .vertical
                     if swipeAxis == .horizontal {
