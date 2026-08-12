@@ -1789,6 +1789,27 @@ struct AureliaActionTests {
         #expect(AureliaActions.artistShuffleLimit == 200)
     }
 
+    /// Pressing Next must advance even with repeat-one on. Repeat-one governs
+    /// what happens when a track ends by itself, which is handled elsewhere;
+    /// conflating the two made the Next button silently restart the song.
+    @Test func explicitNextAdvancesRegardlessOfRepeatOne() {
+        // Mid-queue: every mode moves on.
+        for mode in [PlayerManager.RepeatMode.off, .all, .one] {
+            #expect(QueueAdvance.nextIndex(current: 0, count: 3, repeatMode: mode) == 1)
+        }
+
+        // At the end: repeat wraps, off stops.
+        #expect(QueueAdvance.nextIndex(current: 2, count: 3, repeatMode: .all) == 0)
+        #expect(QueueAdvance.nextIndex(current: 2, count: 3, repeatMode: .one) == 0)
+        #expect(QueueAdvance.nextIndex(current: 2, count: 3, repeatMode: .off) == nil)
+
+        // A single-track queue still repeats itself rather than stalling.
+        #expect(QueueAdvance.nextIndex(current: 0, count: 1, repeatMode: .one) == 0)
+        #expect(QueueAdvance.nextIndex(current: 0, count: 1, repeatMode: .off) == nil)
+
+        #expect(QueueAdvance.nextIndex(current: 0, count: 0, repeatMode: .all) == nil)
+    }
+
     /// Favourites refresh on their own now, so the item-type routing that used
     /// to come free with a full library sync has to be correct here instead.
     @Test func favoritesSnapshotRoutesServerItemsByType() {

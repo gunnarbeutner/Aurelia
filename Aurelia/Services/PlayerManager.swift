@@ -23,6 +23,24 @@ final class PlaybackProgress: ObservableObject {
     }
 }
 
+/// Where an explicit "next" lands in the queue.
+///
+/// Kept separate from the player so the wrap-versus-stop rule is testable, and
+/// deliberately independent of repeat-one: that mode governs what happens when a
+/// track ends by itself, not what the Next button does.
+enum QueueAdvance {
+    static func nextIndex(
+        current: Int,
+        count: Int,
+        repeatMode: PlayerManager.RepeatMode
+    ) -> Int? {
+        guard count > 0 else { return nil }
+        if current < count - 1 { return current + 1 }
+        // At the end: repeat wraps, off stops.
+        return repeatMode == .off ? nil : 0
+    }
+}
+
 enum PlaybackRestartRecovery {
     static func synchronizedPreviousTime(
         observerTime: Double,
@@ -409,34 +427,23 @@ class PlayerManager: NSObject, ObservableObject {
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
 
-        switch repeatMode {
-        case .one:
-            // Repeat current track
-            seek(to: 0)
-            player?.play()
-            isPlaying = true
-        case .all:
-            // Go to next track, or loop to beginning
-            if currentIndex < queue.count - 1 {
-                currentIndex += 1
-            } else {
-                currentIndex = 0
-            }
-            // Manually advance and rebuild gapless queue
-            player?.pause()
-            playCurrentTrack()
-        case .off:
-            // Normal behavior - stop at end
-            guard currentIndex < queue.count - 1 else {
-                // End of queue
-                isPlaying = false
-                return
-            }
-            currentIndex += 1
-            // Manually advance and rebuild gapless queue
-            player?.pause()
-            playCurrentTrack()
+        // Repeat-one describes what happens when a track ends on its own, and
+        // the end-of-item handler already owns that. Pressing Next is an
+        // explicit request to move on, so it always advances.
+        guard let nextIndex = QueueAdvance.nextIndex(
+            current: currentIndex,
+            count: queue.count,
+            repeatMode: repeatMode
+        ) else {
+            // End of the queue with repeat off.
+            isPlaying = false
+            return
         }
+
+        currentIndex = nextIndex
+        // Manually advance and rebuild gapless queue
+        player?.pause()
+        playCurrentTrack()
     }
 
     /// Skips to previous track
