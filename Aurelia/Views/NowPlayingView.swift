@@ -859,6 +859,7 @@ struct NowPlayingView: View {
                 ForEach(entries) { entry in
                     UpNextQueueRow(
                         track: entry.track,
+                        queueIndex: entry.index,
                         verticalOffset: queueRowOffset(for: entry),
                         isBeingReordered: draggedQueueEntryID == entry.id,
                         isQueueReordering: draggedQueueEntryID != nil,
@@ -1117,6 +1118,7 @@ private struct UpNextQueueRow: View {
     static let coordinateSpaceName = "now-playing-up-next-queue"
 
     let track: Track
+    let queueIndex: Int
     let verticalOffset: CGFloat
     let isBeingReordered: Bool
     let isQueueReordering: Bool
@@ -1203,7 +1205,7 @@ private struct UpNextQueueRow: View {
                 .accessibilityIdentifier("now-playing-up-next-\(track.id)")
                 .accessibilityAction(named: "Delete") { onDelete() }
                 .contextMenu {
-                    TrackContextMenu(track: track)
+                    TrackContextMenu(track: track, queueIndex: queueIndex)
                 }
 
                 Image(systemName: "line.3.horizontal")

@@ -96,6 +96,11 @@ struct AlbumContextMenu: View {
 struct TrackContextMenu: View {
     let track: Track
     var onAddToPlaylist: (() -> Void)? = nil
+    /// Position of this track in the playback queue, when the menu is opened
+    /// from a row that is already queued. The queue actions then *move* the
+    /// track instead of inserting a second copy, and "Add to Queue" is dropped
+    /// because it would be a no-op.
+    var queueIndex: Int? = nil
 
     @ObservedObject private var downloadManager = DownloadManager.shared
     @ObservedObject private var playerManager = PlayerManager.shared
@@ -119,22 +124,50 @@ struct TrackContextMenu: View {
 
         Divider()
 
-        Button {
-            playerManager.playNext(track: track)
-        } label: {
-            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-        }
+        if let queueIndex {
+            Button {
+                playerManager.moveInQueue(
+                    from: queueIndex,
+                    to: playerManager.currentIndex + 1
+                )
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
 
-        Button {
-            playerManager.playLast(track: track)
-        } label: {
-            Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
-        }
+            Button {
+                playerManager.moveInQueue(
+                    from: queueIndex,
+                    to: playerManager.queue.count
+                )
+            } label: {
+                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
 
-        Button {
-            playerManager.addToQueue(track: track)
-        } label: {
-            Label("Add to Queue", systemImage: "text.append")
+            // Swipe-to-delete covers this on iOS but is a poor fit for a
+            // pointer, so the menu carries it too.
+            Button(role: .destructive) {
+                playerManager.removeFromQueue(at: queueIndex)
+            } label: {
+                Label("Remove from Queue", systemImage: "minus.circle")
+            }
+        } else {
+            Button {
+                playerManager.playNext(track: track)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            Button {
+                playerManager.playLast(track: track)
+            } label: {
+                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
+
+            Button {
+                playerManager.addToQueue(track: track)
+            } label: {
+                Label("Add to Queue", systemImage: "text.append")
+            }
         }
 
         if downloadManager.isDownloaded(trackId: track.id) {
