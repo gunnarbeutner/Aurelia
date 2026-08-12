@@ -28,6 +28,22 @@ final class PlaybackProgress: ObservableObject {
 /// Kept separate from the player so the wrap-versus-stop rule is testable, and
 /// deliberately independent of repeat-one: that mode governs what happens when a
 /// track ends by itself, not what the Next button does.
+/// Resolves the AudioMuse continuation setting from what is on disk.
+///
+/// The distinction that matters is absent versus explicitly off, and
+/// `UserDefaults.bool(forKey:)` reports both as false — so reading it that way
+/// would silently pin every listener to the old default no matter what this
+/// says. Hence the raw object.
+enum AutoplayPreference {
+    /// On unless the listener has turned it off: a queue that stops dead at the
+    /// end is the surprising behaviour, not the continuation.
+    static let `default` = true
+
+    static func isEnabled(storedValue: Any?) -> Bool {
+        storedValue as? Bool ?? `default`
+    }
+}
+
 enum QueueAdvance {
     static func nextIndex(
         current: Int,
@@ -98,7 +114,7 @@ class PlayerManager: NSObject, ObservableObject {
     @Published var shuffleEnabled = false
     @Published var repeatMode: RepeatMode = .off
     @Published var playbackRate: Float = 1.0
-    @Published var continuePlayingSimilarMusic = false {
+    @Published var continuePlayingSimilarMusic = AutoplayPreference.default {
         didSet {
             UserDefaults.standard.set(
                 continuePlayingSimilarMusic,
@@ -189,8 +205,10 @@ class PlayerManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        continuePlayingSimilarMusic = UserDefaults.standard.bool(
-            forKey: StateKey.continuePlayingSimilarMusic
+        continuePlayingSimilarMusic = AutoplayPreference.isEnabled(
+            storedValue: UserDefaults.standard.object(
+                forKey: StateKey.continuePlayingSimilarMusic
+            )
         )
         setupNotifications()
         // Configure audio session immediately when PlayerManager is created

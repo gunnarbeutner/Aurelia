@@ -2081,6 +2081,18 @@ struct AureliaActionTests {
         #expect(try await repository.offlineContainers(forTrackIDs: [], in: scope) == OfflineContainerIDs())
     }
 
+    /// Continuation is on unless the listener turned it off. The stored value
+    /// has to be read as an object, since `UserDefaults.bool(forKey:)` reports
+    /// "never chosen" and "explicitly off" identically and would quietly pin
+    /// everyone to the old default.
+    @Test func autoplayContinuationDefaultsOnUntilTurnedOff() {
+        #expect(AutoplayPreference.isEnabled(storedValue: nil) == true)
+        #expect(AutoplayPreference.isEnabled(storedValue: false) == false)
+        #expect(AutoplayPreference.isEnabled(storedValue: true) == true)
+        // A value of another type is not a choice either.
+        #expect(AutoplayPreference.isEnabled(storedValue: "yes") == true)
+    }
+
     /// The compact player fills its page: artwork takes whatever the rest of
     /// the column leaves, so the queue starts on the next screen rather than
     /// peeking out from a band of dead space.
