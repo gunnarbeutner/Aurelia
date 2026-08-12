@@ -230,6 +230,17 @@ struct SearchView: View {
             .padding(.top, 8)
         }
         .accessibilityIdentifier("search-results-list")
+        // Immediately rather than interactively: dismissing brings back the
+        // mini player and the strip reserved for it, and tying that to the drag
+        // would reflow the list under the finger doing the scrolling.
+        .scrollDismissesKeyboard(.immediately)
+        .onChange(of: keyboard.isVisible) { _, isVisible in
+            // Resigning first responder leaves SwiftUI's focus binding set, so
+            // the field would still read as focused — and look it — with no
+            // keyboard. Follow the keyboard down.
+            guard !isVisible else { return }
+            isSearchFieldFocused = false
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Nothing sits in this strip while typing: the tab bar is behind
             // the keyboard and the mini player has stood down.
