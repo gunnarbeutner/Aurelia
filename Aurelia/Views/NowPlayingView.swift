@@ -13,6 +13,7 @@ enum NowPlayingLayout {
     static let regularHorizontalPadding: CGFloat = 28
     static let regularColumnSpacing: CGFloat = 28
     static let minimumTwoColumnAspectRatio: CGFloat = 1.25
+    static let standardPlayerChromeHeight: CGFloat = 350
 
     static func airPlayTrailingPadding(usesTwoColumns: Bool) -> CGFloat {
         let contentPadding = usesTwoColumns ? regularHorizontalPadding : horizontalPadding
@@ -30,6 +31,12 @@ enum NowPlayingLayout {
     /// stops a tall narrow window from pushing the controls off screen.
     static let artworkHeightFraction: CGFloat = 0.45
 
+    /// A regular-width window can still use the single-column layout when it is
+    /// tall. Giving artwork the phone-sized share in that configuration makes
+    /// the queue feel like a second screen rather than part of the player.
+    static let regularSingleColumnArtworkWidthFraction: CGFloat = 0.50
+    static let regularSingleColumnArtworkHeightFraction: CGFloat = 0.36
+
     /// Sizes the artwork against both axes so it grows with the window instead
     /// of stopping at a fixed ceiling. Width alone was capped at 320pt, which
     /// left large and split-screen windows with a small square and a lot of
@@ -40,6 +47,20 @@ enum NowPlayingLayout {
         return max(0, min(byWidth, height * artworkHeightFraction))
     }
 
+    static func singleColumnArtworkSize(
+        forWidth width: CGFloat,
+        height: CGFloat,
+        isCompactWidth: Bool
+    ) -> CGFloat {
+        guard !isCompactWidth else {
+            return artworkSize(forWidth: width, height: height)
+        }
+
+        let byWidth = width * regularSingleColumnArtworkWidthFraction
+        guard height > 0 else { return max(0, byWidth) }
+        return max(0, min(byWidth, height * regularSingleColumnArtworkHeightFraction))
+    }
+
     static func regularColumnWidths(for screenWidth: CGFloat) -> (player: CGFloat, queue: CGFloat) {
         let availableWidth = max(
             0,
@@ -47,6 +68,21 @@ enum NowPlayingLayout {
         )
         let columnWidth = availableWidth / 2
         return (columnWidth, columnWidth)
+    }
+
+    static func usesCondensedPlayerColumn(
+        columnWidth: CGFloat,
+        viewportHeight: CGFloat
+    ) -> Bool {
+        artworkSize(forWidth: columnWidth, height: viewportHeight)
+            + standardPlayerChromeHeight > viewportHeight
+    }
+
+    static func condensedArtworkSize(
+        columnWidth: CGFloat,
+        viewportHeight: CGFloat
+    ) -> CGFloat {
+        max(0, min(columnWidth * 0.32, viewportHeight * 0.37))
     }
 
     static func usesTwoColumns(
@@ -195,15 +231,18 @@ struct NowPlayingView: View {
     }
 
     private func compactContent(in geometry: GeometryProxy) -> some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        let artworkSize = NowPlayingLayout.singleColumnArtworkSize(
+            forWidth: geometry.size.width,
+            height: geometry.size.height,
+            isCompactWidth: horizontalSizeClass == .compact
+        )
+
+        return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
                 topBar
                     .padding(.top, horizontalSizeClass == .compact ? 20 : 8)
 
-                artworkSection(
-                    screenWidth: geometry.size.width,
-                    screenHeight: geometry.size.height
-                )
+                artworkSection(size: artworkSize)
                 .padding(.top, 16)
 
                 trackInfoSection
@@ -242,26 +281,21 @@ struct NowPlayingView: View {
 
             HStack(alignment: .top, spacing: NowPlayingLayout.regularColumnSpacing) {
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        artworkSection(
-                            screenWidth: columns.player,
-                            screenHeight: geometry.size.height
-                        )
-                        .padding(.top, 12)
-
-                        trackInfoSection
-                            .padding(.top, 20)
-
-                        progressSection
-                            .padding(.top, 24)
-
-                        controlsSection
-                            .padding(.top, 20)
-
-                        secondaryActionsSection
-                            .padding(.top, 16)
-
-                        Spacer().frame(height: 24)
+                    Group {
+                        if NowPlayingLayout.usesCondensedPlayerColumn(
+                            columnWidth: columns.player,
+                            viewportHeight: geometry.size.height
+                        ) {
+                            condensedRegularPlayerColumn(
+                                width: columns.player,
+                                viewportHeight: geometry.size.height
+                            )
+                        } else {
+                            standardRegularPlayerColumn(
+                                width: columns.player,
+                                viewportHeight: geometry.size.height
+                            )
+                        }
                     }
                     .frame(width: columns.player)
                 }
@@ -283,6 +317,61 @@ struct NowPlayingView: View {
             }
             .padding(.horizontal, NowPlayingLayout.regularHorizontalPadding)
             .padding(.bottom, 20)
+        }
+    }
+
+    private func standardRegularPlayerColumn(
+        width: CGFloat,
+        viewportHeight: CGFloat
+    ) -> some View {
+        VStack(spacing: 0) {
+            artworkSection(screenWidth: width, screenHeight: viewportHeight)
+                .padding(.top, 12)
+
+            trackInfoSection
+                .padding(.top, 20)
+
+            progressSection
+                .padding(.top, 24)
+
+            controlsSection
+                .padding(.top, 20)
+
+            secondaryActionsSection
+                .padding(.top, 16)
+
+            Spacer().frame(height: 24)
+        }
+    }
+
+    private func condensedRegularPlayerColumn(
+        width: CGFloat,
+        viewportHeight: CGFloat
+    ) -> some View {
+        let artSize = NowPlayingLayout.condensedArtworkSize(
+            columnWidth: width,
+            viewportHeight: viewportHeight
+        )
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                artworkSection(size: artSize)
+
+                trackInfoSection
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.top, 8)
+
+            progressSection
+                .padding(.top, 12)
+
+            controlsSection
+                .padding(.top, 10)
+
+            secondaryActionsSection
+                .padding(.top, 8)
+
+            Spacer().frame(height: 12)
         }
     }
 
@@ -360,7 +449,11 @@ struct NowPlayingView: View {
             height: screenHeight
         )
 
-        return ZStack {
+        return artworkSection(size: artSize)
+    }
+
+    private func artworkSection(size artSize: CGFloat) -> some View {
+        ZStack {
             if let track = playerManager.currentTrack,
                let artworkURLString = track.artworkURL,
                let artworkURL = URL(string: artworkURLString) {

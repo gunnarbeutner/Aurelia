@@ -1242,6 +1242,44 @@ struct AureliaTests {
         }
     }
 
+    @Test @MainActor func shortWidePlayerUsesCondensedColumn() {
+        let shortColumns = NowPlayingLayout.regularColumnWidths(for: 1200)
+        #expect(NowPlayingLayout.usesCondensedPlayerColumn(
+            columnWidth: shortColumns.player,
+            viewportHeight: 460
+        ))
+
+        let mediumColumns = NowPlayingLayout.regularColumnWidths(for: 760)
+        #expect(!NowPlayingLayout.usesCondensedPlayerColumn(
+            columnWidth: mediumColumns.player,
+            viewportHeight: 620
+        ))
+
+        let condensedArtwork = NowPlayingLayout.condensedArtworkSize(
+            columnWidth: shortColumns.player,
+            viewportHeight: 460
+        )
+        #expect(condensedArtwork <= shortColumns.player * 0.32 + 0.001)
+        #expect(condensedArtwork <= 460 * 0.37 + 0.001)
+    }
+
+    @Test @MainActor func tallRegularSingleColumnUsesSmallerArtworkThanPhoneLayout() {
+        let phoneArtwork = NowPlayingLayout.singleColumnArtworkSize(
+            forWidth: 520,
+            height: 800,
+            isCompactWidth: true
+        )
+        let regularArtwork = NowPlayingLayout.singleColumnArtworkSize(
+            forWidth: 520,
+            height: 800,
+            isCompactWidth: false
+        )
+
+        #expect(phoneArtwork == NowPlayingLayout.artworkSize(forWidth: 520, height: 800))
+        #expect(regularArtwork < phoneArtwork)
+        #expect(regularArtwork == 260)
+    }
+
     @Test @MainActor func nowPlayingUsesColumnsOnlyForRegularWidthLandscapeGeometry() {
         #expect(NowPlayingLayout.usesTwoColumns(
             isCompactWidth: false,
