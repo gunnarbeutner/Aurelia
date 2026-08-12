@@ -305,10 +305,14 @@ struct NowPlayingView: View {
         // must fit above it, while the queue must start beyond its translucent
         // region. Those are deliberately separate heights: using the latter to
         // size artwork pushed the secondary controls underneath the tab bar.
-        let bottomOcclusion = horizontalSizeClass == .compact
-            ? MiniPlayerLayout.tabBarClearance
-            : geometry.safeAreaInsets.bottom
-        let playerPageHeight = max(0, geometry.size.height - bottomOcclusion)
+        // The full geometry already carries the queue past the tab bar's main
+        // body. Only its bottom safe-area tail remains beyond that viewport.
+        // Adding tabBarClearance here as well left a full extra bar of dead
+        // scrolling between the player and queue.
+        let bottomOcclusion = geometry.safeAreaInsets.bottom
+        // The player uses the full content geometry. Taking the tab bar out of
+        // this value created a blank band and needlessly shrank the artwork.
+        let playerPageHeight = max(0, geometry.size.height)
         let queueStartHeight = max(playerPageHeight, geometry.size.height + bottomOcclusion)
         let artworkSize = NowPlayingLayout.compactArtworkSize(
             contentWidth: contentWidth,
