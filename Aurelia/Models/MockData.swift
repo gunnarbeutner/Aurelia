@@ -32,6 +32,11 @@ nonisolated struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    var albumNameWithYear: String {
+        guard let productionYear else { return albumName }
+        return "\(albumName) (\(productionYear))"
+    }
+
     // Codable conformance - exclude computed properties
     enum CodingKeys: String, CodingKey {
         case id, name, sortName, artistName, albumName, duration, artworkURL, isFavorite, indexNumber, parentIndexNumber, albumId, artistId, artistIDs, genreIDs, playlistEntryID, productionYear
@@ -122,6 +127,11 @@ nonisolated struct Album: Identifiable, Codable, Hashable, Sendable {
     let artworkURL: String?
     let genreIDs: [String]?
     var isFavorite: Bool
+
+    var nameWithYear: String {
+        guard let year else { return name }
+        return "\(name) (\(year))"
+    }
 
     // Initialize from Jellyfin BaseItemDto
     init(from item: BaseItemDto, baseURL: String) {

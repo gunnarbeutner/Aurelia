@@ -1099,6 +1099,49 @@ struct AureliaTests {
         #expect(album.toAlbum().artistId == "band")
     }
 
+    @Test func albumNamesIncludeTheYearWhenAvailable() {
+        let dated = Track(
+            id: "dated",
+            name: "Track",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 1,
+            artworkURL: nil,
+            productionYear: 1999
+        )
+        let undated = Track(
+            id: "undated",
+            name: "Track",
+            artistName: "Artist",
+            albumName: "Album",
+            duration: 1,
+            artworkURL: nil
+        )
+
+        #expect(dated.albumNameWithYear == "Album (1999)")
+        #expect(undated.albumNameWithYear == "Album")
+
+        let album = Album(
+            id: "album",
+            name: "Album",
+            artistName: "Artist",
+            artistId: "artist",
+            year: 1999,
+            artworkURL: nil
+        )
+        let albumWithoutYear = Album(
+            id: "undated-album",
+            name: "Album",
+            artistName: "Artist",
+            artistId: "artist",
+            year: nil,
+            artworkURL: nil
+        )
+
+        #expect(album.nameWithYear == "Album (1999)")
+        #expect(albumWithoutYear.nameWithYear == "Album")
+    }
+
     private static func favoriteSnapshot(id: String) -> FavoritesSnapshot {
         FavoritesSnapshot(
             tracks: [

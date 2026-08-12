@@ -284,7 +284,7 @@ struct AlbumDetailView: View {
 
             // Album Title & Artist
             VStack(spacing: 8) {
-                Text(album.name)
+                Text(album.nameWithYear)
                     .font(.title2.weight(.bold))
                     .foregroundColor(Color.appText)
                     .multilineTextAlignment(.center)

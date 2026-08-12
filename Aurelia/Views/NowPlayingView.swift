@@ -533,7 +533,7 @@ struct NowPlayingView: View {
                     Button {
                         navigateToAlbum(track: track)
                     } label: {
-                        Text(track.albumName)
+                        Text(track.albumNameWithYear)
                             .font(.caption)
                             .foregroundColor(.appTextMuted)
                             .multilineTextAlignment(.center)
