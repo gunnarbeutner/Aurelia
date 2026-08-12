@@ -47,54 +47,11 @@ struct MiniPlayerView: View {
     @Binding var showNowPlaying: Bool
 
     @ObservedObject var sleepTimer = SleepTimerManager.shared
-    @State private var isCollapsed = false
-    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         if let currentTrack = playerManager.currentTrack {
-            if isCollapsed {
-                collapsedStrip(for: currentTrack)
-            } else {
-                miniPlayerButton(for: currentTrack)
-            }
+            miniPlayerButton(for: currentTrack)
         }
-    }
-
-    // MARK: - Collapsed strip (thin bar — swipe down to reach)
-    private func collapsedStrip(for currentTrack: Track) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                isCollapsed = false
-            }
-        } label: {
-            VStack(spacing: 0) {
-                // Thin progress bar
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.appAccent, .appSecondary],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geo.size.width * miniPlayerProgress)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(height: 12)
-                .background(Color.appSubtleFill)
-                .overlay(alignment: .center) {
-                    Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.appTextSecondary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .transition(.asymmetric(
-            insertion: .move(edge: .bottom).combined(with: .opacity),
-            removal: .opacity
-        ))
     }
 
     // MARK: - Full mini player
@@ -185,27 +142,6 @@ struct MiniPlayerView: View {
             .frame(minHeight: 56)
         }
         .modifier(MiniPlayerSurface())
-        .offset(x: max(0, dragOffset))
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 15)
-                .onChanged { value in
-                    if value.translation.width > 0 {
-                        dragOffset = value.translation.width * 0.5
-                    }
-                }
-                .onEnded { value in
-                    if value.translation.width > 60 {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            isCollapsed = true
-                            dragOffset = 0
-                        }
-                    } else {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            dragOffset = 0
-                        }
-                    }
-                }
-        )
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.currentTrack?.id)
     }
 
