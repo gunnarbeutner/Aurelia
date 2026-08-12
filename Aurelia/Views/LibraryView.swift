@@ -163,7 +163,6 @@ struct LibraryView: View {
     // current value on subscribe. Starting true flashed a spinner on every
     // appearance even when the catalog was already loaded.
     @State private var isLoading = false
-    @State private var isSyncing = false
     @State private var errorMessage: String?
     @State private var showNewPlaylistSheet = false
     
@@ -263,15 +262,12 @@ struct LibraryView: View {
                 // View Mode & Sort Controls
                 viewControlsSection
 
-                if isSyncing && !isLoading {
-                    librarySyncProgressView(compact: true)
-                }
-
                 // Content based on filter
                 if isLoading {
-                    // Loading state
+                    // First load has nothing else to show, so it keeps its
+                    // progress. Sync status while browsing lives in Settings.
                     Spacer()
-                    librarySyncProgressView(compact: false)
+                    librarySyncProgressView()
                     Spacer()
                 } else if let error = errorMessage {
                     // Error state
@@ -614,9 +610,6 @@ struct LibraryView: View {
                 Color.clear.frame(height: 72)
             }
         }
-        .refreshable {
-            await syncLibrary()
-        }
         .onChange(of: selectedFilter) { _, newFilter in
             if newFilter == "Recent" {
                 serverRecentAlbums = libraryStore.recentAlbums
@@ -658,22 +651,6 @@ struct LibraryView: View {
                             .foregroundColor(.appSecondary)
                     }
                 }
-                
-                // Sync button
-                Button {
-                    Task { await syncLibrary() }
-                } label: {
-                    if isSyncing {
-                        ProgressView()
-                            .tint(.appAccent)
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.title3)
-                            .foregroundColor(.appAccent)
-                    }
-                }
-                .disabled(isSyncing)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
@@ -706,26 +683,27 @@ struct LibraryView: View {
         .onReceive(libraryStore.$genres) { genres = $0 }
         .onReceive(libraryStore.$recentAlbums) { serverRecentAlbums = $0 }
         .onReceive(libraryStore.$isInitialLoading) { isLoading = $0 }
-        .onReceive(libraryStore.$isRefreshing) { isSyncing = $0 }
         .onReceive(libraryStore.$errorMessage) { errorMessage = $0 }
     }
 
     @ViewBuilder
-    private func librarySyncProgressView(compact: Bool) -> some View {
-        VStack(spacing: compact ? 6 : 14) {
+    /// Shown only during the first load, when there is no catalog to display
+    /// yet. Progress for later syncs is reported in Settings.
+    private func librarySyncProgressView() -> some View {
+        VStack(spacing: 14) {
             if let progress = libraryStore.syncProgress {
                 ProgressView(value: progress)
                     .tint(.appAccent)
-                    .frame(maxWidth: compact ? .infinity : 320)
+                    .frame(maxWidth: 320)
             } else {
                 ProgressView()
                     .tint(.appAccent)
-                    .scaleEffect(compact ? 0.85 : 1.25)
+                    .scaleEffect(1.25)
             }
 
             HStack(spacing: 8) {
                 Text(libraryStore.syncMessage ?? "Preparing library sync…")
-                    .font(compact ? .appCaption : .appBody)
+                    .font(.appBody)
                     .foregroundColor(.appTextSecondary)
                 if let progress = libraryStore.syncProgress {
                     Text("\(Int(progress * 100))%")
@@ -735,7 +713,7 @@ struct LibraryView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, compact ? 6 : 12)
+        .padding(.vertical, 12)
         .accessibilityElement(children: .combine)
     }
 
@@ -805,33 +783,6 @@ struct LibraryView: View {
                 }
             }
 
-            // Sync button
-            Button {
-                Task {
-                    await syncLibrary()
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.appMidBackground)
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.appAccent.opacity(0.5), lineWidth: 1)
-                        )
-
-                    if isSyncing {
-                        ProgressView()
-                            .tint(.appAccent)
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.headline.weight(.semibold))
-                            .foregroundColor(.appAccent)
-                    }
-                }
-            }
-            .disabled(isSyncing)
         }
         .padding(.horizontal, 20)
         .padding(.top, 20)
@@ -948,22 +899,6 @@ struct LibraryView: View {
                 .accessibilityLabel("New playlist")
             }
 
-            Button {
-                Task { await syncLibrary() }
-            } label: {
-                if isSyncing {
-                    ProgressView()
-                        .tint(.appAccent)
-                        .scaleEffect(0.8)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.title3)
-                        .foregroundColor(.appAccent)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(isSyncing)
-            .accessibilityLabel("Refresh library")
         }
     }
     #endif

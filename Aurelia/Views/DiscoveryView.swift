@@ -64,10 +64,6 @@ struct DiscoveryView: View {
     private var discoveryContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                if libraryStore.isRefreshing {
-                    librarySyncBanner
-                }
-
                 statusBanner
 
                 if let message = viewModel.errorMessage {
@@ -256,32 +252,6 @@ struct DiscoveryView: View {
             }
         }
         .padding(.horizontal, 24)
-    }
-
-    private var librarySyncBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label(
-                    libraryStore.syncMessage ?? "Syncing library…",
-                    systemImage: "arrow.triangle.2.circlepath"
-                )
-                .font(.appCaption)
-                .foregroundColor(.appTextSecondary)
-                Spacer()
-                if let progress = libraryStore.syncProgress {
-                    Text("\(Int(progress * 100))%")
-                        .font(.appMono)
-                        .foregroundColor(.appTextMuted)
-                }
-            }
-            if let progress = libraryStore.syncProgress {
-                ProgressView(value: progress)
-                    .tint(.appAccent)
-            }
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.appElevated))
-        .padding(.horizontal, 20)
     }
 
     private var emptyView: some View {

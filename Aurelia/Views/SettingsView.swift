@@ -82,6 +82,9 @@ struct SettingsView: View {
                     // Offline storage
                     storageSection
 
+                    // Library sync — the single place sync is observed and started
+                    librarySyncSection
+
                     // Server Info Section
                     serverInfoSection
 
@@ -118,6 +121,98 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Library Sync Section
+
+    /// Sync progress is reported only here. The browsing screens deliberately
+    /// stay free of sync chrome, so this is where a sync is watched and where a
+    /// manual one is started (pull-to-refresh still works in the tabs).
+    private var librarySyncSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Library Sync")
+                .font(.appHeadline)
+                .foregroundColor(.appAccent)
+
+            VStack(spacing: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: libraryStore.isRefreshing
+                          ? "arrow.triangle.2.circlepath"
+                          : "checkmark.circle")
+                        .foregroundColor(libraryStore.isRefreshing ? .appAccent : .appSuccess)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(libraryStore.isRefreshing ? "Syncing" : "Not syncing")
+                            .font(.appBody)
+                            .foregroundColor(.appText)
+                        Text(libraryStore.isRefreshing
+                             ? (libraryStore.syncMessage ?? "Preparing library sync…")
+                             : "Syncs on launch and when the server changes")
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                    }
+
+                    Spacer()
+
+                    if libraryStore.isRefreshing, let progress = libraryStore.syncProgress {
+                        Text("\(Int(progress * 100))%")
+                            .font(.appMono)
+                            .foregroundColor(.appTextMuted)
+                    }
+                }
+
+                if libraryStore.isRefreshing {
+                    ProgressView(value: libraryStore.syncProgress)
+                        .tint(.appAccent)
+                }
+
+                Divider()
+                    .background(Color.appControlFill)
+
+                Button {
+                    Task { await libraryStore.refresh(trigger: .manual) }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.appAccent)
+                            .frame(width: 24)
+                        Text("Sync Now")
+                            .font(.appBody)
+                            .foregroundColor(.appText)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(libraryStore.isRefreshing || !jellyfinService.isAuthenticated)
+                .accessibilityLabel("Sync now")
+
+                Divider()
+                    .background(Color.appControlFill)
+
+                Button {
+                    showRebuildConfirmation = true
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundColor(.appTertiary)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Rebuild Local Library")
+                                .font(.appBody)
+                                .foregroundColor(.appText)
+                            Text("Use only to repair the local cache")
+                                .font(.appCaption)
+                                .foregroundColor(.appTextSecondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(libraryStore.isRefreshing || !jellyfinService.isAuthenticated)
+            }
+            .settingsCard()
+        }
+    }
+
     // MARK: - Offline Storage Section
 
     private var storageSection: some View {
@@ -148,15 +243,7 @@ struct SettingsView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.appTextMuted)
                 }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.appMidBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.appControlFill, lineWidth: 1)
-                        )
-                )
+                .settingsCard()
             }
             .buttonStyle(.plain)
         }
@@ -376,51 +463,8 @@ struct SettingsView: View {
 
                     Spacer()
                 }
-
-                Divider()
-                    .background(Color.appControlFill)
-
-                Button {
-                    showRebuildConfirmation = true
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .foregroundColor(.appTertiary)
-                            .frame(width: 24)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Rebuild Local Library")
-                                .font(.appBody)
-                                .foregroundColor(.appText)
-                            Text(libraryStore.syncMessage ?? "Use only to repair the local cache")
-                                .font(.appCaption)
-                                .foregroundColor(.appTextSecondary)
-                        }
-                        Spacer()
-                        if libraryStore.isRefreshing {
-                            ProgressView(value: libraryStore.syncProgress)
-                                .frame(width: 70)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(libraryStore.isRefreshing || !jellyfinService.isAuthenticated)
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.appMidBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.appAccent.opacity(0.3), Color.appTertiary.opacity(0.3)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-            )
+            .settingsCard()
         }
     }
 
@@ -471,6 +515,32 @@ struct SettingsView: View {
 }
 
 // MARK: - Preview
+
+private extension View {
+    /// The card treatment every Settings section shares. Defined once so the
+    /// sections cannot drift apart in padding, fill or outline.
+    func settingsCard() -> some View {
+        padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.appMidBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.appAccent.opacity(0.3),
+                                        Color.appTertiary.opacity(0.3)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+            )
+    }
+}
 
 #Preview {
     NavigationStack {
