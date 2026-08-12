@@ -1107,6 +1107,9 @@ private struct HistoryQueueRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Play \(track.name) again")
         .accessibilityIdentifier("now-playing-history-\(track.id)")
+        .contextMenu {
+            TrackContextMenu(track: track)
+        }
     }
 }
 
@@ -1199,6 +1202,9 @@ private struct UpNextQueueRow: View {
                 .accessibilityLabel("Play \(track.name) next")
                 .accessibilityIdentifier("now-playing-up-next-\(track.id)")
                 .accessibilityAction(named: "Delete") { onDelete() }
+                .contextMenu {
+                    TrackContextMenu(track: track)
+                }
 
                 Image(systemName: "line.3.horizontal")
                     .font(.caption.weight(.semibold))
