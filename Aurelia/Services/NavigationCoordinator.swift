@@ -27,6 +27,14 @@ class NavigationCoordinator: ObservableObject {
     /// can read it directly instead of inferring it from the view hierarchy.
     @Published var isPlayerPresented = false
 
+    /// Tab selection requested from outside the view tree. The view clears it
+    /// once applied.
+    @Published var pendingTabSelection: Int?
+
+    /// Depth of the library navigation stack, mirrored by the view. Scripted
+    /// navigation waits on this rather than guessing how long a push takes.
+    @Published var libraryNavigationDepth = 0
+
     // MARK: - Media Navigation
 
     /// Navigates to the album associated with a track. Track metadata from

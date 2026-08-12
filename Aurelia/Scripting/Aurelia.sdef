@@ -18,5 +18,48 @@
             <result type="text" description="presented, hidden, or no track."/>
         </command>
 
+        <command name="play" code="AurlPlay" description="Resume playback.">
+            <cocoa class="Aurelia.AureliaPlayCommand"/>
+            <result type="text" description="playing, or no track."/>
+        </command>
+
+        <command name="pause" code="AurlPaus" description="Pause playback.">
+            <cocoa class="Aurelia.AureliaPauseCommand"/>
+            <result type="text" description="paused, or no track."/>
+        </command>
+
+        <command name="next track" code="AurlNext" description="Skip to the next track.">
+            <cocoa class="Aurelia.AureliaNextTrackCommand"/>
+            <result type="text" description="The now playing description, or no track."/>
+        </command>
+
+        <command name="previous track" code="AurlPrev" description="Skip to the previous track.">
+            <cocoa class="Aurelia.AureliaPreviousTrackCommand"/>
+            <result type="text" description="The now playing description, or no track."/>
+        </command>
+
+        <command name="now playing" code="AurlNowP" description="Describe the current track.">
+            <cocoa class="Aurelia.AureliaNowPlayingCommand"/>
+            <result type="text" description="Title — artist — album, or no track."/>
+        </command>
+
+        <command name="select tab" code="AurlSelT" description="Select a root tab by name.">
+            <cocoa class="Aurelia.AureliaSelectTabCommand"/>
+            <direct-parameter type="text" description="Discover, Library, Search, Favorites, or Settings."/>
+            <result type="text" description="The selected tab name, or unknown tab."/>
+        </command>
+
+        <command name="show artist" code="AurlShwA" description="Open an artist's detail page.">
+            <cocoa class="Aurelia.AureliaShowArtistCommand"/>
+            <direct-parameter type="text" description="Artist name; an exact match wins, otherwise a prefix."/>
+            <result type="text" description="navigated, no match, not signed in, or timed out."/>
+        </command>
+
+        <command name="show album" code="AurlShwB" description="Open an album's detail page.">
+            <cocoa class="Aurelia.AureliaShowAlbumCommand"/>
+            <direct-parameter type="text" description="Album name; an exact match wins, otherwise a prefix."/>
+            <result type="text" description="navigated, no match, not signed in, or timed out."/>
+        </command>
+
     </suite>
 </dictionary>

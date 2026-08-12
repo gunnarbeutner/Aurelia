@@ -165,6 +165,15 @@ struct MainTabView: View {
         .onChange(of: showNowPlaying) { _, presented in
             navCoordinator.isPlayerPresented = presented
         }
+        .onChange(of: navCoordinator.pendingTabSelection) { _, tab in
+            guard let tab else { return }
+            navCoordinator.pendingTabSelection = nil
+            if showNowPlaying { dismissNowPlaying() }
+            selectedTab = tab
+        }
+        .onChange(of: libraryPath) { _, path in
+            navCoordinator.libraryNavigationDepth = path.count
+        }
         .onAppear {
             navCoordinator.isPlayerPresented = showNowPlaying
         }
