@@ -771,6 +771,58 @@ struct AureliaTests {
         #expect(viewModel.availability == .notInstalled)
     }
 
+    @Test @MainActor func discoveryUsesAudioMuseWhileAnalysisIsRunning() async throws {
+        let api = FakeDiscoveryAPI()
+        api.activeAudioMuseTask = try JSONDecoder().decode(
+            AudioMuseTaskStatus.self,
+            from: Data(
+                #"{"task_id":"analysis","task_type":"library-analysis","status":"running","progress":0.5}"#.utf8
+            )
+        )
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(id: "taste", artist: "Artist", genre: "rock")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { [] },
+            snapshotScope: scope,
+            candidateProvider: provider
+        )
+
+        await viewModel.refresh()
+
+        #expect(api.requestedMixes == ["taste"])
+        #expect(viewModel.shelves.count == 1)
+        #expect(viewModel.availability == .analyzing(api.activeAudioMuseTask!))
+    }
+
+    @Test @MainActor func confirmedAudioMuseDoesNotBecomeNotInstalledAfterTransient404() async throws {
+        let api = FakeDiscoveryAPI()
+        api.activeAudioMuseTask = try JSONDecoder().decode(
+            AudioMuseTaskStatus.self,
+            from: Data(#"{"task_id":"analysis","status":"running"}"#.utf8)
+        )
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(id: "taste", artist: "Artist", genre: "rock")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { [] },
+            snapshotScope: scope,
+            candidateProvider: provider
+        )
+
+        await viewModel.refresh()
+        api.shouldFailAudioMuseInfoAsNotFound = true
+        await viewModel.refresh()
+
+        #expect(api.requestedMixes == ["taste", "taste"])
+        #expect(viewModel.shelves.count == 1)
+        #expect(viewModel.availability == .analyzing(api.activeAudioMuseTask!))
+    }
+
     @Test @MainActor func discoveryDoesNotRepeatRecentHistoryAsStartListeningFallback() async {
         let recent = Track(
             id: "recent",
@@ -823,6 +875,42 @@ struct AureliaTests {
 
         #expect(viewModel.shelves == originalShelves)
         #expect(viewModel.errorMessage?.contains("Showing the previous mixes") == true)
+    }
+
+    @Test @MainActor func discoveryRetainsGoodDynamicStateWhenCandidateRefreshFails() async throws {
+        let api = FakeDiscoveryAPI()
+        let old = Date(timeIntervalSince1970: 1_700_000_000)
+        let provider = FakeDiscoveryCandidateProvider(candidates: [
+            Self.discoveryCandidate(
+                id: "rediscover",
+                artist: "Artist",
+                genre: "rock",
+                playCount: 3,
+                isFavorite: true,
+                lastPlayedAt: old
+            ),
+            Self.discoveryCandidate(id: "off-path", artist: "Other", genre: "jazz")
+        ])
+        let scope = try #require(LibraryScope(baseURL: api.baseURL, userID: "user"))
+        let viewModel = DiscoveryViewModel(
+            api: api,
+            recentTracksProvider: { [] },
+            snapshotScope: scope,
+            candidateProvider: provider,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+
+        await viewModel.refresh()
+        let originalShelves = viewModel.shelves
+        let originalRediscover = viewModel.rediscoverTracks
+        let originalOffPath = viewModel.offTheBeatenPathTracks
+        await provider.setCandidates([])
+
+        await viewModel.refresh()
+
+        #expect(viewModel.shelves == originalShelves)
+        #expect(viewModel.rediscoverTracks == originalRediscover)
+        #expect(viewModel.offTheBeatenPathTracks == originalOffPath)
     }
 
     @Test @MainActor func discoveryTreatsRecentTracksAsContentWhenMixesAreEmpty() async {
@@ -1165,7 +1253,10 @@ struct AureliaTests {
 
     private static func discoveryCandidate(
         _ track: Track,
-        genre: String? = nil
+        genre: String? = nil,
+        playCount: Int = 5,
+        isFavorite: Bool = true,
+        lastPlayedAt: Date? = Date(timeIntervalSince1970: 1_700_000_000)
     ) -> DiscoveryCandidate {
         let enrichedTrack = Track(
             id: track.id,
@@ -1187,16 +1278,19 @@ struct AureliaTests {
         )
         return DiscoveryCandidate(
             track: enrichedTrack,
-            lastPlayedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            playCount: 5,
-            isFavorite: true
+            lastPlayedAt: lastPlayedAt,
+            playCount: playCount,
+            isFavorite: isFavorite
         )
     }
 
     private static func discoveryCandidate(
         id: String,
         artist: String,
-        genre: String
+        genre: String,
+        playCount: Int = 5,
+        isFavorite: Bool = true,
+        lastPlayedAt: Date? = Date(timeIntervalSince1970: 1_700_000_000)
     ) -> DiscoveryCandidate {
         discoveryCandidate(
             Track(
@@ -1208,7 +1302,10 @@ struct AureliaTests {
                 artworkURL: nil,
                 artistId: artist.lowercased().replacingOccurrences(of: " ", with: "-")
             ),
-            genre: genre
+            genre: genre,
+            playCount: playCount,
+            isFavorite: isFavorite,
+            lastPlayedAt: lastPlayedAt
         )
     }
 
@@ -1726,6 +1823,8 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     var shouldFailRecent = true
     var serverRecentTracks: [BaseItemDto] = []
     var audioMuseAvailable = true
+    var shouldFailAudioMuseInfoAsNotFound = false
+    var activeAudioMuseTask: AudioMuseTaskStatus?
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
         requestedMixes.append(itemId)
@@ -1749,12 +1848,13 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     }
 
     func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo {
+        if shouldFailAudioMuseInfoAsNotFound { throw JellyfinError.notFound }
         guard audioMuseAvailable else { throw JellyfinError.notFound }
         return AudioMusePluginInfo(version: "1", availableEndpoints: [])
     }
 
     func checkAudioMuseHealth() async throws -> Bool { audioMuseAvailable }
-    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { nil }
+    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { activeAudioMuseTask }
 
     func audio(id: String, artist: String) -> BaseItemDto {
         BaseItemDto(
@@ -1773,6 +1873,10 @@ private actor FakeDiscoveryCandidateProvider: DiscoveryCandidateProviding {
     private var storedCandidates: [DiscoveryCandidate]
 
     init(candidates: [DiscoveryCandidate]) {
+        storedCandidates = candidates
+    }
+
+    func setCandidates(_ candidates: [DiscoveryCandidate]) {
         storedCandidates = candidates
     }
 

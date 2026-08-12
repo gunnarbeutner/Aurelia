@@ -154,8 +154,13 @@ struct DiscoveryView: View {
                 .font(.appCaption)
                 .foregroundColor(.appTextSecondary)
                 .padding(.horizontal, 20)
-        case .notInstalled, .unavailable:
+        case .notInstalled:
             Label("AudioMuse-AI is required for Daily Mixes", systemImage: "waveform.path.badge.exclamationmark")
+                .font(.appCaption)
+                .foregroundColor(.appTextSecondary)
+                .padding(.horizontal, 20)
+        case .unavailable:
+            Label("AudioMuse-AI is temporarily unavailable", systemImage: "waveform.path.badge.exclamationmark")
                 .font(.appCaption)
                 .foregroundColor(.appTextSecondary)
                 .padding(.horizontal, 20)

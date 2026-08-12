@@ -287,6 +287,7 @@ final class DiscoveryViewModel: ObservableObject {
     private var isPreparingRefresh = false
     private var refreshGeneration: UInt64 = 0
     private var observedActiveAnalysis = false
+    private var hasConfirmedAudioMusePresence = false
     private var hasGeneratedDynamicContent = false
     private var loadedStrategyVersion: Int?
 
@@ -434,7 +435,7 @@ final class DiscoveryViewModel: ObservableObject {
                 from: discoveryCandidates,
                 now: now()
             )
-            let audioMuseReady = await audioMuseIsReady()
+            let audioMuseAvailable = await audioMuseIsAvailable()
             let recentCutoff = now().addingTimeInterval(-14 * 24 * 60 * 60)
             let recentTrackIDs = Set(recentTracks.map(\.id)).union(
                 discoveryCandidates.compactMap { candidate in
@@ -443,7 +444,7 @@ final class DiscoveryViewModel: ObservableObject {
                     return candidate.track.id
                 }
             )
-            let dailySeeds = audioMuseReady
+            let dailySeeds = audioMuseAvailable
                 ? DynamicDiscoverySelector.dailyMixSeeds(
                     from: discoveryCandidates,
                     recentTrackIDs: recentTrackIDs,
@@ -495,9 +496,16 @@ final class DiscoveryViewModel: ObservableObject {
             // A refresh is transactional for recommendation shelves. Recent
             // playback can still move forward, but a temporary plugin/server
             // failure must never replace known-good mixes with an empty array.
-            let resolvedShelves = audioMuseReady
-                ? (newShelves.isEmpty ? previousShelves : newShelves)
-                : []
+            // A refresh is only allowed to improve known-good recommendations.
+            // Plugin health and analysis state are transient, so neither may
+            // erase shelves that were generated successfully earlier.
+            let resolvedShelves = newShelves.isEmpty ? previousShelves : newShelves
+            let resolvedRediscoverTracks = discoveryCandidates.isEmpty
+                ? self.rediscoverTracks
+                : rediscoverTracks
+            let resolvedOffTheBeatenPathTracks = discoveryCandidates.isEmpty
+                ? self.offTheBeatenPathTracks
+                : offTheBeatenPathTracks
             let fallbackTracks = resolvedShelves.isEmpty && recentTracks.isEmpty
                 ? Array(discoveryCandidates.map(\.track).prefix(12))
                 : []
@@ -505,8 +513,8 @@ final class DiscoveryViewModel: ObservableObject {
                 shelves: resolvedShelves,
                 fallbackTracks: fallbackTracks,
                 recentTracks: Array(recentTracks.prefix(12)),
-                rediscoverTracks: rediscoverTracks,
-                offTheBeatenPathTracks: offTheBeatenPathTracks,
+                rediscoverTracks: resolvedRediscoverTracks,
+                offTheBeatenPathTracks: resolvedOffTheBeatenPathTracks,
                 strategyVersion: DynamicDiscoverySelector.dailyMixStrategyVersion,
                 recentSignature: Array(recentTracks.prefix(12).map(\.id)),
                 refreshedAt: now()
@@ -544,25 +552,28 @@ final class DiscoveryViewModel: ObservableObject {
     func updateAudioMuseStatus() async {
         do {
             let info = try await api.fetchAudioMuseInfo()
-            let healthy = try await api.checkAudioMuseHealth()
-            guard healthy else {
-                availability = .unavailable
-                return
-            }
-
+            hasConfirmedAudioMusePresence = true
             if let task = try await api.fetchActiveAudioMuseTask() {
                 observedActiveAnalysis = true
                 availability = .analyzing(task)
             } else {
-                availability = .ready(version: info.version)
+                availability = (try? await api.checkAudioMuseHealth()) == true
+                    ? .ready(version: info.version)
+                    : .unavailable
                 if observedActiveAnalysis {
                     observedActiveAnalysis = false
                     await refresh(force: true, publishResult: false)
                 }
             }
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
         } catch let error as JellyfinError {
             if case .notFound = error {
-                availability = .notInstalled
+                if !hasConfirmedAudioMusePresence {
+                    availability = .notInstalled
+                }
             } else {
                 availability = .unavailable
             }
@@ -571,22 +582,41 @@ final class DiscoveryViewModel: ObservableObject {
         }
     }
 
-    private func audioMuseIsReady() async -> Bool {
+    private func audioMuseIsAvailable() async -> Bool {
         do {
             let info = try await api.fetchAudioMuseInfo()
-            guard try await api.checkAudioMuseHealth() else {
-                availability = .unavailable
-                return false
-            }
-            if let task = try await api.fetchActiveAudioMuseTask() {
-                availability = .analyzing(task)
-                return false
-            }
+            hasConfirmedAudioMusePresence = true
             availability = .ready(version: info.version)
+            do {
+                if let task = try await api.fetchActiveAudioMuseTask() {
+                    observedActiveAnalysis = true
+                    availability = .analyzing(task)
+                }
+            } catch is CancellationError {
+                return true
+            } catch let error as URLError where error.code == .cancelled {
+                return true
+            } catch {
+                // Task status is informative only. Its failure cannot prevent
+                // using AudioMuse after the info endpoint confirmed presence.
+            }
+            // Plugin presence is the only capability gate. Health and analysis
+            // are status signals; AudioMuse can still serve its last model.
             return true
+        } catch is CancellationError {
+            return hasConfirmedAudioMusePresence
+        } catch let error as URLError where error.code == .cancelled {
+            return hasConfirmedAudioMusePresence
         } catch let error as JellyfinError {
             if case .notFound = error {
-                availability = .notInstalled
+                if !hasConfirmedAudioMusePresence {
+                    availability = .notInstalled
+                    return false
+                }
+                // A confirmed installation cannot become "not installed"
+                // because one request failed during a refresh. Keep using the
+                // last completed AudioMuse model and retain the known status.
+                return true
             } else {
                 availability = .unavailable
             }
