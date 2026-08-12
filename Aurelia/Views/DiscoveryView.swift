@@ -42,7 +42,9 @@ struct DiscoveryView: View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
 
-            if viewModel.isLoading && !viewModel.hasContent {
+            if !libraryStore.hasCachedLibrary && !viewModel.hasContent {
+                initialLibraryView
+            } else if viewModel.isLoading && !viewModel.hasContent {
                 loadingView
             } else if !viewModel.hasContent {
                 emptyView
@@ -59,11 +61,21 @@ struct DiscoveryView: View {
             // shelf snapshot while Discover is onscreen.
             Task { await viewModel.loadIfNeeded(publishResult: false) }
         }
+        .onChange(of: libraryStore.catalogRevision) { oldRevision, newRevision in
+            guard newRevision > 0, newRevision != oldRevision else { return }
+            // Catalog promotion is atomic. Refresh only after its revision is
+            // visible, never when a staged or failed sync merely stops.
+            Task { await viewModel.refresh(force: true, publishResult: true) }
+        }
     }
 
     private var discoveryContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
+                if !libraryStore.hasCachedLibrary {
+                    libraryPreparationCard
+                }
+
                 statusBanner
 
                 if let message = viewModel.errorMessage {
@@ -335,6 +347,63 @@ struct DiscoveryView: View {
             }
         }
         .padding(.horizontal, 24)
+    }
+
+    private var initialLibraryView: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                libraryPreparationCard
+                if let message = viewModel.errorMessage {
+                    inlineMessage(message)
+                }
+            }
+            .padding(.top, 24)
+        }
+    }
+
+    private var libraryPreparationCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Preparing your library", systemImage: "sparkles")
+                .font(.appHeadline)
+                .foregroundColor(.appText)
+
+            Text(libraryStore.errorMessage ?? libraryStore.syncMessage ?? "Getting your music ready…")
+                .font(.appBody)
+                .foregroundColor(.appTextSecondary)
+
+            if let progress = libraryStore.syncProgress {
+                ProgressView(value: progress)
+                    .tint(.appAccent)
+                Text("\(Int(progress * 100))%")
+                    .font(.appMono)
+                    .foregroundColor(.appTextMuted)
+            } else if libraryStore.errorMessage == nil {
+                ProgressView()
+                    .tint(.appAccent)
+            }
+
+            Text("Recently Played is available now. Daily Mixes, Rediscover, and Off the Beaten Path will appear automatically when preparation finishes.")
+                .font(.appCaption)
+                .foregroundColor(.appTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if libraryStore.errorMessage != nil {
+                Button("Try Again") {
+                    Task { await libraryStore.refresh(trigger: .manual) }
+                }
+                .font(.appSubheadline)
+                .foregroundColor(.appAccentText)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .background(Capsule().fill(Color.appAccent))
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color.appElevated))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appAccent.opacity(0.25)))
+        .padding(.horizontal, 20)
+        .accessibilityIdentifier("discovery-library-preparation")
     }
 
     private var emptyView: some View {

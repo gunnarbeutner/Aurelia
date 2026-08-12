@@ -733,6 +733,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var syncMessage: String?
     @Published private(set) var syncProgress: Double?
+    @Published private(set) var hasCachedLibrary = false
+    @Published private(set) var catalogRevision: Int64 = 0
 
     private let service: JellyfinService
     private let repository: LibraryRepository
@@ -793,7 +795,6 @@ final class LibraryStore: ObservableObject {
         isRefreshing = true
         defer {
             isRefreshing = false
-            isInitialLoading = false
         }
 
         do {
@@ -839,7 +840,9 @@ final class LibraryStore: ObservableObject {
         playlists = snapshot.playlists
         genres = snapshot.genres
         recentAlbums = await repository.cachedRecentAlbums(in: scope, limit: 40)
-        isInitialLoading = !snapshot.hasCachedLibrary
+        hasCachedLibrary = snapshot.hasCachedLibrary
+        catalogRevision = snapshot.revision
+        isInitialLoading = !hasCachedLibrary
     }
 
     private func clear() {
@@ -853,6 +856,8 @@ final class LibraryStore: ObservableObject {
         errorMessage = nil
         syncMessage = nil
         syncProgress = nil
+        hasCachedLibrary = false
+        catalogRevision = 0
         isInitialLoading = true
         isRefreshing = false
     }
