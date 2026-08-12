@@ -50,8 +50,7 @@ struct DiscoveryView: View {
                 discoveryContent
             }
         }
-        .navigationTitle("Discover")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootTabNavigationTitle("Discover")
         .task {
             await viewModel.activate()
         }

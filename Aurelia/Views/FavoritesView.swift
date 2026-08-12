@@ -66,8 +66,7 @@ struct FavoritesView: View {
         .navigationDestination(for: Artist.self) { artist in
             ArtistDetailView(artist: artist)
         }
-        .navigationTitle("Favorites")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootTabNavigationTitle("Favorites")
         .onAppear {
             if isActive {
                 Task { await viewModel.activate() }

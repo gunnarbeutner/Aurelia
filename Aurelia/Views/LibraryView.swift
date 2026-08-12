@@ -765,6 +765,7 @@ struct LibraryView: View {
         }
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        #if !targetEnvironment(macCatalyst)
         .safeAreaInset(edge: .top) {
             // Custom top bar: logo + Library + sync
             HStack(spacing: 10) {
@@ -810,6 +811,7 @@ struct LibraryView: View {
             .padding(.vertical, 10)
             .background(Color.appBackground.opacity(0.95))
         }
+        #endif
         .toolbar(.visible, for: .tabBar)
         .sheet(isPresented: $showNewPlaylistSheet) {
             NewPlaylistSheet { playlistId in
@@ -1051,6 +1053,10 @@ struct LibraryView: View {
 
             Spacer()
 
+            #if targetEnvironment(macCatalyst)
+            libraryActionButtons
+            #endif
+
             // View Mode Toggle
             HStack(spacing: 0) {
                 ForEach(ViewMode.allCases, id: \.self) { mode in
@@ -1084,6 +1090,41 @@ struct LibraryView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
     }
+
+    #if targetEnvironment(macCatalyst)
+    private var libraryActionButtons: some View {
+        HStack(spacing: 12) {
+            if selectedFilter == "Playlists" {
+                Button {
+                    showNewPlaylistSheet = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.neonPink)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New playlist")
+            }
+
+            Button {
+                Task { await syncLibrary() }
+            } label: {
+                if isSyncing {
+                    ProgressView()
+                        .tint(.appAccent)
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.title3)
+                        .foregroundColor(.appAccent)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isSyncing)
+            .accessibilityLabel("Refresh library")
+        }
+    }
+    #endif
 }
 
 private struct LibraryScrollIndex: View {

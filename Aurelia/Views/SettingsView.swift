@@ -90,8 +90,7 @@ struct SettingsView: View {
                 .padding()
             }
         }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootTabNavigationTitle("Settings")
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
             Button("Sign Out", role: .destructive) {
                 jellyfinService.signOut()

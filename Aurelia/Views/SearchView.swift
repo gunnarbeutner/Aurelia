@@ -88,8 +88,7 @@ struct SearchView: View {
         .navigationDestination(for: Artist.self) { artist in
             ArtistDetailView(artist: artist)
         }
-        .navigationTitle("Search")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootTabNavigationTitle("Search")
     }
 
     #if targetEnvironment(macCatalyst)

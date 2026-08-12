@@ -207,6 +207,19 @@ extension View {
     func neonGlow(color: Color = .appAccent, radius: CGFloat = 4) -> some View {
         modifier(NeonGlow(color: color, radius: radius))
     }
+
+    /// The Catalyst tab bar already names and highlights the current root page.
+    /// Hiding the root navigation bar there avoids repeating that title and
+    /// returns its vertical space, while compact iOS layouts retain their title.
+    @ViewBuilder
+    func rootTabNavigationTitle(_ title: String) -> some View {
+        #if targetEnvironment(macCatalyst)
+        toolbar(.hidden, for: .navigationBar)
+        #else
+        navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
 }
 
 // MARK: - Button Styles
