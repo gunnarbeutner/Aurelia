@@ -1281,25 +1281,14 @@ class PlayerManager: NSObject, ObservableObject {
             return .commandFailed
         }
 
-        // Skip forward/backward 15s (lock screen & Control Center)
+        // The Now Playing UI draws a single pair of side buttons, and skip
+        // intervals take that slot ahead of track changes. A music player wants
+        // previous/next there, so the skip commands stay off and scrubbing is
+        // left to changePlaybackPositionCommand above.
         commandCenter.skipForwardCommand.removeTarget(nil)
         commandCenter.skipBackwardCommand.removeTarget(nil)
-        commandCenter.skipForwardCommand.isEnabled = true
-        commandCenter.skipBackwardCommand.isEnabled = true
-        commandCenter.skipForwardCommand.preferredIntervals = [15]
-        commandCenter.skipBackwardCommand.preferredIntervals = [15]
-
-        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            self.seek(to: min(self.duration, self.currentTime + 15))
-            return .success
-        }
-
-        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            self.seek(to: max(0, self.currentTime - 15))
-            return .success
-        }
+        commandCenter.skipForwardCommand.isEnabled = false
+        commandCenter.skipBackwardCommand.isEnabled = false
     }
 
     func updateNowPlayingInfo() {
