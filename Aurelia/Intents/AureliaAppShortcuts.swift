@@ -9,15 +9,19 @@ import AppIntents
 
 /// Spoken phrases for the media intents.
 ///
-/// Every phrase must contain `\(.applicationName)` — App Intents rejects any
-/// that does not, at build time.
+/// Two rules govern this list, and breaking the second one produces an App
+/// Shortcut that fails at run time rather than at build time:
+///
+/// 1. Every phrase must contain `\(.applicationName)`.
+/// 2. A required parameter must be bound in the phrase. An App Shortcut cannot
+///    prompt for a parameter it was never given, so an unbound one fails with
+///    "Unable to run App Shortcut" before `perform()` is ever reached.
 struct AureliaAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: PlayArtistIntent(),
             phrases: [
-                "Play an artist in \(.applicationName)",
-                "Play music in \(.applicationName)"
+                "Play \(\.$artist) in \(.applicationName)"
             ],
             shortTitle: "Play Artist",
             systemImageName: "music.mic"
@@ -26,7 +30,7 @@ struct AureliaAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: PlayAlbumIntent(),
             phrases: [
-                "Play an album in \(.applicationName)"
+                "Play \(\.$album) in \(.applicationName)"
             ],
             shortTitle: "Play Album",
             systemImageName: "square.stack"
@@ -35,7 +39,7 @@ struct AureliaAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: PlayPlaylistIntent(),
             phrases: [
-                "Play a playlist in \(.applicationName)"
+                "Play \(\.$playlist) in \(.applicationName)"
             ],
             shortTitle: "Play Playlist",
             systemImageName: "music.note.list"
@@ -44,7 +48,7 @@ struct AureliaAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: StartInstantMixIntent(),
             phrases: [
-                "Start an Instant Mix in \(.applicationName)"
+                "Start an Instant Mix from \(\.$artist) in \(.applicationName)"
             ],
             shortTitle: "Instant Mix",
             systemImageName: "sparkles"
