@@ -44,6 +44,32 @@ enum AutoplayPreference {
     }
 }
 
+/// When the AudioMuse continuation is worth fetching.
+///
+/// Waiting for the final song meant Up Next was empty at exactly the moment it
+/// was supposed to show what comes next, and left no time for AudioMuse to
+/// answer before the queue ran dry. A few songs of lead time fixes both.
+enum AutoplayPriming {
+    /// Upcoming songs left before the continuation is fetched. Small enough
+    /// that a long deliberate queue is not buried under suggestions early on.
+    static let leadTime = 3
+
+    static func shouldPrime(currentIndex: Int, queueCount: Int) -> Bool {
+        guard queueCount > 0, currentIndex >= 0, currentIndex < queueCount else { return false }
+        return queueCount - 1 - currentIndex <= leadTime
+    }
+
+    /// Where the suggested run still begins, given where playback has got to.
+    ///
+    /// A suggestion stops being a suggestion the moment it plays: the listener
+    /// is in it now, so the whole run reverts to being the queue rather than
+    /// having the marker creep down the list one song at a time.
+    static func startIndexStillAhead(currentIndex: Int, autoplayStartIndex: Int?) -> Int? {
+        guard let autoplayStartIndex else { return nil }
+        return currentIndex >= autoplayStartIndex ? nil : autoplayStartIndex
+    }
+}
+
 enum QueueAdvance {
     static func nextIndex(
         current: Int,
@@ -182,6 +208,10 @@ class PlayerManager: NSObject, ObservableObject {
     )
     private var autoplayRequestTask: Task<Void, Never>?
     private var autoplayRequestSeedID: String?
+    /// A seed AudioMuse had nothing new to offer. Remembered because priming
+    /// now runs several songs out, so without this the same dead end would be
+    /// refetched at every one of those song changes.
+    private var autoplayExhaustedSeedID: String?
 
     // MARK: - Playback State Persistence Keys
     private enum StateKey {
@@ -760,6 +790,9 @@ class PlayerManager: NSObject, ObservableObject {
                 setupGaplessQueue(startingAt: currentIndex)
                 player?.play()
             }
+            // Shortening the tail can be what brings the queue within reach of
+            // the continuation, and no song change will follow to notice it.
+            primeAutoplayIfNeeded()
         }
     }
 
@@ -988,22 +1021,32 @@ class PlayerManager: NSObject, ObservableObject {
         updateNowPlayingInfo()
 
         logger.info("▶️ Started playing: \(track.name)")
+        autoplayStartIndex = AutoplayPriming.startIndexStillAhead(
+            currentIndex: currentIndex,
+            autoplayStartIndex: autoplayStartIndex
+        )
         primeAutoplayIfNeeded()
     }
 
     // MARK: - Automatic continuation
 
-    /// Starts preparing AudioMuse's continuation as soon as the final queued
-    /// song begins. Suggestions are appended to the real queue for gapless
-    /// playback, while `autoplayStartIndex` keeps them visually distinct.
+    /// Starts preparing AudioMuse's continuation once the queue is nearly out.
+    /// Suggestions are appended to the real queue for gapless playback, while
+    /// `autoplayStartIndex` keeps them visually distinct.
     private func primeAutoplayIfNeeded() {
         guard continuePlayingSimilarMusic,
               repeatMode == .off,
               queue.indices.contains(currentIndex),
-              currentIndex == queue.count - 1 else { return }
-
-        let seed = queue[currentIndex]
-        guard autoplayRequestSeedID != seed.id else { return }
+              AutoplayPriming.shouldPrime(
+                currentIndex: currentIndex,
+                queueCount: queue.count
+              ),
+              // The continuation follows on from the end of the queue rather
+              // than from whatever is playing, so it stays coherent with what
+              // the listener actually chose last.
+              let seed = queue.last else { return }
+        guard autoplayRequestSeedID != seed.id,
+              autoplayExhaustedSeedID != seed.id else { return }
 
         autoplayRequestTask?.cancel()
         autoplayRequestSeedID = seed.id
@@ -1039,8 +1082,13 @@ class PlayerManager: NSObject, ObservableObject {
               repeatMode == .off,
               autoplayRequestSeedID == seedID,
               queue.indices.contains(currentIndex),
-              queue[currentIndex].id == seedID,
-              currentIndex == queue.count - 1 else {
+              // The queue may have grown or been reordered while the request
+              // was in flight; these only belong after the song they came from.
+              queue.last?.id == seedID,
+              AutoplayPriming.shouldPrime(
+                currentIndex: currentIndex,
+                queueCount: queue.count
+              ) else {
             autoplayRequestTask = nil
             if autoplayRequestSeedID == seedID { autoplayRequestSeedID = nil }
             return
@@ -1062,6 +1110,7 @@ class PlayerManager: NSObject, ObservableObject {
             )
             autoplayRequestTask = nil
             autoplayRequestSeedID = nil
+            autoplayExhaustedSeedID = seedID
             return
         }
 
@@ -1116,6 +1165,9 @@ class PlayerManager: NSObject, ObservableObject {
         autoplayRequestTask?.cancel()
         autoplayRequestTask = nil
         autoplayRequestSeedID = nil
+        // The queue is changing shape, so a seed that had nothing new to add
+        // against the old one deserves another go.
+        autoplayExhaustedSeedID = nil
         if removeUpcoming {
             discardUpcomingAutoplay()
         } else {

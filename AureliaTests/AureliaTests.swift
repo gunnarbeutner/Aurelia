@@ -2081,6 +2081,31 @@ struct AureliaActionTests {
         #expect(try await repository.offlineContainers(forTrackIDs: [], in: scope) == OfflineContainerIDs())
     }
 
+    /// Fetching on the final song left Up Next empty at exactly the moment it
+    /// was meant to show what comes next, with no time for AudioMuse to answer.
+    @Test func autoplayPrimesBeforeTheQueueRunsOut() {
+        // Four songs still to come is too early to fill the list with guesses.
+        #expect(AutoplayPriming.shouldPrime(currentIndex: 7, queueCount: 12) == false)
+        #expect(AutoplayPriming.shouldPrime(currentIndex: 8, queueCount: 12) == true)
+        #expect(AutoplayPriming.shouldPrime(currentIndex: 11, queueCount: 12) == true)
+        // A single tapped song has nothing after it at all.
+        #expect(AutoplayPriming.shouldPrime(currentIndex: 0, queueCount: 1) == true)
+
+        #expect(AutoplayPriming.shouldPrime(currentIndex: 0, queueCount: 0) == false)
+        #expect(AutoplayPriming.shouldPrime(currentIndex: -1, queueCount: 5) == false)
+        #expect(AutoplayPriming.shouldPrime(currentIndex: 5, queueCount: 5) == false)
+    }
+
+    /// A suggestion stops being a suggestion once it plays — the listener is in
+    /// it now, so the run reverts to being the queue rather than having the
+    /// marker creep down the list one song at a time.
+    @Test func autoplayRunStopsBeingMarkedOnceReached() {
+        #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 8, autoplayStartIndex: 10) == 10)
+        #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 10, autoplayStartIndex: 10) == nil)
+        #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 14, autoplayStartIndex: 10) == nil)
+        #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 3, autoplayStartIndex: nil) == nil)
+    }
+
     /// Continuation is on unless the listener turned it off. The stored value
     /// has to be read as an object, since `UserDefaults.bool(forKey:)` reports
     /// "never chosen" and "explicitly off" identically and would quietly pin
