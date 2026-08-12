@@ -60,16 +60,6 @@ struct MainTabView: View {
         } message: {
             Text(instantMixCoordinator.errorMessage ?? "Unable to create an Instant Mix.")
         }
-        .onChange(of: selectedTab) { oldTab, newTab in
-            guard oldTab != newTab, showNowPlaying else { return }
-
-            // Let the native tab control finish committing its selection before
-            // removing the player layer. Mutating the hierarchy inside the tab
-            // selection callback makes Catalyst restore focus to the first tab.
-            DispatchQueue.main.async {
-                dismissNowPlaying()
-            }
-        }
         .onChange(of: navCoordinator.pendingArtistNavigation) { _, artist in
             guard let artist = artist else { return }
             navCoordinator.pendingArtistNavigation = nil
@@ -118,7 +108,7 @@ struct MainTabView: View {
     }
 
     private var tabInterface: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: tabSelection) {
             tabContent(for: 0) {
                 NavigationStack(path: $discoverPath) {
                     DiscoveryView()
@@ -185,16 +175,47 @@ struct MainTabView: View {
                 MiniPlayerView(showNowPlaying: $showNowPlaying)
                     .padding(.horizontal, usesBottomTabBar ? 8 : 0)
                     .padding(.bottom, usesBottomTabBar ? MiniPlayerLayout.tabBarClearance : 0)
-                    .ignoresSafeArea(
-                        .container,
-                        edges: usesBottomTabBar ? [] : .bottom
-                    )
+                    .background {
+                        if !usesBottomTabBar {
+                            // Ignoring the safe area on the mini-player did not
+                            // enlarge its bounds, so iPadOS still exposed a
+                            // strip below it. Extend the surface itself while
+                            // leaving the controls above the home indicator.
+                            Color.appMidBackground.opacity(0.92)
+                                .background(.ultraThinMaterial)
+                                .ignoresSafeArea(.container, edges: .bottom)
+                        }
+                    }
                     .opacity(showNowPlaying ? 0 : 1)
                     .allowsHitTesting(!showNowPlaying)
                     .accessibilityHidden(showNowPlaying)
             }
         }
         #endif
+    }
+
+    private var tabSelection: Binding<Int> {
+        Binding(
+            get: { selectedTab },
+            set: { tab in
+                let changedTab = tab != selectedTab
+                selectedTab = tab
+
+                guard showNowPlaying else { return }
+                if changedTab {
+                    // Let native TabView commit the new selection before the
+                    // player layer is removed. Catalyst otherwise restores
+                    // focus to the first tab.
+                    DispatchQueue.main.async {
+                        dismissNowPlaying()
+                    }
+                } else {
+                    // Re-tapping the selected tab has no value change, but the
+                    // binding still receives the native selection event.
+                    dismissNowPlaying()
+                }
+            }
+        )
     }
 
     private var usesBottomTabBar: Bool {

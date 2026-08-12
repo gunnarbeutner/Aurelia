@@ -11,6 +11,8 @@ struct DiscoveryView: View {
     @StateObject private var viewModel: DiscoveryViewModel
     @ObservedObject private var playerManager = PlayerManager.shared
     @ObservedObject private var libraryStore = LibraryStore.shared
+    @ObservedObject private var networkMonitor = NetworkMonitor.shared
+    @State private var attemptedAutomaticLibraryRecovery = false
 
     init() {
         #if DEBUG
@@ -55,6 +57,9 @@ struct DiscoveryView: View {
         .rootTabNavigationTitle("Discover")
         .task {
             await viewModel.activate()
+            if libraryStore.errorMessage != nil {
+                automaticallyRecoverLibraryIfPossible()
+            }
         }
         .onChange(of: playerManager.recentlyPlayedTracks) { _, _ in
             // Prepare recommendations for the next visit without replacing the
@@ -66,6 +71,14 @@ struct DiscoveryView: View {
             // Catalog promotion is atomic. Refresh only after its revision is
             // visible, never when a staged or failed sync merely stops.
             Task { await viewModel.refresh(force: true, publishResult: true) }
+        }
+        .onChange(of: libraryStore.errorMessage) { _, errorMessage in
+            guard errorMessage != nil else { return }
+            automaticallyRecoverLibraryIfPossible()
+        }
+        .onChange(of: networkMonitor.isOffline) { _, isOffline in
+            guard !isOffline, libraryStore.errorMessage != nil else { return }
+            automaticallyRecoverLibraryIfPossible()
         }
     }
 
@@ -382,7 +395,7 @@ struct DiscoveryView: View {
 
             if libraryStore.errorMessage != nil {
                 Button("Try Again") {
-                    Task { await libraryStore.refresh(trigger: .manual) }
+                    Task { await recoverLibrary() }
                 }
                 .font(.appSubheadline)
                 .foregroundColor(.appAccentText)
@@ -397,6 +410,29 @@ struct DiscoveryView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appAccent.opacity(0.25)))
         .padding(.horizontal, 20)
         .accessibilityIdentifier("discovery-library-preparation")
+    }
+
+    private func automaticallyRecoverLibraryIfPossible() {
+        guard !attemptedAutomaticLibraryRecovery,
+              !libraryStore.isRefreshing,
+              !libraryStore.hasCachedLibrary else { return }
+        attemptedAutomaticLibraryRecovery = true
+        Task {
+            await recoverLibrary()
+            // A genuine offline failure can try again when NetworkMonitor
+            // reports the path/server back. Successful recovery needs no arm.
+            attemptedAutomaticLibraryRecovery = libraryStore.errorMessage == nil
+        }
+    }
+
+    private func recoverLibrary() async {
+        // The sync request itself is the most useful reachability check. It
+        // also clears the previous error immediately, so retry visibly starts.
+        await libraryStore.refresh(trigger: .manual)
+        if libraryStore.errorMessage == nil {
+            await viewModel.refresh(force: true, publishResult: true)
+            await viewModel.updateAudioMuseStatus()
+        }
     }
 
     private var emptyView: some View {

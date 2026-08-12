@@ -813,6 +813,10 @@ final class LibraryStore: ObservableObject {
 
     func refresh(trigger: LibrarySyncTrigger = .pullToRefresh) async {
         guard let scope = service.libraryScope else { return }
+        // A previous failure describes the previous attempt. Clear it before
+        // starting so progress and status from this attempt are not presented
+        // underneath a stale offline/error message.
+        errorMessage = nil
         isRefreshing = true
         defer {
             isRefreshing = false
