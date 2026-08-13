@@ -1824,6 +1824,8 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     var serverRecentTracks: [BaseItemDto] = []
     var audioMuseAvailable = true
     var shouldFailAudioMuseInfoAsNotFound = false
+    var audioMuseInfoError: Error?
+    var audioMuseTaskError: Error?
     var activeAudioMuseTask: AudioMuseTaskStatus?
 
     func fetchInstantMix(itemId: String, limit: Int) async throws -> [BaseItemDto] {
@@ -1848,13 +1850,17 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     }
 
     func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo {
+        if let audioMuseInfoError { throw audioMuseInfoError }
         if shouldFailAudioMuseInfoAsNotFound { throw JellyfinError.notFound }
         guard audioMuseAvailable else { throw JellyfinError.notFound }
         return AudioMusePluginInfo(version: "1", availableEndpoints: [])
     }
 
     func checkAudioMuseHealth() async throws -> Bool { audioMuseAvailable }
-    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { activeAudioMuseTask }
+    func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? {
+        if let audioMuseTaskError { throw audioMuseTaskError }
+        return activeAudioMuseTask
+    }
 
     func audio(id: String, artist: String) -> BaseItemDto {
         BaseItemDto(
@@ -2136,6 +2142,64 @@ struct AureliaActionTests {
         #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 10, autoplayStartIndex: 10) == nil)
         #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 14, autoplayStartIndex: 10) == nil)
         #expect(AutoplayPriming.startIndexStillAhead(currentIndex: 3, autoplayStartIndex: nil) == nil)
+    }
+
+    /// Reading AudioMuse has three rules that are easy to get wrong, and the
+    /// second copy of this logic in Settings got all three wrong before they
+    /// were pulled back into one place.
+    @Test @MainActor func audioMuseReadingKeepsAConfirmedPluginConfirmed() async {
+        let api = FakeDiscoveryAPI()
+        api.audioMuseInfoError = JellyfinError.notFound
+
+        // Never seen: the only honest way to report it missing.
+        let firstEver = await AudioMuseStatusProbe.read(from: api, presenceAlreadyConfirmed: false)
+        #expect(firstEver.availability == .notInstalled)
+        #expect(firstEver.confirmedPresence == false)
+
+        // Seen before: one failed request cannot uninstall a plugin, so the
+        // caller is told nothing rather than told something false.
+        let afterConfirmed = await AudioMuseStatusProbe.read(from: api, presenceAlreadyConfirmed: true)
+        #expect(afterConfirmed.availability == nil)
+        #expect(afterConfirmed.confirmedPresence == true)
+    }
+
+    @Test @MainActor func audioMuseReadingToleratesAFailingTaskEndpoint() async {
+        let api = FakeDiscoveryAPI()
+        // The plugin answers for itself, but its task endpoint does not. Task
+        // status is informative only, so this is still a working plugin.
+        api.audioMuseTaskError = JellyfinError.notFound
+
+        let reading = await AudioMuseStatusProbe.read(from: api, presenceAlreadyConfirmed: false)
+        #expect(reading.availability == .ready(version: "1"))
+        #expect(reading.confirmedPresence == true)
+    }
+
+    @Test @MainActor func audioMuseReadingTreatsCancellationAsNoAnswer() async {
+        let api = FakeDiscoveryAPI()
+        api.audioMuseInfoError = CancellationError()
+
+        // Leaving the screen mid-request must not be reported as an outage.
+        let reading = await AudioMuseStatusProbe.read(from: api, presenceAlreadyConfirmed: true)
+        #expect(reading.availability == nil)
+        #expect(reading.confirmedPresence == true)
+    }
+
+    @Test @MainActor func audioMuseReadingReportsAnActiveAnalysis() async throws {
+        let api = FakeDiscoveryAPI()
+        api.activeAudioMuseTask = try JSONDecoder().decode(
+            AudioMuseTaskStatus.self,
+            from: Data(
+                #"{"task_id":"t","task_type":"library-analysis","status":"running","progress":0.5,"message":"Analyzing"}"#.utf8
+            )
+        )
+
+        let reading = await AudioMuseStatusProbe.read(from: api, presenceAlreadyConfirmed: false)
+        guard case .analyzing(let task) = reading.availability else {
+            Issue.record("expected an analysis in progress")
+            return
+        }
+        #expect(task.message == "Analyzing")
+        #expect(reading.confirmedPresence == true)
     }
 
     /// Continuation is on unless the listener turned it off. The stored value

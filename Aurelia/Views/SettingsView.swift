@@ -57,6 +57,9 @@ struct SettingsView: View {
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
     @State private var audioMuseAvailability: AudioMuseAvailability = .checking
+    /// Carried across readings so a single failed request cannot report a
+    /// working plugin as missing.
+    @State private var audioMusePresenceConfirmed = false
 
     private var selectedQuality: StreamingQuality {
         get { StreamingQuality(rawValue: selectedQualityRaw) ?? .medium }
@@ -510,9 +513,16 @@ struct SettingsView: View {
             // live, so it keeps asking until the run finishes. The task is torn
             // down with the view, so nothing polls in the background.
             while !Task.isCancelled {
-                audioMuseAvailability = await AudioMuseStatusProbe.availability(
-                    from: jellyfinService
+                let reading = await AudioMuseStatusProbe.read(
+                    from: jellyfinService,
+                    presenceAlreadyConfirmed: audioMusePresenceConfirmed
                 )
+                audioMusePresenceConfirmed = reading.confirmedPresence
+                // Nil means the request was cancelled; the previous answer is
+                // better than replacing it with a guess.
+                if let resolved = reading.availability {
+                    audioMuseAvailability = resolved
+                }
                 guard case .analyzing = audioMuseAvailability else { return }
                 try? await Task.sleep(for: .seconds(5))
             }

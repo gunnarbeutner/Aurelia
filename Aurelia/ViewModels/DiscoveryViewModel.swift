@@ -596,81 +596,39 @@ final class DiscoveryViewModel: ObservableObject {
     }
 
     func updateAudioMuseStatus() async {
-        do {
-            let info = try await api.fetchAudioMuseInfo()
-            hasConfirmedAudioMusePresence = true
-            if let task = try await api.fetchActiveAudioMuseTask() {
-                observedActiveAnalysis = true
-                availability = .analyzing(task)
-            } else {
-                availability = (try? await api.checkAudioMuseHealth()) == true
-                    ? .ready(version: info.version)
-                    : .unavailable
-                if observedActiveAnalysis {
-                    observedActiveAnalysis = false
-                    await refresh(force: true, publishResult: false)
-                }
-            }
-        } catch is CancellationError {
-            return
-        } catch let error as URLError where error.code == .cancelled {
-            return
-        } catch let error as JellyfinError {
-            if case .notFound = error {
-                if !hasConfirmedAudioMusePresence {
-                    availability = .notInstalled
-                }
-            } else {
-                availability = .unavailable
-            }
-        } catch {
-            availability = .unavailable
+        let previous = availability
+        let reading = await AudioMuseStatusProbe.read(
+            from: api,
+            presenceAlreadyConfirmed: hasConfirmedAudioMusePresence
+        )
+        hasConfirmedAudioMusePresence = reading.confirmedPresence
+        // Nil means the request was cancelled, so nothing was learned.
+        guard let resolved = reading.availability else { return }
+        availability = resolved
+
+        if case .analyzing = resolved {
+            observedActiveAnalysis = true
+        } else if observedActiveAnalysis, case .analyzing = previous {
+            // An analysis that has just finished leaves better recommendations
+            // behind it, so the shelves are worth rebuilding once.
+            observedActiveAnalysis = false
+            await refresh(force: true, publishResult: false)
         }
     }
 
+    /// Plugin presence is the only capability gate. Health and analysis are
+    /// status signals — AudioMuse can still serve its last completed model.
     private func audioMuseIsAvailable() async -> Bool {
-        do {
-            let info = try await api.fetchAudioMuseInfo()
-            hasConfirmedAudioMusePresence = true
-            availability = .ready(version: info.version)
-            do {
-                if let task = try await api.fetchActiveAudioMuseTask() {
-                    observedActiveAnalysis = true
-                    availability = .analyzing(task)
-                }
-            } catch is CancellationError {
-                return true
-            } catch let error as URLError where error.code == .cancelled {
-                return true
-            } catch {
-                // Task status is informative only. Its failure cannot prevent
-                // using AudioMuse after the info endpoint confirmed presence.
-            }
-            // Plugin presence is the only capability gate. Health and analysis
-            // are status signals; AudioMuse can still serve its last model.
-            return true
-        } catch is CancellationError {
-            return hasConfirmedAudioMusePresence
-        } catch let error as URLError where error.code == .cancelled {
-            return hasConfirmedAudioMusePresence
-        } catch let error as JellyfinError {
-            if case .notFound = error {
-                if !hasConfirmedAudioMusePresence {
-                    availability = .notInstalled
-                    return false
-                }
-                // A confirmed installation cannot become "not installed"
-                // because one request failed during a refresh. Keep using the
-                // last completed AudioMuse model and retain the known status.
-                return true
-            } else {
-                availability = .unavailable
-            }
-            return false
-        } catch {
-            availability = .unavailable
-            return false
+        let reading = await AudioMuseStatusProbe.read(
+            from: api,
+            presenceAlreadyConfirmed: hasConfirmedAudioMusePresence
+        )
+        hasConfirmedAudioMusePresence = reading.confirmedPresence
+        if let resolved = reading.availability {
+            availability = resolved
+            if case .analyzing = resolved { observedActiveAnalysis = true }
         }
+        return reading.confirmedPresence
     }
 
     private static func uniqueRecentTracks(_ tracks: [Track]) -> [Track] {
