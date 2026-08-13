@@ -7,41 +7,44 @@ struct AlbumContextMenu: View {
     private let playerManager = PlayerManager.shared
 
     var body: some View {
-        Button {
-            perform(.play)
-        } label: {
-            Label("Play", systemImage: "play.fill")
+        Group {
+            Button {
+                perform(.play)
+            } label: {
+                Label("Play", systemImage: "play.fill")
+            }
+
+            Button {
+                perform(.shuffle)
+            } label: {
+                Label("Shuffle", systemImage: "shuffle")
+            }
+
+            InstantMixButton(itemId: album.id, itemName: album.name)
+
+            Divider()
+
+            Button {
+                perform(.playNext)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            Button {
+                perform(.addToQueue)
+            } label: {
+                Label("Add to Queue", systemImage: "text.append")
+            }
+
+            Divider()
+
+            Button {
+                NavigationCoordinator.shared.navigateToArtist(for: album)
+            } label: {
+                Label("Go to Artist", systemImage: "person.fill")
+            }
         }
-
-        Button {
-            perform(.shuffle)
-        } label: {
-            Label("Shuffle", systemImage: "shuffle")
-        }
-
-        InstantMixButton(itemId: album.id, itemName: album.name)
-
-        Divider()
-
-        Button {
-            perform(.playNext)
-        } label: {
-            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-        }
-
-        Button {
-            perform(.addToQueue)
-        } label: {
-            Label("Add to Queue", systemImage: "text.append")
-        }
-
-        Divider()
-
-        Button {
-            NavigationCoordinator.shared.navigateToArtist(for: album)
-        } label: {
-            Label("Go to Artist", systemImage: "person.fill")
-        }
+        .tint(nil)
     }
 
     private func perform(_ action: Action) {
@@ -107,92 +110,95 @@ struct TrackContextMenu: View {
     @ObservedObject private var playerManager = PlayerManager.shared
 
     var body: some View {
-        if offersInstantMix {
-            InstantMixButton(itemId: track.id, itemName: track.name)
+        Group {
+            if offersInstantMix {
+                InstantMixButton(itemId: track.id, itemName: track.name)
+
+                Divider()
+            }
+
+            Button {
+                NavigationCoordinator.shared.navigateToAlbum(for: track)
+            } label: {
+                Label("Go to Album", systemImage: "square.stack")
+            }
+
+            Button {
+                NavigationCoordinator.shared.navigateToArtist(for: track)
+            } label: {
+                Label("Go to Artist", systemImage: "person.fill")
+            }
 
             Divider()
-        }
 
-        Button {
-            NavigationCoordinator.shared.navigateToAlbum(for: track)
-        } label: {
-            Label("Go to Album", systemImage: "square.stack")
-        }
+            if let queueIndex {
+                Button {
+                    playerManager.moveInQueue(
+                        from: queueIndex,
+                        to: playerManager.currentIndex + 1
+                    )
+                } label: {
+                    Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
 
-        Button {
-            NavigationCoordinator.shared.navigateToArtist(for: track)
-        } label: {
-            Label("Go to Artist", systemImage: "person.fill")
-        }
+                Button {
+                    playerManager.moveInQueue(
+                        from: queueIndex,
+                        to: playerManager.queue.count
+                    )
+                } label: {
+                    Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
+                }
 
-        Divider()
+                // Swipe-to-delete covers this on iOS but is a poor fit for a
+                // pointer, so the menu carries it too.
+                Button(role: .destructive) {
+                    playerManager.removeFromQueue(at: queueIndex)
+                } label: {
+                    Label("Remove from Queue", systemImage: "minus.circle")
+                }
+            } else {
+                Button {
+                    playerManager.playNext(track: track)
+                } label: {
+                    Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
 
-        if let queueIndex {
-            Button {
-                playerManager.moveInQueue(
-                    from: queueIndex,
-                    to: playerManager.currentIndex + 1
-                )
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                Button {
+                    playerManager.playLast(track: track)
+                } label: {
+                    Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
+                }
+
+                Button {
+                    playerManager.addToQueue(track: track)
+                } label: {
+                    Label("Add to Queue", systemImage: "text.append")
+                }
             }
 
-            Button {
-                playerManager.moveInQueue(
-                    from: queueIndex,
-                    to: playerManager.queue.count
-                )
-            } label: {
-                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
+            if downloadManager.isDownloaded(trackId: track.id) {
+                Button(role: .destructive) {
+                    downloadManager.deleteDownload(trackId: track.id)
+                } label: {
+                    Label("Delete Download", systemImage: "trash")
+                }
+            } else {
+                Button {
+                    downloadManager.downloadTrack(track)
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
             }
 
-            // Swipe-to-delete covers this on iOS but is a poor fit for a
-            // pointer, so the menu carries it too.
-            Button(role: .destructive) {
-                playerManager.removeFromQueue(at: queueIndex)
-            } label: {
-                Label("Remove from Queue", systemImage: "minus.circle")
-            }
-        } else {
-            Button {
-                playerManager.playNext(track: track)
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-
-            Button {
-                playerManager.playLast(track: track)
-            } label: {
-                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
-
-            Button {
-                playerManager.addToQueue(track: track)
-            } label: {
-                Label("Add to Queue", systemImage: "text.append")
-            }
-        }
-
-        if downloadManager.isDownloaded(trackId: track.id) {
-            Button(role: .destructive) {
-                downloadManager.deleteDownload(trackId: track.id)
-            } label: {
-                Label("Delete Download", systemImage: "trash")
-            }
-        } else {
-            Button {
-                downloadManager.downloadTrack(track)
-            } label: {
-                Label("Download", systemImage: "arrow.down.circle")
+            if let onAddToPlaylist {
+                Button {
+                    onAddToPlaylist()
+                } label: {
+                    Label("Add to Playlist", systemImage: "plus.circle")
+                }
             }
         }
-
-        if let onAddToPlaylist {
-            Button {
-                onAddToPlaylist()
-            } label: {
-                Label("Add to Playlist", systemImage: "plus.circle")
-            }
-        }
+        .tint(nil)
     }
 }

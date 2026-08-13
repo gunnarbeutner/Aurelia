@@ -7,33 +7,36 @@ struct PlaylistContextMenu: View {
     private let playerManager = PlayerManager.shared
 
     var body: some View {
-        Button {
-            perform(.play)
-        } label: {
-            Label("Play", systemImage: "play.fill")
+        Group {
+            Button {
+                perform(.play)
+            } label: {
+                Label("Play", systemImage: "play.fill")
+            }
+
+            Button {
+                perform(.shuffle)
+            } label: {
+                Label("Shuffle", systemImage: "shuffle")
+            }
+
+            InstantMixButton(itemId: playlist.id, itemName: playlist.name)
+
+            Divider()
+
+            Button {
+                perform(.playNext)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            Button {
+                perform(.addToQueue)
+            } label: {
+                Label("Add to Queue", systemImage: "text.append")
+            }
         }
-
-        Button {
-            perform(.shuffle)
-        } label: {
-            Label("Shuffle", systemImage: "shuffle")
-        }
-
-        InstantMixButton(itemId: playlist.id, itemName: playlist.name)
-
-        Divider()
-
-        Button {
-            perform(.playNext)
-        } label: {
-            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-        }
-
-        Button {
-            perform(.addToQueue)
-        } label: {
-            Label("Add to Queue", systemImage: "text.append")
-        }
+        .tint(nil)
     }
 
     private func perform(_ action: Action) {

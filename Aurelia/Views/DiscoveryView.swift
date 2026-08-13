@@ -224,6 +224,7 @@ struct DiscoveryView: View {
                             } label: {
                                 Label("Play Mix", systemImage: "play.fill")
                             }
+                            .tint(nil)
 
                             Divider()
 

@@ -296,6 +296,7 @@ struct ArtistDetailView: View {
                 } label: {
                     Label("Set Artist Photo", systemImage: "photo.on.rectangle")
                 }
+                .tint(nil)
             }
 
             // Artist Name & Stats

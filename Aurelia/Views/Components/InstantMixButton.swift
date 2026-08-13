@@ -10,5 +10,6 @@ struct InstantMixButton: View {
         } label: {
             Label("Instant Mix", systemImage: "wand.and.stars")
         }
+        .tint(nil)
     }
 }

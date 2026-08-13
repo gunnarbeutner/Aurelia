@@ -359,47 +359,50 @@ struct DownloadedAlbumContextMenu: View {
     }
 
     var body: some View {
-        Button {
-            playerManager.play(tracks: tracks)
-        } label: {
-            Label("Play", systemImage: "play.fill")
+        Group {
+            Button {
+                playerManager.play(tracks: tracks)
+            } label: {
+                Label("Play", systemImage: "play.fill")
+            }
+
+            Button {
+                playerManager.play(tracks: tracks.shuffled())
+            } label: {
+                Label("Shuffle", systemImage: "shuffle")
+            }
+
+            InstantMixButton(itemId: album.albumId, itemName: album.albumName)
+
+            Divider()
+
+            Button {
+                playerManager.playNext(tracks: tracks)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            Button {
+                playerManager.addToQueue(tracks: tracks)
+            } label: {
+                Label("Add to Queue", systemImage: "text.append")
+            }
+
+            Button {
+                NavigationCoordinator.shared.navigateToArtist(for: album.toAlbum())
+            } label: {
+                Label("Go to Artist", systemImage: "person.fill")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                downloadManager.deleteDownloads(for: album)
+            } label: {
+                Label("Delete Download", systemImage: "trash")
+            }
         }
-
-        Button {
-            playerManager.play(tracks: tracks.shuffled())
-        } label: {
-            Label("Shuffle", systemImage: "shuffle")
-        }
-
-        InstantMixButton(itemId: album.albumId, itemName: album.albumName)
-
-        Divider()
-
-        Button {
-            playerManager.playNext(tracks: tracks)
-        } label: {
-            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-        }
-
-        Button {
-            playerManager.addToQueue(tracks: tracks)
-        } label: {
-            Label("Add to Queue", systemImage: "text.append")
-        }
-
-        Button {
-            NavigationCoordinator.shared.navigateToArtist(for: album.toAlbum())
-        } label: {
-            Label("Go to Artist", systemImage: "person.fill")
-        }
-
-        Divider()
-
-        Button(role: .destructive) {
-            downloadManager.deleteDownloads(for: album)
-        } label: {
-            Label("Delete Download", systemImage: "trash")
-        }
+        .tint(nil)
     }
 }
 
