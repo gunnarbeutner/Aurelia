@@ -2011,6 +2011,31 @@ struct AureliaActionTests {
 
     /// The catalog is what tells browsing which containers still have something
     /// playable, so the mapping from downloaded tracks upward has to hold.
+    /// Sync watermarks go back to the server as `MinDateLastSaved` and are
+    /// compared against its own timestamps, so they have to be in the server's
+    /// terms. A device running fast would otherwise skip every change made in
+    /// the difference — permanently, until the daily reconciliation.
+    @Test func serverClockOffsetComesFromTheDateHeader() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let header = "Thu, 14 Nov 2023 22:13:20 GMT" // the same instant
+
+        let offset = try? #require(
+            JellyfinService.clockOffset(fromDateHeader: header, now: now)
+        )
+        #expect(abs((offset ?? 999) - 0) < 1)
+
+        // A server running two minutes ahead.
+        let ahead = JellyfinService.clockOffset(
+            fromDateHeader: "Thu, 14 Nov 2023 22:15:20 GMT",
+            now: now
+        )
+        #expect(abs((ahead ?? 0) - 120) < 1)
+
+        // Unparseable leaves the offset alone: a wrong one is worse than none.
+        #expect(JellyfinService.clockOffset(fromDateHeader: "not a date", now: now) == nil)
+        #expect(JellyfinService.clockOffset(fromDateHeader: "", now: now) == nil)
+    }
+
     /// Jellyfin's own normalisation, so the local catalog and the server agree
     /// on which names are the same artist.
     @Test func cleanNameMatchesJellyfinNormalisation() {

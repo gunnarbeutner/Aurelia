@@ -327,6 +327,7 @@ class JellyfinService: ObservableObject {
     func fetchMusicItemsPage(
         includeItemTypes: String = "MusicAlbum,Playlist",
         artistIds: String? = nil,
+        nameStartsWithOrGreater: String? = nil,
         parentId: String? = nil,
         excludeItemTypes: String? = nil,
         limit: Int? = nil,
@@ -365,6 +366,11 @@ class JellyfinService: ObservableObject {
         }
 
         // Add artist filter if provided
+        if let nameStartsWithOrGreater {
+            components.queryItems?.append(
+                URLQueryItem(name: "NameStartsWithOrGreater", value: nameStartsWithOrGreater)
+            )
+        }
         if let artistIds = artistIds {
             components.queryItems?.append(URLQueryItem(name: "ArtistIds", value: artistIds))
         }
@@ -1166,6 +1172,40 @@ class JellyfinService: ObservableObject {
         ]
     }
 
+    /// How far the server's clock runs ahead of this device's, learned from
+    /// the `Date` header every response already carries.
+    ///
+    /// Sync watermarks are sent back as `MinDateLastSaved` and compared against
+    /// the server's own timestamps, so a watermark taken from the local clock
+    /// silently loses every change made in the gap when this device runs ahead.
+    private(set) var serverClockOffset: TimeInterval = 0
+
+    /// Now, as the server would put it.
+    var serverNow: Date {
+        Date().addingTimeInterval(serverClockOffset)
+    }
+
+    private func noteServerClock(from response: HTTPURLResponse) {
+        guard let header = response.value(forHTTPHeaderField: "Date"),
+              let offset = Self.clockOffset(fromDateHeader: header, now: Date()) else { return }
+        serverClockOffset = offset
+    }
+
+    /// Parsed rather than trusted: a header we cannot read must leave the offset
+    /// alone, since a wrong offset is worse than none.
+    nonisolated static func clockOffset(fromDateHeader header: String, now: Date) -> TimeInterval? {
+        guard let serverDate = httpDateFormatter.date(from: header) else { return nil }
+        return serverDate.timeIntervalSince(now)
+    }
+
+    nonisolated(unsafe) private static let httpDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return formatter
+    }()
+
     private func validate(
         response: URLResponse,
         data: Data? = nil,
@@ -1174,6 +1214,7 @@ class JellyfinService: ObservableObject {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw JellyfinError.invalidResponse
         }
+        noteServerClock(from: httpResponse)
         switch httpResponse.statusCode {
         case 200...299:
             return
