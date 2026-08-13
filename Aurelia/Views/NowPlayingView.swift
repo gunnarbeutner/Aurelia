@@ -276,6 +276,7 @@ struct NowPlayingView: View {
     /// Stationary reference for reading how far the player has been scrolled.
     private static let scrollSpace = "now-playing-scroll-space"
     @Environment(\.playerIsDismissing) private var isDismissing
+    @Environment(\.playerSlabInsets) private var slabInsets
     var onDismiss: (() -> Void)?
     var embedsAirPlayButton = true
 
@@ -509,12 +510,12 @@ struct NowPlayingView: View {
     /// The player is an opaque slab the size of the whole screen, rounded to
     /// match the display once it detaches and starts moving.
     ///
-    /// The clip sits *inside* `ignoresSafeArea`, which is the whole trick:
-    /// that modifier proposes the larger, screen-sized rect to its child, so
-    /// the child rounds at the screen's corners. Applied the other way round —
-    /// as a mask or a clip wrapped around it — the shape is laid out in the
-    /// inset rect instead, and everything drawn past that rect is cut away
-    /// rather than rounded.
+    /// The slab reaches the screen edges by negative padding rather than
+    /// `ignoresSafeArea`, because that modifier only expands a view where it
+    /// still touches the unsafe region: the moment the dismissal drag moved the
+    /// player down, its top edge no longer touched, the expansion collapsed to
+    /// zero, and a status-bar-high band of the tab behind showed through.
+    /// Padding is settled at layout time and simply travels with the offset.
     private var backgroundLayer: some View {
         ZStack {
             Color.appBackground
@@ -549,18 +550,28 @@ struct NowPlayingView: View {
         // radius that did not match the device exactly would show a permanent
         // notch of the tab behind.
         //
-        // The clip sits *inside* `ignoresSafeArea`, which proposes the larger,
-        // screen-sized rect to its child so the rounding lands at the screen's
-        // corners. Wrapped around the outside — as a mask, or as a clip over an
-        // explicit frame — the shape is laid out in the inset rect instead and
-        // cuts the background off rather than rounding it.
+        // The clip sits *inside* the padding below, which is what puts the
+        // rounding on the screen's corners: the padding proposes the larger,
+        // screen-sized rect to its child. Wrapped around the outside — as a
+        // mask, or as a clip over an explicit frame — the shape is laid out in
+        // the inset rect instead and cuts the background off rather than
+        // rounding it.
         .clipShape(
             RoundedRectangle(
                 cornerRadius: isDismissing ? NowPlayingLayout.dragCornerRadius : 0,
                 style: .continuous
             )
         )
-        .ignoresSafeArea()
+        // Grows the slab to the screen without changing the size it reports, so
+        // the player's content still lays out against the safe container.
+        .padding(
+            EdgeInsets(
+                top: -slabInsets.top,
+                leading: -slabInsets.leading,
+                bottom: -slabInsets.bottom,
+                trailing: -slabInsets.trailing
+            )
+        )
     }
 
     // MARK: - Top Bar

@@ -249,6 +249,7 @@ struct MainTabView: View {
                         )
                     )
             }
+            .environment(\.playerSlabInsets, geometry.safeAreaInsets)
         }
     }
     #endif
@@ -381,6 +382,10 @@ struct MainTabView: View {
                     }
                     #endif
                 }
+                // Measured out here, where nothing moves: the drag offset lives
+                // inside SwipeToDismissPlayer, so this reading stays the real
+                // distance from the player's container to the screen edges.
+                .environment(\.playerSlabInsets, geometry.safeAreaInsets)
             }
             .allowsHitTesting(showNowPlaying)
             .accessibilityHidden(!showNowPlaying)
@@ -486,6 +491,10 @@ private struct PlayerIsDismissingKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct PlayerSlabInsetsKey: EnvironmentKey {
+    static let defaultValue = EdgeInsets()
+}
+
 extension EnvironmentValues {
     /// Set while a dismissal drag is under way. The player's scroll view stands
     /// down for the duration — the drag is simultaneous with it, so otherwise
@@ -493,6 +502,16 @@ extension EnvironmentValues {
     var playerIsDismissing: Bool {
         get { self[PlayerIsDismissingKey.self] }
         set { self[PlayerIsDismissingKey.self] = newValue }
+    }
+
+    /// How far the player's background has to grow past its container to reach
+    /// the edges of the screen. Published from outside the layer the drag moves
+    /// because SwiftUI resolves safe-area geometry against where a view ends up:
+    /// read from inside the moving layer, the top inset collapses to zero the
+    /// instant the drag begins.
+    var playerSlabInsets: EdgeInsets {
+        get { self[PlayerSlabInsetsKey.self] }
+        set { self[PlayerSlabInsetsKey.self] = newValue }
     }
 }
 
