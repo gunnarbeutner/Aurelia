@@ -271,7 +271,10 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }()
 
-    private let database: DatabasePool
+    /// GRDB's pool is safe to use concurrently. Keep it reachable from
+    /// nonisolated read entry points so UI reads do not wait behind this
+    /// actor's potentially long-running sync commits.
+    nonisolated private let database: DatabasePool
     private let logger = Logger(subsystem: "de.beutner.Aurelia", category: "LibraryRepository")
 
     init(databaseURL: URL) throws {
@@ -899,8 +902,8 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
-    func tracks(inAlbum albumID: String, in scope: LibraryScope) throws -> [Track] {
-        try tracks(
+    nonisolated func tracks(inAlbum albumID: String, in scope: LibraryScope) async throws -> [Track] {
+        try await readTracks(
             sql: """
                 SELECT item.* FROM libraryItem AS item
                 WHERE item.serverKey = ? AND item.userID = ?
@@ -913,8 +916,8 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         )
     }
 
-    func tracks(forArtist artistID: String, in scope: LibraryScope) throws -> [Track] {
-        try tracks(
+    nonisolated func tracks(forArtist artistID: String, in scope: LibraryScope) async throws -> [Track] {
+        try await readTracks(
             sql: """
                 SELECT item.* FROM libraryItem AS item
                 JOIN itemArtist AS relation
@@ -932,28 +935,31 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         )
     }
 
-    func albums(forArtist artistID: String, in scope: LibraryScope) throws -> [Album] {
-        try database.read { db in
-            let favorites = try Self.favoriteItemIDs(db, scope: scope)
-            return try LibraryItemRecord.fetchAll(
-                db,
-                sql: """
-                    SELECT DISTINCT item.* FROM libraryItem AS item
-                    LEFT JOIN itemArtist AS relation
-                      ON relation.serverKey = item.serverKey
-                     AND relation.userID = item.userID
-                     AND relation.itemID = item.itemID
-                    WHERE item.serverKey = ? AND item.userID = ?
-                      AND item.itemType = ?
-                      AND (relation.artistID = ? OR item.artistID = ?)
-                    ORDER BY item.sortName COLLATE NOCASE
-                    """,
-                arguments: [
-                    scope.serverKey, scope.userID, LibraryItemType.album.rawValue,
-                    artistID, artistID
-                ]
-            ).map { $0.album(isFavorite: favorites.contains($0.itemID)) }
-        }
+    nonisolated func albums(forArtist artistID: String, in scope: LibraryScope) async throws -> [Album] {
+        let database = database
+        return try await Task.detached(priority: .userInitiated) {
+            try database.read { db in
+                let favorites = try Self.favoriteItemIDs(db, scope: scope)
+                return try LibraryItemRecord.fetchAll(
+                    db,
+                    sql: """
+                        SELECT DISTINCT item.* FROM libraryItem AS item
+                        LEFT JOIN itemArtist AS relation
+                          ON relation.serverKey = item.serverKey
+                         AND relation.userID = item.userID
+                         AND relation.itemID = item.itemID
+                        WHERE item.serverKey = ? AND item.userID = ?
+                          AND item.itemType = ?
+                          AND (relation.artistID = ? OR item.artistID = ?)
+                        ORDER BY item.sortName COLLATE NOCASE
+                        """,
+                    arguments: [
+                        scope.serverKey, scope.userID, LibraryItemType.album.rawValue,
+                        artistID, artistID
+                    ]
+                ).map { $0.album(isFavorite: favorites.contains($0.itemID)) }
+            }
+        }.value
     }
 
     func albums(inGenre genreID: String, in scope: LibraryScope) throws -> [Album] {
@@ -976,8 +982,8 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
-    func tracks(inPlaylist playlistID: String, in scope: LibraryScope) throws -> [Track] {
-        try tracks(
+    nonisolated func tracks(inPlaylist playlistID: String, in scope: LibraryScope) async throws -> [Track] {
+        try await readTracks(
             sql: """
                 SELECT item.* FROM playlistEntry AS entry
                 JOIN libraryItem AS item
@@ -1659,16 +1665,19 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         )
     }
 
-    private func tracks(
+    nonisolated private func readTracks(
         sql: String,
         arguments: StatementArguments,
         scope: LibraryScope
-    ) throws -> [Track] {
-        try database.read { db in
-            let favorites = try Self.favoriteItemIDs(db, scope: scope)
-            return try LibraryItemRecord.fetchAll(db, sql: sql, arguments: arguments)
-                .map { $0.track(isFavorite: favorites.contains($0.itemID)) }
-        }
+    ) async throws -> [Track] {
+        let database = database
+        return try await Task.detached(priority: .userInitiated) {
+            try database.read { db in
+                let favorites = try Self.favoriteItemIDs(db, scope: scope)
+                return try LibraryItemRecord.fetchAll(db, sql: sql, arguments: arguments)
+                    .map { $0.track(isFavorite: favorites.contains($0.itemID)) }
+            }
+        }.value
     }
 
     private static func favoriteItemIDs(_ db: Database, scope: LibraryScope) throws -> Set<String> {
