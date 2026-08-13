@@ -456,10 +456,6 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 db, scope: scope, session: session,
                 acknowledgement: acknowledgement, sequence: sequence
             )
-            try db.execute(
-                sql: "UPDATE aureliaSyncState SET publishedSnapshotGeneration = ? WHERE serverKey = ? AND userID = ?",
-                arguments: [session.snapshotGeneration, scope.serverKey, scope.userID]
-            )
         }
     }
 
@@ -499,6 +495,10 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
             try Self.persistAureliaSyncProgress(
                 db, scope: scope, session: session,
                 acknowledgement: acknowledgement, sequence: sequence
+            )
+            try db.execute(
+                sql: "UPDATE aureliaSyncState SET publishedSnapshotGeneration = ? WHERE serverKey = ? AND userID = ?",
+                arguments: [session.snapshotGeneration, scope.serverKey, scope.userID]
             )
         }
     }

@@ -22,6 +22,12 @@ struct ContentView: View {
                         PlayerManager.shared.restorePlaybackState()
                     }
                     .task(id: jellyfinService.libraryScope) {
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--benchmark-full-sync") {
+                            await LibraryStore.shared.rebuild()
+                            return
+                        }
+                        #endif
                         await LibraryStore.shared.activate()
                     }
             } else {

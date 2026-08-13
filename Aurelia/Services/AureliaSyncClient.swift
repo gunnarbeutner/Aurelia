@@ -107,7 +107,12 @@ final class AureliaSyncClient {
                 return (failure.code ?? "http\(http.statusCode)", failure.message ?? "Aurelia Sync request failed.", failure.correlationId)
             }
             if http.statusCode == 404 { throw AureliaSyncError.required }
-            if http.statusCode == 429 { throw AureliaSyncError.http(429, nil) }
+            if http.statusCode == 429 {
+                throw AureliaSyncError.rateLimited(
+                    retryAfter: Self.retryAfter(from: http),
+                    message: detail?.1
+                )
+            }
             if let detail { throw AureliaSyncError.structured(code: detail.0, message: detail.1, correlationId: detail.2) }
             throw AureliaSyncError.http(http.statusCode, body.flatMap { String(data: $0, encoding: .utf8) })
         }
@@ -119,9 +124,29 @@ final class AureliaSyncClient {
         }
         guard (200...299).contains(http.statusCode) else {
             if http.statusCode == 404 { throw AureliaSyncError.required }
-            if http.statusCode == 429 { throw AureliaSyncError.http(429, nil) }
+            if http.statusCode == 429 {
+                throw AureliaSyncError.rateLimited(retryAfter: retryAfter(from: http), message: nil)
+            }
             throw AureliaSyncError.http(http.statusCode, nil)
         }
+    }
+
+    nonisolated private static func retryAfter(from response: HTTPURLResponse) -> Date? {
+        guard let value = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
+        if let seconds = TimeInterval(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return Date().addingTimeInterval(max(0, seconds))
+        }
+        return HTTPDateParser.date(from: value)
+    }
+}
+
+nonisolated private enum HTTPDateParser {
+    static func date(from value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss z"
+        return formatter.date(from: value)
     }
 }
 

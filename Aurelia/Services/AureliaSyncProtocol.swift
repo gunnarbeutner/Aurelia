@@ -48,6 +48,7 @@ nonisolated struct AureliaSyncSession: Decodable, Sendable {
     let expiresAt: Date?
     let state: String?
     let message: String?
+    let reason: String?
 }
 
 nonisolated struct AureliaSyncAcknowledgement: Codable, Equatable, Sendable {
@@ -179,6 +180,7 @@ nonisolated enum AureliaSyncError: LocalizedError, Sendable {
     case invalidResponse
     case invalidStream(String)
     case invalidPayload
+    case rateLimited(retryAfter: Date?, message: String?)
     case http(Int, String?)
     case structured(code: String, message: String, correlationId: String?)
 
@@ -190,8 +192,15 @@ nonisolated enum AureliaSyncError: LocalizedError, Sendable {
         case .invalidResponse: return "The server returned an unexpected response while updating your library. Please try again."
         case .invalidStream: return "The library update was incomplete or damaged. Your existing library was kept; please try again."
         case .invalidPayload: return "The library update contained an item Aurelia could not save. Your existing library was kept."
+        case .rateLimited(let retryAfter, let message):
+            let retryText: String
+            if let retryAfter {
+                retryText = " Try again \(retryAfter.formatted(.relative(presentation: .named)))."
+            } else {
+                retryText = " Please wait a few minutes and try again."
+            }
+            return (message ?? "The server is temporarily limiting library rebuilds.") + retryText
         case .http(let status, let message):
-            if status == 429 { return "There have been too many update attempts. Please wait a few minutes and try again." }
             return message.map { "The server could not update your library (error \(status)): \($0)" }
                 ?? "The server could not update your library (error \(status))."
         case .structured(_, let message, let correlationId):

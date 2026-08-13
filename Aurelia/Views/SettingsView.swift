@@ -64,6 +64,7 @@ struct SettingsView: View {
     @ObservedObject private var libraryStore = LibraryStore.shared
     @State private var showSignOutConfirmation = false
     @State private var showRebuildConfirmation = false
+    @State private var showLibrarySyncError = false
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
     @State private var audioMuseAvailability: AudioMuseAvailability = .checking
@@ -139,6 +140,11 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This downloads a fresh copy of your library. Your current library remains available until the rebuild finishes.")
+        }
+        .alert("Library Update Failed", isPresented: $showLibrarySyncError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(libraryStore.errorMessage ?? "The library could not be updated.")
         }
         .task { await checkAureliaSync() }
     }
@@ -271,19 +277,24 @@ struct SettingsView: View {
                 HStack(spacing: 12) {
                     Image(systemName: libraryStore.isRefreshing
                           ? "arrow.triangle.2.circlepath"
-                          : "checkmark.circle")
-                        .foregroundColor(libraryStore.isRefreshing ? .appAccent : .appSuccess)
+                          : libraryStore.errorMessage == nil ? "checkmark.circle" : "exclamationmark.triangle")
+                        .foregroundColor(libraryStore.isRefreshing
+                                         ? .appAccent
+                                         : libraryStore.errorMessage == nil ? .appSuccess : .appError)
                         .frame(width: 24)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(libraryStore.isRefreshing ? "Syncing" : "Not syncing")
+                        Text(libraryStore.isRefreshing
+                             ? "Updating library"
+                             : libraryStore.errorMessage == nil ? "Up to date" : "Update failed")
                             .font(.appBody)
                             .foregroundColor(.appText)
                         Text(libraryStore.isRefreshing
                              ? (libraryStore.syncMessage ?? "Preparing library sync…")
-                             : "Syncs on launch and when the server changes")
+                             : (libraryStore.errorMessage ?? "Updates automatically"))
                             .font(.appCaption)
                             .foregroundColor(.appTextSecondary)
+                            .lineLimit(libraryStore.errorMessage == nil ? 1 : 2)
                     }
 
                     Spacer()
@@ -293,6 +304,13 @@ struct SettingsView: View {
                             .font(.appMono)
                             .foregroundColor(.appTextMuted)
                     }
+                }
+
+                if libraryStore.errorMessage != nil {
+                    Button("Show Details") { showLibrarySyncError = true }
+                        .font(.appSubheadline)
+                        .foregroundColor(.appAccent)
+                        .buttonStyle(.plain)
                 }
 
                 if libraryStore.isRefreshing {

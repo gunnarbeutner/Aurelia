@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import Combine
+import os.log
 
 enum LibrarySyncTrigger: Sendable {
     case launch, pullToRefresh, manual, rebuild, serverEvent
@@ -18,6 +19,11 @@ enum LibrarySyncStatus: Equatable, Sendable {
 @MainActor
 final class LibrarySyncCoordinator: ObservableObject {
     static let shared = LibrarySyncCoordinator(service: .shared, repository: .shared, client: .shared)
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Aurelia",
+        category: "LibrarySync"
+    )
 
     @Published private(set) var status: LibrarySyncStatus = .idle
 
@@ -77,6 +83,7 @@ final class LibrarySyncCoordinator: ObservableObject {
 
     private func performSync(trigger: LibrarySyncTrigger) async throws {
         guard let scope = service.libraryScope else { throw JellyfinError.notAuthenticated }
+        let syncStartedAt = ContinuousClock.now
         do {
             status = .syncing(message: "Contacting Aurelia Sync…", progress: 0.02)
             let pluginStatus = try await client.status()
@@ -119,6 +126,9 @@ final class LibrarySyncCoordinator: ObservableObject {
             let session = try await client.openSession(
                 checkpoint: needsPublicationRecovery ? nil : local?.checkpointToken,
                 reset: forceSnapshot || needsPublicationRecovery
+            )
+            Self.logger.info(
+                "Opened Aurelia Sync session in \(session.mode.rawValue, privacy: .public) mode; reason: \(session.reason ?? "none", privacy: .public)"
             )
             defer { Task { await self.client.close(sessionID: session.sessionId) } }
 
@@ -207,6 +217,10 @@ final class LibrarySyncCoordinator: ObservableObject {
             }
 
             status = .idle
+            let elapsed = syncStartedAt.duration(to: ContinuousClock.now)
+            Self.logger.info(
+                "Completed Aurelia Sync in \(session.mode.rawValue, privacy: .public) mode after \(segments, privacy: .public) segments in \(String(describing: elapsed), privacy: .public)"
+            )
             NetworkMonitor.shared.noteServerReachable()
         } catch is CancellationError {
             status = .idle

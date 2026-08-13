@@ -71,7 +71,8 @@ struct AureliaTests {
         let session = AureliaSyncSession(
             sessionId: "session", mode: .snapshot, protocolVersion: 1, schemaVersion: 1,
             cursor: nil, checkpointToken: nil, snapshotGeneration: "1",
-            journalHead: 0, expiresAt: nil, state: "streaming", message: nil
+            journalHead: 0, expiresAt: nil, state: "streaming", message: nil,
+            reason: "newClient"
         )
         let firstAck = AureliaSyncAcknowledgement(
             throughCursor: "c1", clientCommitId: "commit-1", recordCount: 1,
@@ -89,6 +90,7 @@ struct AureliaTests {
             session: session, acknowledgement: firstAck, sequence: 1, in: scope
         )
         #expect(try await repository.librarySnapshot(in: scope).albums.isEmpty)
+        #expect(try await repository.aureliaSyncState(in: scope)?.publishedSnapshotGeneration == nil)
 
         try await repository.promoteAureliaSyncSnapshot(
             LibraryCatalog(albums: [final], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: []),
