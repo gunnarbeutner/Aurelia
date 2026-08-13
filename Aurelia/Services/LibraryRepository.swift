@@ -390,8 +390,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 return AureliaSyncAcknowledgement(
                     throughCursor: cursor,
                     clientCommitId: id,
-                    recordCount: row["pendingRecordCount"] ?? 0,
-                    aggregateChecksum: row["pendingChecksum"]
+                    recordCount: row["pendingRecordCount"] ?? 0
                 )
             }
             return AureliaSyncLocalState(
@@ -976,8 +975,8 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     serverKey, userID, checkpointToken, cursor, acknowledgedSequence,
                     protocolVersion, schemaVersion, snapshotGeneration,
                     pendingCursor, pendingCommitID, pendingRecordCount,
-                    pendingChecksum, pendingSessionID, updatedAt
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pendingSessionID, updatedAt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(serverKey, userID) DO UPDATE SET
                     cursor = excluded.cursor,
                     acknowledgedSequence = COALESCE(excluded.acknowledgedSequence, acknowledgedSequence),
@@ -987,7 +986,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     pendingCursor = excluded.pendingCursor,
                     pendingCommitID = excluded.pendingCommitID,
                     pendingRecordCount = excluded.pendingRecordCount,
-                    pendingChecksum = excluded.pendingChecksum,
+                    pendingChecksum = NULL,
                     pendingSessionID = excluded.pendingSessionID,
                     updatedAt = excluded.updatedAt
                 """,
@@ -996,8 +995,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 acknowledgement.throughCursor, sequence,
                 session.protocolVersion, session.schemaVersion, session.snapshotGeneration,
                 acknowledgement.throughCursor, acknowledgement.clientCommitId,
-                acknowledgement.recordCount, acknowledgement.aggregateChecksum,
-                session.sessionId, Date()
+                acknowledgement.recordCount, session.sessionId, Date()
             ]
         )
     }

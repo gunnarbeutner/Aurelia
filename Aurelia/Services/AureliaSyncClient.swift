@@ -42,7 +42,7 @@ final class AureliaSyncClient {
         return try await value(for: request)
     }
 
-    func stream(session syncSession: AureliaSyncSession, after cursor: String?) async throws -> AureliaSyncDecodedSegment {
+    func stream(session syncSession: AureliaSyncSession, after cursor: String?) async throws -> AureliaSyncSegment {
         var path = "AureliaSync/v1/sessions/\(syncSession.sessionId)/stream?maxRecords=1000&maxBytes=8388608"
         if let cursor {
             path += "&after=" + (cursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cursor)
@@ -51,8 +51,8 @@ final class AureliaSyncClient {
         request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
         let networkSession = session
 
-        // This decoder performs substantial per-byte work: it splits NDJSON,
-        // decodes up to 1,000 records, and hashes their exact payload bytes.
+        // This decoder performs substantial per-byte work: it splits NDJSON
+        // and decodes up to 1,000 records.
         // AureliaSyncClient is main-actor isolated because it builds requests
         // from the signed-in service. Letting that work inherit the caller's
         // executor stalls every SwiftUI animation while a segment arrives,

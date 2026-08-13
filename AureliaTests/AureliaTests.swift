@@ -34,32 +34,14 @@ struct AureliaTests {
         let bytes = Self.byteStream("""
         {"kind":"segment.begin"}\n
         {"cursor":"c1","sequence":1,"kind":"item.upsert","entityType":"track","entityId":"track","payload":{"id":"track","name":"Song","artistName":"Artist","albumName":"Album","albumId":"album","duration":12.5,"imageTag":"track-tag","albumImageTag":"album-tag"}}\n
-        {"kind":"segment.end","cursor":"c1","caughtUp":true}\n
+        {"kind":"segment.end","cursor":"c1","caughtUp":true,"aggregateChecksum":"sha256:ignored-for-backward-compatibility"}\n
         """)
         let decoded = try await AureliaSyncNDJSON.decode(bytes: bytes)
-        #expect(decoded.segment.caughtUp)
-        #expect(decoded.segment.records.count == 1)
-        #expect(decoded.segment.checksum == nil)
-        let payload = try #require(decoded.segment.records.first?.payload)
+        #expect(decoded.caughtUp)
+        #expect(decoded.records.count == 1)
+        let payload = try #require(decoded.records.first?.payload)
         let track = try payload.track(baseURL: "https://music.example/")
         #expect(track.artworkURL == "https://music.example/Items/album/Images/Primary?maxWidth=300&tag=album-tag")
-    }
-
-    @Test func aureliaSyncRejectsMismatchedSegmentChecksum() async throws {
-        let bytes = Self.byteStream("""
-        {"kind":"segment.begin"}\n
-        {"cursor":"c1","kind":"item.upsert","entityType":"genre","entityId":"g1","payload":{"id":"g1","name":"Electronic"}}\n
-        {"kind":"segment.end","cursor":"c1","caughtUp":true,"aggregateChecksum":"sha256:not-the-delivered-payload"}\n
-        """)
-        do {
-            _ = try await AureliaSyncNDJSON.decode(bytes: bytes)
-            Issue.record("A segment whose payload digest does not match must never be applied")
-        } catch let error as AureliaSyncError {
-            guard case .invalidStream = error else {
-                Issue.record("Unexpected error: \(error)")
-                return
-            }
-        }
     }
 
     @Test func aureliaSyncFinalSnapshotSegmentIsPublishedAtomically() async throws {
@@ -75,12 +57,10 @@ struct AureliaTests {
             reason: "newClient"
         )
         let firstAck = AureliaSyncAcknowledgement(
-            throughCursor: "c1", clientCommitId: "commit-1", recordCount: 1,
-            aggregateChecksum: "sha256:first"
+            throughCursor: "c1", clientCommitId: "commit-1", recordCount: 1
         )
         let finalAck = AureliaSyncAcknowledgement(
-            throughCursor: "c2", clientCommitId: "commit-2", recordCount: 1,
-            aggregateChecksum: "sha256:final"
+            throughCursor: "c2", clientCommitId: "commit-2", recordCount: 1
         )
         let first = Album(id: "first", name: "First", artistName: "Artist", artistId: nil, year: 2020, artworkURL: nil)
         let final = Album(id: "final", name: "Final", artistName: "Artist", artistId: nil, year: 2021, artworkURL: nil)

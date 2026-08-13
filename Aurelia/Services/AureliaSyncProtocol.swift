@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 nonisolated enum AureliaSyncMode: String, Codable, Sendable {
     case snapshot
@@ -55,14 +54,12 @@ nonisolated struct AureliaSyncAcknowledgement: Codable, Equatable, Sendable {
     let throughCursor: String
     let clientCommitId: String
     let recordCount: Int
-    let aggregateChecksum: String?
 }
 
 nonisolated struct AureliaSyncSegment: Sendable {
     let records: [AureliaSyncRecord]
     let cursor: String
     let caughtUp: Bool
-    let checksum: String?
 }
 
 nonisolated struct AureliaSyncRecord: Decodable, Sendable {
@@ -168,11 +165,6 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
     }
 }
 
-nonisolated struct AureliaSyncDecodedSegment: Sendable {
-    let segment: AureliaSyncSegment
-    let aggregateChecksum: String
-}
-
 nonisolated enum AureliaSyncError: LocalizedError, Sendable {
     case required
     case disabled(String?)
@@ -216,17 +208,15 @@ nonisolated enum AureliaSyncNDJSON {
         let kind: String
         let cursor: String?
         let caughtUp: Bool?
-        let aggregateChecksum: String?
         let code: String?
         let message: String?
         let correlationId: String?
     }
 
-    static func decode<S: AsyncSequence>(bytes: S, maximumBytes: Int = 8 * 1024 * 1024) async throws -> AureliaSyncDecodedSegment where S.Element == UInt8 {
+    static func decode<S: AsyncSequence>(bytes: S, maximumBytes: Int = 8 * 1024 * 1024) async throws -> AureliaSyncSegment where S.Element == UInt8 {
         let decoder = JSONDecoder.aureliaSync
         var records: [AureliaSyncRecord] = []
         var line = Data()
-        var digest = SHA256()
         var total = 0
         var began = false
         var end: Control?
@@ -253,7 +243,6 @@ nonisolated enum AureliaSyncNDJSON {
                 guard began, end == nil else { throw AureliaSyncError.invalidStream("record outside segment") }
                 let record = try decoder.decode(AureliaSyncRecord.self, from: data)
                 guard record.kind == control.kind else { throw AureliaSyncError.invalidStream("record kind mismatch") }
-                digest.update(data: try payloadBytes(in: data))
                 records.append(record)
             }
         }
@@ -274,65 +263,11 @@ nonisolated enum AureliaSyncNDJSON {
         guard began, let end, let cursor = end.cursor else {
             throw AureliaSyncError.invalidStream("missing segment.end")
         }
-        let checksum = "sha256:" + digest.finalize().map { String(format: "%02x", $0) }.joined()
-        if let expected = end.aggregateChecksum,
-           expected.caseInsensitiveCompare(checksum) != .orderedSame {
-            throw AureliaSyncError.invalidStream("segment checksum mismatch")
-        }
-        return AureliaSyncDecodedSegment(
-            segment: AureliaSyncSegment(
-                records: records, cursor: cursor,
-                caughtUp: end.caughtUp ?? false,
-                checksum: end.aggregateChecksum
-            ),
-            aggregateChecksum: checksum
+        return AureliaSyncSegment(
+            records: records,
+            cursor: cursor,
+            caughtUp: end.caughtUp ?? false
         )
-    }
-
-    /// Returns the payload exactly as it appeared on the wire. Re-encoding a
-    /// decoded value would make the digest depend on key ordering and number
-    /// formatting rather than the bytes the server actually delivered.
-    private static func payloadBytes(in record: Data) throws -> Data {
-        let marker = Data("\"payload\":".utf8)
-        guard let markerRange = record.range(of: marker) else {
-            throw AureliaSyncError.invalidStream("record has no payload")
-        }
-
-        var index = markerRange.upperBound
-        while index < record.endIndex, record[index] == 0x20 || record[index] == 0x09 {
-            index = record.index(after: index)
-        }
-        guard index < record.endIndex, record[index] == 0x7B else {
-            throw AureliaSyncError.invalidStream("record payload is not an object")
-        }
-
-        let start = index
-        var depth = 0
-        var insideString = false
-        var escaped = false
-        while index < record.endIndex {
-            let byte = record[index]
-            if insideString {
-                if escaped {
-                    escaped = false
-                } else if byte == 0x5C {
-                    escaped = true
-                } else if byte == 0x22 {
-                    insideString = false
-                }
-            } else if byte == 0x22 {
-                insideString = true
-            } else if byte == 0x7B || byte == 0x5B {
-                depth += 1
-            } else if byte == 0x7D || byte == 0x5D {
-                depth -= 1
-                if depth == 0 {
-                    return record.subdata(in: start..<record.index(after: index))
-                }
-            }
-            index = record.index(after: index)
-        }
-        throw AureliaSyncError.invalidStream("unterminated record payload")
     }
 }
 

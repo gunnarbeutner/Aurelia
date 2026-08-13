@@ -151,13 +151,11 @@ final class LibrarySyncCoordinator: ObservableObject {
                     message: session.mode == .snapshot ? "Updating your library…" : "Applying library changes…",
                     progress: min(0.08 + Double(segments) * 0.03, 0.92)
                 )
-                let decoded = try await client.stream(session: session, after: cursor)
-                let segment = decoded.segment
+                let segment = try await client.stream(session: session, after: cursor)
                 let acknowledgement = AureliaSyncAcknowledgement(
                     throughCursor: segment.cursor,
                     clientCommitId: UUID().uuidString.lowercased(),
-                    recordCount: segment.records.count,
-                    aggregateChecksum: segment.checksum
+                    recordCount: segment.records.count
                 )
                 let maximumSequence = segment.records.compactMap(\.sequence).max()
                 let baseURL = service.baseURL
