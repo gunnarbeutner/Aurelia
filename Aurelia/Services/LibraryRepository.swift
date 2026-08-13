@@ -902,6 +902,93 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
+    /// Links items to artists the way the server does, for the items whose
+    /// payload arrived without the link.
+    ///
+    /// Jellyfin resolves an item's artist IDs at serialisation time with an
+    /// exact-name dictionary lookup and silently drops what it cannot match —
+    /// so an album tagged `:wumpscut:` under an artist named `:Wumpscut:`
+    /// arrives with `AlbumArtists: []`. Its *queries* match on a normalised
+    /// name instead, which is why the same server will happily list those
+    /// albums when asked by that artist's ID. This applies the same
+    /// normalisation, so the local catalog answers the way the server does.
+    @discardableResult
+    func linkArtistsByName(in scope: LibraryScope) throws -> Int {
+        try database.write { db in
+            let artists = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT itemID, name FROM libraryItem
+                    WHERE serverKey = ? AND userID = ? AND itemType = ?
+                    """,
+                arguments: [scope.serverKey, scope.userID, LibraryItemType.artist.rawValue]
+            )
+
+            // First writer wins, matching the server taking `albumArtists[0]`.
+            var byCleanName: [String: String] = [:]
+            for row in artists {
+                let name: String = row["name"]
+                let id: String = row["itemID"]
+                let key = Self.cleanName(name)
+                guard !key.isEmpty, byCleanName[key] == nil else { continue }
+                byCleanName[key] = id
+            }
+            guard !byCleanName.isEmpty else { return 0 }
+
+            let unlinked = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT item.itemID, item.artistName FROM libraryItem AS item
+                    LEFT JOIN itemArtist AS relation
+                      ON relation.serverKey = item.serverKey
+                     AND relation.userID = item.userID
+                     AND relation.itemID = item.itemID
+                    WHERE item.serverKey = ? AND item.userID = ?
+                      AND item.itemType IN (?, ?)
+                      AND item.artistName IS NOT NULL
+                      AND item.artistID IS NULL
+                      AND relation.itemID IS NULL
+                    """,
+                arguments: [
+                    scope.serverKey, scope.userID,
+                    LibraryItemType.album.rawValue, LibraryItemType.track.rawValue
+                ]
+            )
+
+            var linked = 0
+            for row in unlinked {
+                let artistName: String = row["artistName"]
+                guard let artistID = byCleanName[Self.cleanName(artistName)] else { continue }
+                let itemID: String = row["itemID"]
+                try Self.saveArtistLink(
+                    itemID: itemID,
+                    artistID: artistID,
+                    position: 0,
+                    db: db,
+                    scope: scope
+                )
+                // The artist page reads this column first, so it is filled in
+                // too rather than left contradicting the relation row.
+                try db.execute(
+                    sql: """
+                        UPDATE libraryItem SET artistID = ?
+                        WHERE serverKey = ? AND userID = ? AND itemID = ?
+                        """,
+                    arguments: [artistID, scope.serverKey, scope.userID, itemID]
+                )
+                linked += 1
+            }
+            return linked
+        }
+    }
+
+    /// Jellyfin's `GetCleanValue`: diacritics removed, lowercased.
+    nonisolated static func cleanName(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     nonisolated func tracks(inAlbum albumID: String, in scope: LibraryScope) async throws -> [Track] {
         try await readTracks(
             sql: """

@@ -134,6 +134,10 @@ final class LibrarySyncCoordinator: ObservableObject {
                     in: scope
                 )
             }
+            // Anything whose artist link the server declined to serialise is
+            // matched up here, once the catalog is complete.
+            try? await repository.linkArtistsByName(in: scope)
+
             status = .idle
             // A completed sync is firsthand proof the server is up, which beats
             // waiting for the reachability probe to come round again.

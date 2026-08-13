@@ -2011,6 +2011,80 @@ struct AureliaActionTests {
 
     /// The catalog is what tells browsing which containers still have something
     /// playable, so the mapping from downloaded tracks upward has to hold.
+    /// Jellyfin's own normalisation, so the local catalog and the server agree
+    /// on which names are the same artist.
+    @Test func cleanNameMatchesJellyfinNormalisation() {
+        #expect(LibraryRepository.cleanName(":Wumpscut:") == ":wumpscut:")
+        #expect(LibraryRepository.cleanName("Björk") == "bjork")
+        #expect(LibraryRepository.cleanName("  Air  ") == "air")
+        // Not a case difference — a different string, and the server treats it
+        // as a different artist too.
+        #expect(LibraryRepository.cleanName("Wumpscut") != LibraryRepository.cleanName(":Wumpscut:"))
+    }
+
+    /// Jellyfin resolves an item's artist IDs with an exact-name lookup and
+    /// drops what it cannot match, so albums tagged `:wumpscut:` under an
+    /// artist named `:Wumpscut:` arrive with no artist at all — while the same
+    /// server lists them happily when asked by that artist's ID.
+    @Test func syncLinksArtistsThatTheServerLeftUnresolved() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+
+        let artist = Artist(id: "artist", name: ":Wumpscut:", bio: nil, albumCount: 2, artworkURL: nil)
+        let other = Artist(id: "other", name: "Wumpscut", bio: nil, albumCount: 1, artworkURL: nil)
+        // Arrived with no artist ID, exactly as the server sends it.
+        let unresolved = Album(
+            id: "unresolved", name: "Bone Peeler", artistName: ":wumpscut:",
+            artistId: nil, year: 2006, artworkURL: nil, genreIDs: []
+        )
+        // Arrived resolved, and must be left alone.
+        let resolved = Album(
+            id: "resolved", name: "Boeses Junges Fleisch", artistName: ":Wumpscut:",
+            artistId: artist.id, year: 2004, artworkURL: nil, genreIDs: []
+        )
+        // A genuinely different name, which the server also keeps separate.
+        let unrelated = Album(
+            id: "unrelated", name: "Something Else", artistName: "Wumpscut",
+            artistId: nil, year: 1999, artworkURL: nil, genreIDs: []
+        )
+        let track = Track(
+            id: "track", name: "Crown Of Thorns", artistName: ":wumpscut:",
+            albumName: unresolved.name, duration: 200, artworkURL: nil,
+            indexNumber: 1, albumId: unresolved.id, artistId: nil,
+            artistIDs: nil, genreIDs: []
+        )
+
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [unresolved, resolved, unrelated],
+                artists: [artist, other],
+                tracks: [track],
+                playlists: [], genres: [], playlistEntries: []
+            ),
+            in: scope
+        )
+
+        #expect(try await repository.albums(forArtist: artist.id, in: scope).map(\.id) == ["resolved"])
+
+        // Three: the album and track tagged `:wumpscut:`, plus the one tagged
+        // `Wumpscut`, which links to its own separate artist by the same rule.
+        let linked = try await repository.linkArtistsByName(in: scope)
+        #expect(linked == 3)
+
+        let albums = try await repository.albums(forArtist: artist.id, in: scope).map(\.id)
+        #expect(Set(albums) == ["unresolved", "resolved"])
+        // The differently-named album stays with its own artist.
+        #expect(try await repository.albums(forArtist: other.id, in: scope).map(\.id) == ["unrelated"])
+        // Tracks matter as much as albums — Shuffle reads them.
+        #expect(try await repository.tracks(forArtist: artist.id, in: scope).map(\.id) == ["track"])
+
+        // Idempotent: a second sync must not relink what is already linked.
+        #expect(try await repository.linkArtistsByName(in: scope) == 0)
+    }
+
     @Test func offlineContainersMapDownloadedTracksToAlbumsArtistsAndPlaylists() async throws {
         let databaseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
