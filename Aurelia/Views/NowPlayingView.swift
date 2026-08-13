@@ -1231,14 +1231,14 @@ struct NowPlayingView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    // Dismissal is the navigation handler's job now, so these are only the
+    // request. Doing it here as well raced the same teardown twice.
     private func navigateToArtist(track: Track) {
         NavigationCoordinator.shared.navigateToArtist(for: track)
-        if let onDismiss = onDismiss { onDismiss() } else { dismiss() }
     }
 
     private func navigateToAlbum(track: Track) {
         NavigationCoordinator.shared.navigateToAlbum(for: track)
-        if let onDismiss = onDismiss { onDismiss() } else { dismiss() }
     }
 
     private func toggleFavorite() {

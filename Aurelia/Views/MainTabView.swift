@@ -64,22 +64,22 @@ struct MainTabView: View {
         .onChange(of: navCoordinator.pendingArtistNavigation) { _, artist in
             guard let artist = artist else { return }
             navCoordinator.pendingArtistNavigation = nil
-            selectedTab = 1
-            libraryPath = NavigationPath()
-            // Stage the push on the next run loop so the tab selection and path
-            // reset commit first, without imposing a visible fixed delay.
-            DispatchQueue.main.async {
-                libraryPath.append(artist)
-            }
+            // Navigating with the player up would push the destination in
+            // behind it. Dismissing here covers every caller — the player's
+            // own menu, App Intents, scripting — rather than each remembering.
+            // Built whole and assigned once. Clearing the path and pushing on a
+            // later run loop let the tab's root render in between, so the
+            // listener watched Library appear before the artist did.
+            var path = NavigationPath()
+            path.append(artist)
+            navigateLibrary(to: path)
         }
         .onChange(of: navCoordinator.pendingAlbumNavigation) { _, album in
             guard let album = album else { return }
             navCoordinator.pendingAlbumNavigation = nil
-            selectedTab = 1
-            libraryPath = NavigationPath()
-            DispatchQueue.main.async {
-                libraryPath.append(album)
-            }
+            var path = NavigationPath()
+            path.append(album)
+            navigateLibrary(to: path)
         }
         .onChange(of: navCoordinator.pendingPlayerPresentation) { _, request in
             guard let request else { return }
@@ -196,6 +196,25 @@ struct MainTabView: View {
             }
         }
         #endif
+    }
+
+    /// Switches to Library and shows `path`, dismissing the player if it is up.
+    ///
+    /// The push is unanimated in that case, and only in that case: the
+    /// destination slides in behind the player, so all the listener ever sees
+    /// of it is the tail of the animation as the player clears. Callers that
+    /// navigate with no player in the way — an album's artist link, a context
+    /// menu — keep the ordinary push.
+    private func navigateLibrary(to path: NavigationPath) {
+        let dismissingPlayer = showNowPlaying
+        if dismissingPlayer { dismissNowPlaying() }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = dismissingPlayer
+        withTransaction(transaction) {
+            selectedTab = 1
+            libraryPath = path
+        }
     }
 
     private var tabSelection: Binding<Int> {
