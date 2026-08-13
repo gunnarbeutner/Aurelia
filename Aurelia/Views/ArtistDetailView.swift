@@ -640,7 +640,7 @@ struct ArtistDetailView: View {
         LazyVStack(spacing: 0) {
             ForEach(albums.sorted(by: { ($0.year ?? 0) > ($1.year ?? 0) })) { album in
                 NavigationLink(value: album) {
-                    AlbumListRow(album: album)
+                    AlbumListRow(album: album, offersGoToArtist: false)
                 }
                 // AlbumListRow carries no horizontal inset of its own, so the
                 // row content aligns with the section header while the tinted
@@ -658,7 +658,7 @@ struct ArtistDetailView: View {
         return LazyVGrid(columns: columns, spacing: 12) {
             ForEach(albums.sorted(by: { ($0.year ?? 0) > ($1.year ?? 0) })) { album in
                 NavigationLink(value: album) {
-                    AlbumCard(album: album)
+                    AlbumCard(album: album, offersGoToArtist: false)
                 }
             }
         }
@@ -819,7 +819,7 @@ struct YearSection: View {
                 VStack(spacing: 0) {
                     ForEach(albums.sorted(by: { ($0.year ?? 0) > ($1.year ?? 0) })) { album in
                         NavigationLink(value: album) {
-                            AlbumListRow(album: album)
+                            AlbumListRow(album: album, offersGoToArtist: false)
                         }
                         .padding(.horizontal, 20)
                         .background(Color.appMidBackground.opacity(0.2))

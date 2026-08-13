@@ -2,6 +2,9 @@ import SwiftUI
 
 struct AlbumContextMenu: View {
     let album: Album
+    /// Dropped when the menu is opened from that artist's own page, where it
+    /// would only offer to take you where you already are.
+    var offersGoToArtist = true
 
     private let jellyfinService = JellyfinService.shared
     private let playerManager = PlayerManager.shared
@@ -36,12 +39,14 @@ struct AlbumContextMenu: View {
                 Label("Add to Queue", systemImage: "text.append")
             }
 
-            Divider()
+            if offersGoToArtist {
+                Divider()
 
-            Button {
-                NavigationCoordinator.shared.navigateToArtist(for: album)
-            } label: {
-                Label("Go to Artist", systemImage: "person.fill")
+                Button {
+                    NavigationCoordinator.shared.navigateToArtist(for: album)
+                } label: {
+                    Label("Go to Artist", systemImage: "person.fill")
+                }
             }
         }
         .tint(nil)
@@ -100,6 +105,8 @@ struct TrackContextMenu: View {
     let track: Track
     var onAddToPlaylist: (() -> Void)? = nil
     var offersInstantMix = true
+    /// Dropped when the menu is opened from that album's own page.
+    var offersGoToAlbum = true
     /// Position of this track in the playback queue, when the menu is opened
     /// from a row that is already queued. The queue actions then *move* the
     /// track instead of inserting a second copy, and "Add to Queue" is dropped
@@ -121,10 +128,12 @@ struct TrackContextMenu: View {
                 Divider()
             }
 
-            Button {
-                NavigationCoordinator.shared.navigateToAlbum(for: track)
-            } label: {
-                Label("Go to Album", systemImage: "square.stack")
+            if offersGoToAlbum {
+                Button {
+                    NavigationCoordinator.shared.navigateToAlbum(for: track)
+                } label: {
+                    Label("Go to Album", systemImage: "square.stack")
+                }
             }
 
             Button {

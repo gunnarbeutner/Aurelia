@@ -2,6 +2,9 @@ import SwiftUI
 
 struct AlbumCard: View {
     let album: Album
+    /// Passed to the context menu: an artist's own page has no use for a link
+    /// back to that artist.
+    var offersGoToArtist = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -78,7 +81,7 @@ struct AlbumCard: View {
         }
         .contentShape(Rectangle())
         .contextMenu {
-            AlbumContextMenu(album: album)
+            AlbumContextMenu(album: album, offersGoToArtist: offersGoToArtist)
         }
         .offlineAvailability(.album(album.id))
     }

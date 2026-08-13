@@ -722,7 +722,7 @@ struct AlbumTrackRow: View {
             .contentShape(Rectangle())
         }
         .contextMenu {
-            TrackContextMenu(track: track, onAddToPlaylist: onAddToPlaylist)
+            TrackContextMenu(track: track, onAddToPlaylist: onAddToPlaylist, offersGoToAlbum: false)
         }
         .offlineAvailability(.track(track.id))
     }
