@@ -97,6 +97,8 @@ struct DiscoveryView: View {
 
                 if !viewModel.shelves.isEmpty {
                     mixesShelf
+                } else if missingMixesNeedExplaining {
+                    missingMixesNote
                 }
 
                 if !viewModel.rediscoverTracks.isEmpty {
@@ -137,52 +139,63 @@ struct DiscoveryView: View {
         }
     }
 
+    /// Only the transient state appears here. Whether AudioMuse is installed
+    /// or reachable is a standing fact about the server and lives in Settings,
+    /// where it sits beside the thing you would go and fix; on Discover it was
+    /// a permanent notice with nothing to act on. An analysis in progress is
+    /// different: it is the answer to "why is Discover thin right now", and
+    /// that question only occurs to you while looking at Discover.
     @ViewBuilder
     private var statusBanner: some View {
-        switch viewModel.availability {
-        case .checking:
-            EmptyView()
-        case .analyzing(let task):
-            VStack(alignment: .leading, spacing: 10) {
-                Label("AudioMuse is analyzing your library", systemImage: "waveform.badge.magnifyingglass")
-                    .font(.appSubheadline)
-                    .foregroundColor(.appText)
-                if let message = task.message {
-                    Text(message)
-                        .font(.appCaption)
-                        .foregroundColor(.appTextSecondary)
-                }
-                if let progress = task.progressFraction {
-                    ProgressView(value: progress)
-                        .tint(.appAccent)
-                } else {
-                    ProgressView()
-                        .tint(.appAccent)
-                }
-                Text("Recommendations will improve as analysis completes.")
+        if case .analyzing(let task) = viewModel.availability {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Label(
+                        "AudioMuse is analyzing your library",
+                        systemImage: "waveform.badge.magnifyingglass"
+                    )
                     .font(.appCaption)
                     .foregroundColor(.appTextSecondary)
+
+                    Spacer()
+
+                    if let progress = task.progressFraction {
+                        Text("\(Int(progress * 100))%")
+                            .font(.appMono)
+                            .foregroundColor(.appTextMuted)
+                    }
+                }
+
+                Text(task.message ?? "Recommendations will improve as it completes.")
+                    .font(.appCaption)
+                    .foregroundColor(.appTextMuted)
+                    .lineLimit(2)
             }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.appElevated))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.appAccent.opacity(0.3)))
             .padding(.horizontal, 20)
-        case .ready:
-            Label("Personalized by AudioMuse-AI", systemImage: "waveform.path.ecg")
-                .font(.appCaption)
-                .foregroundColor(.appTextSecondary)
-                .padding(.horizontal, 20)
-        case .notInstalled:
-            Label("AudioMuse-AI is required for Daily Mixes", systemImage: "waveform.path.badge.exclamationmark")
-                .font(.appCaption)
-                .foregroundColor(.appTextSecondary)
-                .padding(.horizontal, 20)
-        case .unavailable:
-            Label("AudioMuse-AI is temporarily unavailable", systemImage: "waveform.path.badge.exclamationmark")
-                .font(.appCaption)
-                .foregroundColor(.appTextSecondary)
-                .padding(.horizontal, 20)
         }
+    }
+
+    /// Said in the shelf's own place rather than as a banner up top. Without
+    /// it the Daily Mixes simply would not exist, with nothing to say why —
+    /// worse than the notice this replaces, which at least explained itself.
+    private var missingMixesNeedExplaining: Bool {
+        viewModel.availability == .notInstalled || viewModel.availability == .unavailable
+    }
+
+    private var missingMixesNote: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Daily Mixes")
+                .font(.appTitle)
+                .foregroundColor(.appText)
+
+            Text(viewModel.availability == .notInstalled
+                 ? "Needs the AudioMuse-AI plugin on your server."
+                 : "AudioMuse-AI is not responding right now.")
+                .font(.appCaption)
+                .foregroundColor(.appTextSecondary)
+        }
+        .padding(.horizontal, 20)
+        .accessibilityIdentifier("discovery-missing-mixes-note")
     }
 
     private var recentPlaysShelf: some View {

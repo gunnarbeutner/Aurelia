@@ -56,6 +56,7 @@ struct SettingsView: View {
     @State private var showRebuildConfirmation = false
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
+    @State private var audioMuseAvailability: AudioMuseAvailability = .checking
 
     private var selectedQuality: StreamingQuality {
         get { StreamingQuality(rawValue: selectedQualityRaw) ?? .medium }
@@ -494,8 +495,105 @@ struct SettingsView: View {
 
                     Spacer()
                 }
+
+                Divider()
+                    .background(Color.appControlFill)
+
+                audioMuseRow
             }
             .settingsCard()
+        }
+        .task {
+            // Whether the plugin is installed is a standing fact about the
+            // server, so it belongs here rather than nagging from Discover.
+            // One reading is enough for that — but an analysis in progress is
+            // live, so it keeps asking until the run finishes. The task is torn
+            // down with the view, so nothing polls in the background.
+            while !Task.isCancelled {
+                audioMuseAvailability = await AudioMuseStatusProbe.availability(
+                    from: jellyfinService
+                )
+                guard case .analyzing = audioMuseAvailability else { return }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    private var audioMuseRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: audioMuseSymbol)
+                    .foregroundColor(audioMuseColor)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("AudioMuse-AI")
+                        .font(.appBody)
+                        .foregroundColor(.secondary)
+
+                    Text(audioMuseDescription)
+                        .font(.appMono)
+                        .foregroundColor(audioMuseColor)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                if case .analyzing(let task) = audioMuseAvailability,
+                   let progress = task.progressFraction {
+                    Text("\(Int(progress * 100))%")
+                        .font(.appMono)
+                        .foregroundColor(.appTextMuted)
+                }
+            }
+
+            if case .analyzing(let task) = audioMuseAvailability {
+                if let progress = task.progressFraction {
+                    ProgressView(value: progress)
+                        .tint(.appAccent)
+                } else {
+                    ProgressView()
+                        .tint(.appAccent)
+                }
+            }
+        }
+        .accessibilityIdentifier("settings-audiomuse-status")
+    }
+
+    private var audioMuseSymbol: String {
+        switch audioMuseAvailability {
+        case .checking: return "waveform.path.ecg"
+        case .analyzing: return "waveform.badge.magnifyingglass"
+        case .ready: return "checkmark.circle.fill"
+        case .unavailable: return "exclamationmark.triangle.fill"
+        case .notInstalled: return "xmark.circle.fill"
+        }
+    }
+
+    private var audioMuseColor: Color {
+        switch audioMuseAvailability {
+        case .checking, .notInstalled: return .appTextSecondary
+        case .analyzing: return .appAccent
+        case .ready: return .appSuccess
+        case .unavailable: return .appSecondary
+        }
+    }
+
+    private var audioMuseDescription: String {
+        switch audioMuseAvailability {
+        case .checking:
+            return "Checking…"
+        case .analyzing(let task):
+            // The server's own words when it has any — "analyzing" alone says
+            // nothing about how far along a long run is.
+            return task.message ?? "Analyzing your library"
+        case .ready(let version):
+            return "Connected (\(version))"
+        case .unavailable:
+            return "Installed but not responding"
+        case .notInstalled:
+            // Named as a capability rather than a fault: not everyone wants it.
+            return "Not installed — required for Daily Mixes"
         }
     }
 
