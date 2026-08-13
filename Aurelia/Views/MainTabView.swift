@@ -370,7 +370,14 @@ struct MainTabView: View {
                 ZStack(alignment: .topTrailing) {
                     SwipeToDismissPlayer(
                         isPresented: showNowPlaying,
-                        hiddenOffset: geometry.size.height + geometry.safeAreaInsets.bottom,
+                        // The top inset counts too: the player's background
+                        // reaches past its own layout top to cover the screen,
+                        // and that extension travels with the offset. Without
+                        // it, a strip of player is left showing in the bottom
+                        // safe area on every tab whenever something is playing.
+                        hiddenOffset: geometry.size.height
+                            + geometry.safeAreaInsets.bottom
+                            + geometry.safeAreaInsets.top,
                         onDismiss: dismissNowPlaying
                     ) {
                         #if targetEnvironment(macCatalyst)
