@@ -303,7 +303,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
             let favorites = try Self.favoriteItemIDs(db, scope: scope)
             let albums = try Self.items(db, scope: scope, type: .album)
                 .map { $0.album(isFavorite: favorites.contains($0.itemID)) }
-            let artists = try Self.items(db, scope: scope, type: .artist)
+            let artists = try Self.browsableArtists(db, scope: scope)
                 .map { $0.artist(isFavorite: favorites.contains($0.itemID)) }
             let tracks = includeTracks
                 ? try Self.items(db, scope: scope, type: .track)
@@ -902,6 +902,59 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
+    /// Records which artists the server calls album artists. Browsing lists
+    /// only these; everything else stays in the catalog so a track credited to
+    /// a guest can still be searched for and navigated to.
+    func replaceAlbumArtists(_ artistIDs: Set<String>, in scope: LibraryScope) throws {
+        try database.write { db in
+            try db.execute(
+                sql: "DELETE FROM albumArtist WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+            for artistID in artistIDs {
+                try db.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO albumArtist (serverKey, userID, artistID)
+                        VALUES (?, ?, ?)
+                        """,
+                    arguments: [scope.serverKey, scope.userID, artistID]
+                )
+            }
+        }
+    }
+
+    /// Nothing recorded means nothing has synced since this became a feature,
+    /// and an unfiltered list beats an empty one.
+    private static func hasAlbumArtists(_ db: Database, scope: LibraryScope) throws -> Bool {
+        try Int.fetchOne(
+            db,
+            sql: "SELECT 1 FROM albumArtist WHERE serverKey = ? AND userID = ? LIMIT 1",
+            arguments: [scope.serverKey, scope.userID]
+        ) != nil
+    }
+
+    private static func browsableArtists(
+        _ db: Database,
+        scope: LibraryScope
+    ) throws -> [LibraryItemRecord] {
+        guard try hasAlbumArtists(db, scope: scope) else {
+            return try items(db, scope: scope, type: .artist)
+        }
+        return try LibraryItemRecord.fetchAll(
+            db,
+            sql: """
+                SELECT item.* FROM libraryItem AS item
+                JOIN albumArtist AS marker
+                  ON marker.serverKey = item.serverKey
+                 AND marker.userID = item.userID
+                 AND marker.artistID = item.itemID
+                WHERE item.serverKey = ? AND item.userID = ? AND item.itemType = ?
+                ORDER BY item.sortName COLLATE NOCASE
+                """,
+            arguments: [scope.serverKey, scope.userID, LibraryItemType.artist.rawValue]
+        )
+    }
+
     /// Links items to artists the way the server does, for the items whose
     /// payload arrived without the link.
     ///
@@ -1111,6 +1164,21 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
 
         return try database.read { db in
             let favorites = try Self.favoriteItemIDs(db, scope: scope)
+            // Searching turns up album artists only, for the same reason the
+            // library list does: `feat.` and `vs.` credit strings are artist
+            // entities on the server and would swamp the results. They stay in
+            // the catalog, so navigating to one from a track still works.
+            let artistRestriction = try Self.hasAlbumArtists(db, scope: scope)
+                ? """
+                  AND (item.itemType <> '\(LibraryItemType.artist.rawValue)'
+                       OR EXISTS (
+                           SELECT 1 FROM albumArtist AS marker
+                           WHERE marker.serverKey = item.serverKey
+                             AND marker.userID = item.userID
+                             AND marker.artistID = item.itemID
+                       ))
+                  """
+                : ""
             let records = try LibraryItemRecord.fetchAll(
                 db,
                 sql: """
@@ -1123,6 +1191,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     WHERE libraryItemFTS MATCH ?
                       AND item.serverKey = ? AND item.userID = ?
                       AND item.itemType IN (\(placeholders))
+                      \(artistRestriction)
                     ORDER BY bm25(libraryItemFTS, 7.0, 5.0, 3.0, 2.0),
                              item.sortName COLLATE NOCASE
                     LIMIT ?
@@ -1722,6 +1791,18 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 table.add(column: "catalogRevision", .integer).notNull().defaults(to: 0)
             }
         }
+        migrator.registerMigration("markAlbumArtists") { db in
+            // A table of its own rather than a column: the item records are
+            // persisted wholesale on every sync, which would reset a flag they
+            // do not carry.
+            try db.create(table: "albumArtist") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("artistID", .text).notNull()
+                table.primaryKey(["serverKey", "userID", "artistID"])
+            }
+        }
+
         migrator.registerMigration("resumableFullSync") { db in
             try db.create(table: "librarySyncProgress") { table in
                 table.column("serverKey", .text).notNull()

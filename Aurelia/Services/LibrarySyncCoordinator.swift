@@ -80,6 +80,26 @@ final class LibrarySyncCoordinator: ObservableObject {
         eventStream.stop()
     }
 
+    /// Records which artists the server calls album artists, so browsing can
+    /// show those and leave the `feat.`/`vs.` credit entities out of the way.
+    /// A failure here is not worth failing a sync over — the lists simply stay
+    /// unfiltered until the next one.
+    private func refreshAlbumArtists(in scope: LibraryScope) async {
+        var ids = Set<String>()
+        var offset = 0
+        while true {
+            guard let page = try? await service.fetchAlbumArtistsPage(
+                limit: pageSize,
+                startIndex: offset
+            ) else { return }
+            ids.formUnion(page.Items.map(\.Id))
+            if page.Items.count < pageSize { break }
+            offset += page.Items.count
+        }
+        guard !ids.isEmpty else { return }
+        try? await repository.replaceAlbumArtists(ids, in: scope)
+    }
+
     /// Deletions are applied straight away rather than waiting for the daily
     /// reconciliation: the server names the items, and nothing else will.
     private func applyRemovals(_ ids: [String]) {
@@ -163,6 +183,7 @@ final class LibrarySyncCoordinator: ObservableObject {
             // Anything whose artist link the server declined to serialise is
             // matched up here, once the catalog is complete.
             try? await repository.linkArtistsByName(in: scope)
+            await refreshAlbumArtists(in: scope)
 
             status = .idle
             // A completed sync is firsthand proof the server is up, which beats

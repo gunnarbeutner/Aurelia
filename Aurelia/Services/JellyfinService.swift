@@ -440,13 +440,25 @@ class JellyfinService: ObservableObject {
         try await fetchArtistsPage(parentId: parentId, limit: limit, startIndex: startIndex).Items
     }
 
-    func fetchArtistsPage(parentId: String? = nil, limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
+    /// The artists Jellyfin considers album artists, which is the set worth
+    /// browsing: `/Artists` also returns an entity for every `feat.`, `vs.` and
+    /// `A/B` credit string found on a track.
+    func fetchAlbumArtistsPage(limit: Int? = nil, startIndex: Int? = nil) async throws -> ItemsResponse {
+        try await fetchArtistsPage(limit: limit, startIndex: startIndex, path: "Artists/AlbumArtists")
+    }
+
+    func fetchArtistsPage(
+        parentId: String? = nil,
+        limit: Int? = nil,
+        startIndex: Int? = nil,
+        path: String = "Artists"
+    ) async throws -> ItemsResponse {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = KeychainService.shared.getUserID() else {
             throw JellyfinError.notAuthenticated
         }
 
-        guard var components = URLComponents(string: "\(baseURL)/Artists") else {
+        guard var components = URLComponents(string: "\(baseURL)/\(path)") else {
             throw JellyfinError.invalidURL
         }
 

@@ -2036,6 +2036,48 @@ struct AureliaActionTests {
         #expect(JellyfinService.clockOffset(fromDateHeader: "", now: now) == nil)
     }
 
+    /// `/Artists` returns an entity for every `feat.`, `vs.` and `A/B` credit
+    /// string on a track, which swamps browsing. Only album artists are listed
+    /// — but the rest stay in the catalog, or a track's "Go to Artist" and any
+    /// search for a guest would break.
+    @Test func browsingListsAlbumArtistsWithoutLosingTheRest() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+
+        let headline = Artist(id: "headline", name: "Access to Arasaka", bio: nil, albumCount: 1, artworkURL: nil)
+        let guest = Artist(
+            id: "guest", name: "Access to Arasaka feat. Jamie Blacker",
+            bio: nil, albumCount: 0, artworkURL: nil
+        )
+
+        try await repository.replaceCompleteLibrary(
+            LibraryCatalog(
+                albums: [], artists: [headline, guest], tracks: [],
+                playlists: [], genres: [], playlistEntries: []
+            ),
+            in: scope
+        )
+
+        // Nothing recorded yet: an unfiltered list beats an empty one.
+        let beforeSync = try await repository.librarySnapshot(in: scope).artists.map(\.id)
+        #expect(Set(beforeSync) == ["headline", "guest"])
+
+        try await repository.replaceAlbumArtists(["headline"], in: scope)
+
+        let browsable = try await repository.librarySnapshot(in: scope).artists.map(\.id)
+        #expect(browsable == ["headline"])
+
+        // Still findable, and still resolvable by ID for its own page.
+        let hits = try await repository.search(
+            "Jamie", filter: .artists, in: scope, limit: 20
+        )
+        #expect(hits.isEmpty)
+        #expect(try await repository.albums(forArtist: guest.id, in: scope).isEmpty)
+    }
+
     /// Jellyfin's own normalisation, so the local catalog and the server agree
     /// on which names are the same artist.
     @Test func cleanNameMatchesJellyfinNormalisation() {
