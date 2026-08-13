@@ -18,6 +18,7 @@ struct AlbumDetailView: View {
     @State private var isFavorite: Bool
     @State private var albumTracks: [Track] = []
     @State private var isLoadingTracks = false
+    @State private var hasLoadedTracks: Bool
     @State private var showAddToPlaylist = false
     @State private var selectedTrackIds: [String] = []
 
@@ -34,8 +35,10 @@ struct AlbumDetailView: View {
         if let initialTracks {
             _albumTracks = State(initialValue: initialTracks)
             _isLoadingTracks = State(initialValue: false)
+            _hasLoadedTracks = State(initialValue: true)
             fetchesTracksOnAppear = false
         } else {
+            _hasLoadedTracks = State(initialValue: false)
             fetchesTracksOnAppear = true
         }
     }
@@ -103,7 +106,8 @@ struct AlbumDetailView: View {
         }
         .ignoresSafeArea(.keyboard)
         .onAppear {
-            guard fetchesTracksOnAppear else { return }
+            guard fetchesTracksOnAppear, !hasLoadedTracks else { return }
+            hasLoadedTracks = true
             Task {
                 await fetchAlbumTracks()
             }
@@ -561,7 +565,7 @@ struct AlbumDetailView: View {
                 .foregroundColor(Color.appText)
                 .padding(.horizontal, 20)
 
-            if isLoadingTracks {
+            if isLoadingTracks && albumTracks.isEmpty {
                 HStack {
                     Spacer()
                     ProgressView()

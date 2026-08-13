@@ -16,6 +16,7 @@ struct PlaylistDetailView: View {
     @State private var isFavorite: Bool
     @State private var playlistTracks: [Track] = []
     @State private var isLoadingTracks = false
+    @State private var hasLoadedTracks = false
     @State private var showAddToPlaylist = false
     @State private var selectedTrackIds: [String] = []
 
@@ -71,6 +72,8 @@ struct PlaylistDetailView: View {
         }
         .ignoresSafeArea(.keyboard)
         .onAppear {
+            guard !hasLoadedTracks else { return }
+            hasLoadedTracks = true
             Task {
                 await fetchPlaylistTracks()
             }
@@ -334,7 +337,7 @@ struct PlaylistDetailView: View {
                 .foregroundColor(Color.appText)
                 .padding(.horizontal, 20)
 
-            if isLoadingTracks {
+            if isLoadingTracks && playlistTracks.isEmpty {
                 HStack {
                     Spacer()
                     ProgressView()
