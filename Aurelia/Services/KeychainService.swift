@@ -32,6 +32,7 @@ class KeychainService {
     private let accountName = "jellyfinAccessToken"
     private let serverURLName = "jellyfinServerURL"
     private let userIDName = "jellyfinUserId"
+    private let aureliaSyncClientIDName = "aureliaSyncClientId"
 
     private init() {}
 
@@ -100,6 +101,20 @@ class KeychainService {
 
     func deleteUserID() {
         remove(for: userIDName)
+    }
+
+    /// Stable identity of this Aurelia installation in AureliaSync. Unlike the
+    /// Jellyfin playback device ID this lives in Keychain, so reinstalling the
+    /// app resumes the same server-side checkpoint instead of creating a new
+    /// subscription and downloading another snapshot.
+    func aureliaSyncClientID() throws -> String {
+        if let existing = value(account: aureliaSyncClientIDName),
+           UUID(uuidString: existing) != nil {
+            return existing
+        }
+        let clientID = UUID().uuidString.lowercased()
+        try save(clientID, account: aureliaSyncClientIDName)
+        return clientID
     }
 
     // MARK: - Additional Secure Storage

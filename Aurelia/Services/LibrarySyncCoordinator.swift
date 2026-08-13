@@ -1,13 +1,9 @@
 import Foundation
-import Combine
 import UIKit
+import Combine
 
 enum LibrarySyncTrigger: Sendable {
-    case launch
-    case pullToRefresh
-    case manual
-    case rebuild
-    case serverEvent
+    case launch, pullToRefresh, manual, rebuild, serverEvent
 }
 
 enum LibrarySyncStatus: Equatable, Sendable {
@@ -16,141 +12,62 @@ enum LibrarySyncStatus: Equatable, Sendable {
     case failed(message: String, hasCachedLibrary: Bool)
 }
 
-/// Keeps SQLite current using Jellyfin's saved-at watermarks. A complete rebuild
-/// is reserved for a missing cache or an explicit Settings action; ordinary
-/// launches and pull-to-refreshes only fetch changed rows.
+/// Synchronizes exclusively through AureliaSync's journal protocol. There is
+/// intentionally no stock-Jellyfin catalog fallback: it could silently produce
+/// a different consistency model and reintroduce the expensive startup crawl.
 @MainActor
 final class LibrarySyncCoordinator: ObservableObject {
-    static let shared = LibrarySyncCoordinator(
-        service: .shared,
-        repository: .shared
-    )
+    static let shared = LibrarySyncCoordinator(service: .shared, repository: .shared, client: .shared)
 
     @Published private(set) var status: LibrarySyncStatus = .idle
 
     private let service: JellyfinService
     private let repository: LibraryRepository
-    private lazy var eventStream = JellyfinLibraryEventStream(service: service)
+    private let client: AureliaSyncClient
     private var activeTask: Task<Void, Error>?
-    private var eventDebounceTask: Task<Void, Never>?
-    // 1000 measured ~15% faster per item than 500 against a real library, and
-    // flat beyond that.
-    private let pageSize = 1000
-    private let overlap: TimeInterval = 5 * 60
-    private let reconciliationInterval: TimeInterval = 24 * 60 * 60
-    /// How long a partially staged catalog stays resumable. Past this the server
-    /// has likely drifted far enough that a fresh crawl is cheaper than
-    /// reasoning about what changed underneath the staged rows.
-    private static let stagingLifetime: TimeInterval = 24 * 60 * 60
+    private var pollTask: Task<Void, Never>?
+    private let pollInterval: Duration = .seconds(5 * 60)
+    private let maximumIdleDuration: Duration = .seconds(10 * 60)
 
-    init(
-        service: JellyfinService,
-        repository: LibraryRepository
-    ) {
+    init(service: JellyfinService, repository: LibraryRepository, client: AureliaSyncClient) {
         self.service = service
         self.repository = repository
+        self.client = client
     }
 
+    /// Prototype freshness path. Plugin-specific notifications will call sync
+    /// with `.serverEvent`; this lightweight poll remains a safety net.
     func startEventMonitoring() {
-        eventStream.start { [weak self] event in
-            switch event {
-            case .connected:
-                // The socket reaching the server is the cheapest reachability
-                // signal there is, and it arrives without being asked.
-                NetworkMonitor.shared.noteServerReachable()
-            case .disconnected:
-                NetworkMonitor.shared.noteServerConnectionLost()
-            case .itemsRemoved(let ids):
-                self?.applyRemovals(ids)
-            case .libraryChanged, .userDataChanged, .reconnected:
-                self?.scheduleEventSync()
+        guard pollTask == nil else { return }
+        pollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: self?.pollInterval ?? .seconds(300))
+                guard !Task.isCancelled, let self, self.service.isAuthenticated else { continue }
+                try? await self.sync(trigger: .serverEvent)
+                await LibraryStore.shared.reload()
             }
         }
     }
 
-    /// Lets the reachability monitor cut short the socket's reconnect backoff
-    /// when an interface comes back.
     func reconnectEventStream() {
-        eventStream.reconnectNow()
-    }
-
-    func stopEventMonitoring() {
-        eventDebounceTask?.cancel()
-        eventDebounceTask = nil
-        eventStream.stop()
-    }
-
-    /// Records which artists the server calls album artists, so browsing can
-    /// show those and leave the `feat.`/`vs.` credit entities out of the way.
-    /// A failure here is not worth failing a sync over — the lists simply stay
-    /// unfiltered until the next one.
-    private func refreshAlbumArtists(in scope: LibraryScope) async {
-        var ids = Set<String>()
-        var offset = 0
-        while true {
-            guard let page = try? await service.fetchAlbumArtistsPage(
-                limit: pageSize,
-                startIndex: offset
-            ) else { return }
-            ids.formUnion(page.Items.map(\.Id))
-            if page.Items.count < pageSize { break }
-            offset += page.Items.count
-        }
-        guard !ids.isEmpty else { return }
-        try? await repository.replaceAlbumArtists(ids, in: scope)
-    }
-
-    /// Deletions are applied straight away rather than waiting for the daily
-    /// reconciliation: the server names the items, and nothing else will.
-    private func applyRemovals(_ ids: [String]) {
-        guard !ids.isEmpty, let scope = service.libraryScope else { return }
         Task { @MainActor [weak self] in
-            guard let self,
-                  let state = try? await self.repository.syncState(in: scope) else { return }
-            // The existing watermarks are passed straight back: this removes
-            // named items, it does not stand in for a sweep, and advancing them
-            // here would skip whatever changed in the meantime.
-            _ = try? await self.repository.applyDelta(
-                LibraryDelta(
-                    removedItemIDs: Set(ids),
-                    metadataWatermark: state.metadataWatermark,
-                    userDataWatermark: state.userDataWatermark
-                ),
-                in: scope
-            )
-            await LibraryStore.shared.reload()
-        }
-    }
-
-    private func scheduleEventSync() {
-        eventDebounceTask?.cancel()
-        eventDebounceTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled, let self else { return }
+            guard let self else { return }
             try? await self.sync(trigger: .serverEvent)
             await LibraryStore.shared.reload()
         }
     }
 
-    func sync(trigger: LibrarySyncTrigger) async throws {
-        if let activeTask {
-            try await activeTask.value
-            return
-        }
+    func stopEventMonitoring() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
 
+    func sync(trigger: LibrarySyncTrigger) async throws {
+        if let activeTask { try await activeTask.value; return }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            // Without an assertion iOS suspends the app on the way to the
-            // background, stranding the sync mid-page. This does not guarantee
-            // completion, it just buys the current page time to land.
-            let assertion = UIApplication.shared.beginBackgroundTask(
-                withName: "LibrarySync"
-            )
-            defer {
-                if assertion != .invalid {
-                    UIApplication.shared.endBackgroundTask(assertion)
-                }
-            }
+            let assertion = UIApplication.shared.beginBackgroundTask(withName: "AureliaSync")
+            defer { if assertion != .invalid { UIApplication.shared.endBackgroundTask(assertion) } }
             try await self.performSync(trigger: trigger)
         }
         activeTask = task
@@ -159,785 +76,194 @@ final class LibrarySyncCoordinator: ObservableObject {
     }
 
     private func performSync(trigger: LibrarySyncTrigger) async throws {
-        guard let scope = service.libraryScope else {
-            throw JellyfinError.notAuthenticated
-        }
-
+        guard let scope = service.libraryScope else { throw JellyfinError.notAuthenticated }
         do {
-            let state = try await repository.syncState(in: scope)
-            if state == nil || trigger == .rebuild {
-                try await performFullSync(in: scope)
-            } else if let state {
-                try await performIncrementalSync(state: state, in: scope)
+            status = .syncing(message: "Contacting Aurelia Sync…", progress: 0.02)
+            let pluginStatus = try await client.status()
+            guard pluginStatus.enabled else { throw AureliaSyncError.disabled(pluginStatus.healthDetail) }
+            guard pluginStatus.healthy else { throw AureliaSyncError.disabled(pluginStatus.healthDetail ?? "Aurelia Sync is unhealthy.") }
+            guard pluginStatus.protocolVersions.min <= AureliaSyncClient.protocolRange.upperBound,
+                  pluginStatus.protocolVersions.max >= AureliaSyncClient.protocolRange.lowerBound,
+                  pluginStatus.wireSchemaVersions.min <= AureliaSyncClient.schemaRange.upperBound,
+                  pluginStatus.wireSchemaVersions.max >= AureliaSyncClient.schemaRange.lowerBound else {
+                throw AureliaSyncError.incompatible("no common protocol or schema version")
             }
 
-            // Cross-client recency is a small, independently refreshed window.
-            // A failure here must not invalidate the catalog commit.
-            if let recentItems = try? await service.fetchRecentlyPlayedTracks(limit: 100) {
-                status = .syncing(message: "Updating recent plays…", progress: 0.99)
-                await repository.replaceRecentlyPlayed(
-                    recentTrackEntries(from: recentItems, baseURL: service.baseURL),
-                    in: scope
-                )
+            var local = try await repository.aureliaSyncState(in: scope)
+            let forceSnapshot = trigger == .rebuild
+            if forceSnapshot { try await repository.resetAureliaSyncStaging(in: scope); local = nil }
+
+            // A commit is durable locally before it is acknowledged remotely.
+            // Retry that exact session/commit first. If the session expired,
+            // opening from the last server checkpoint safely replays it.
+            if let pending = local?.pendingAcknowledgement,
+               let pendingSessionID = local?.pendingSessionID {
+                status = .syncing(message: "Confirming saved changes…", progress: 0.04)
+                do {
+                    let token = try await client.acknowledge(pending, sessionID: pendingSessionID)
+                    try await repository.markAureliaSyncAcknowledged(pending, checkpointToken: token, in: scope)
+                    local = try await repository.aureliaSyncState(in: scope)
+                } catch let error as AureliaSyncError {
+                    switch error {
+                    case .required, .http(410, _): break // Replay through a new session.
+                    default: throw error
+                    }
+                }
             }
-            // Anything whose artist link the server declined to serialise is
-            // matched up here, once the catalog is complete.
-            try? await repository.linkArtistsByName(in: scope)
-            await refreshAlbumArtists(in: scope)
+
+            // Checkpoints created by builds predating the publication marker
+            // cannot prove that their generation reached the live catalog. Ask
+            // the server for one fresh delivery while keeping the old UI data.
+            let needsPublicationRecovery = local?.checkpointToken != nil
+                && local?.publishedSnapshotGeneration == nil
+            let session = try await client.openSession(
+                checkpoint: needsPublicationRecovery ? nil : local?.checkpointToken,
+                reset: forceSnapshot || needsPublicationRecovery
+            )
+            defer { Task { await self.client.close(sessionID: session.sessionId) } }
+
+            if session.mode == .snapshot,
+               let previousGeneration = local?.snapshotGeneration,
+               let incomingGeneration = session.snapshotGeneration,
+               previousGeneration != incomingGeneration {
+                // A resumed staging area only belongs to the snapshot generation
+                // that produced it. Never merge rows from two generations.
+                try await repository.discardAureliaSyncSnapshotRows(in: scope)
+            }
+
+            var cursor = session.cursor
+            var segments = 0
+            let clock = ContinuousClock()
+            var lastRecordAt = clock.now
+            while true {
+                try Task.checkCancellation()
+                status = .syncing(
+                    message: session.mode == .snapshot ? "Updating your library…" : "Applying library changes…",
+                    progress: min(0.08 + Double(segments) * 0.03, 0.92)
+                )
+                let decoded = try await client.stream(session: session, after: cursor)
+                let segment = decoded.segment
+                let acknowledgement = AureliaSyncAcknowledgement(
+                    throughCursor: segment.cursor,
+                    clientCommitId: UUID().uuidString.lowercased(),
+                    recordCount: segment.records.count,
+                    aggregateChecksum: segment.checksum
+                )
+                let maximumSequence = segment.records.compactMap(\.sequence).max()
+                let baseURL = service.baseURL
+                let changes = try await Task.detached(priority: .utility) {
+                    try Self.changes(from: segment.records, baseURL: baseURL)
+                }.value
+
+                // While materialization is running the server deliberately
+                // sends empty, unfinished segments. There is no new local
+                // state to commit or acknowledge; just ask again. Likewise, a
+                // completed generation already published locally needs no
+                // second promotion when its terminal segment is empty.
+                if segment.records.isEmpty {
+                    if segment.caughtUp,
+                       local?.publishedSnapshotGeneration == session.snapshotGeneration {
+                        break
+                    }
+                    if !segment.caughtUp {
+                        if lastRecordAt.duration(to: clock.now) >= maximumIdleDuration {
+                            throw AureliaSyncError.incompatible(
+                                "the server made no library progress for ten minutes"
+                            )
+                        }
+                        cursor = segment.cursor
+                        segments += 1
+                        continue
+                    }
+                }
+
+                if session.mode == .snapshot {
+                    if segment.caughtUp {
+                        try await repository.promoteAureliaSyncSnapshot(
+                            changes.catalog, session: session, acknowledgement: acknowledgement,
+                            sequence: maximumSequence, in: scope
+                        )
+                    } else {
+                        try await repository.appendAureliaSyncSnapshotSegment(
+                            changes.catalog, session: session, acknowledgement: acknowledgement,
+                            sequence: maximumSequence, in: scope
+                        )
+                    }
+                } else {
+                    _ = try await repository.applyDelta(
+                        changes.delta, in: scope, aureliaSync: session,
+                        acknowledgement: acknowledgement, sequence: maximumSequence
+                    )
+                }
+
+                let token = try await client.acknowledge(acknowledgement, sessionID: session.sessionId)
+                try await repository.markAureliaSyncAcknowledged(acknowledgement, checkpointToken: token, in: scope)
+                cursor = segment.cursor
+                segments += 1
+                if segment.caughtUp { break }
+                if !segment.records.isEmpty {
+                    lastRecordAt = clock.now
+                }
+            }
 
             status = .idle
-            // A completed sync is firsthand proof the server is up, which beats
-            // waiting for the reachability probe to come round again.
             NetworkMonitor.shared.noteServerReachable()
         } catch is CancellationError {
             status = .idle
             throw CancellationError()
         } catch {
-            if error is URLError {
-                NetworkMonitor.shared.noteServerUnreachable()
-            }
-            let hasCache = (try? await repository.librarySnapshot(
-                in: scope,
-                includeTracks: false
-            ).hasCachedLibrary) ?? false
+            let hasCache = (try? await repository.librarySnapshot(in: scope, includeTracks: false).hasCachedLibrary) ?? false
             status = .failed(message: error.localizedDescription, hasCachedLibrary: hasCache)
             throw error
         }
     }
 
-    /// Ordered stages of a full sync. The stage name is persisted alongside the
-    /// page cursor, so an interrupted sync resumes at the page it died on rather
-    /// than refetching the whole library.
-    private enum FullSyncStage: String, CaseIterable {
-        case albums, artists, tracks, playlists, genres, playlistEntries
-
-        var progressRange: ClosedRange<Double> {
-            switch self {
-            case .albums: return 0.02...0.14
-            case .artists: return 0.14...0.25
-            case .tracks: return 0.25...0.67
-            case .playlists: return 0.67...0.73
-            case .genres: return 0.73...0.78
-            case .playlistEntries: return 0.78...0.95
-            }
-        }
+    nonisolated private struct Changes: Sendable {
+        var catalog = LibraryCatalog(albums: [], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: [])
+        var delta: LibraryDelta
     }
 
-    private func performFullSync(in scope: LibraryScope) async throws {
-        // A staged sync is only resumable while the server still agrees with
-        // what we already wrote. Anything older than a day is treated as stale
-        // and discarded rather than merged into a fresh crawl.
-        let existing = try await repository.stagingProgress(in: scope)
-        let resumable = existing.flatMap { progress -> LibraryStagingProgress? in
-            Date().timeIntervalSince(progress.startedAt) < Self.stagingLifetime ? progress : nil
-        }
-        if resumable == nil {
-            // Either nothing was staged, or what was staged is too old to trust
-            // against the current server state.
-            try await repository.resetStagedLibrary(in: scope)
-        }
-        let syncStartedAt = resumable?.startedAt ?? service.serverNow
-
-        let resumeStage = resumable.flatMap { FullSyncStage(rawValue: $0.stage) }
-        let baseURL = service.baseURL
-
-        let resumeIndex = resumeStage.flatMap { FullSyncStage.allCases.firstIndex(of: $0) } ?? 0
-
-        for (index, stage) in FullSyncStage.allCases.enumerated() {
-            try Task.checkCancellation()
-            // Stages complete in order, so anything before the recorded stage is
-            // already durable in the staging scope.
-            if index < resumeIndex { continue }
-            let startOffset = (stage == resumeStage) ? (resumable?.nextOffset ?? 0) : 0
-
-            switch stage {
-            case .albums:
-                try await streamStage(stage, from: startOffset, in: scope, startedAt: syncStartedAt) { limit, offset in
-                    try await self.service.fetchMusicItemsPage(
-                        includeItemTypes: "MusicAlbum",
-                        limit: limit,
-                        startIndex: offset
-                    )
-                } chunk: { items in
-                    LibraryCatalog(
-                        albums: items.map { Album(from: $0, baseURL: baseURL) },
-                        artists: [], tracks: [], playlists: [], genres: [],
-                        playlistEntries: [],
-                        userData: Self.userDataChanges(from: items)
-                    )
+    nonisolated private static func changes(from records: [AureliaSyncRecord], baseURL: String) throws -> Changes {
+        var albums: [Album] = []; var artists: [Artist] = []; var tracks: [Track] = []
+        var playlists: [Playlist] = []; var genres: [Genre] = []; var entries: [LibraryPlaylistEntry] = []
+        var albumArtistIDs = Set<String>()
+        var userData: [LibraryUserDataChange] = []; var removed = Set<String>(); var refreshed = Set<String>()
+        for record in records {
+            switch record.kind {
+            case "item.upsert":
+                guard let payload = record.payload else { throw AureliaSyncError.invalidPayload }
+                switch record.entityType {
+                case "track": tracks.append(try payload.track(fallbackID: record.entityId, baseURL: baseURL))
+                case "album": albums.append(try payload.album(fallbackID: record.entityId, baseURL: baseURL))
+                case "artist":
+                    let artist = try payload.artist(fallbackID: record.entityId, baseURL: baseURL)
+                    artists.append(artist)
+                    if payload.isAlbumArtist == true { albumArtistIDs.insert(artist.id) }
+                case "playlist":
+                    let playlist = try payload.playlist(fallbackID: record.entityId, baseURL: baseURL)
+                    playlists.append(playlist)
+                    refreshed.insert(playlist.id)
+                case "genre": genres.append(try payload.genre(fallbackID: record.entityId))
+                default: throw AureliaSyncError.invalidPayload
                 }
-
-            case .artists:
-                try await streamStage(stage, from: startOffset, in: scope, startedAt: syncStartedAt) { limit, offset in
-                    try await self.service.fetchArtistsPage(limit: limit, startIndex: offset)
-                } chunk: { items in
-                    LibraryCatalog(
-                        albums: [],
-                        artists: items.map { Artist(from: $0, baseURL: baseURL) },
-                        tracks: [], playlists: [], genres: [],
-                        playlistEntries: [],
-                        userData: Self.userDataChanges(from: items)
-                    )
-                }
-
-            case .tracks:
-                try await streamStage(stage, from: startOffset, in: scope, startedAt: syncStartedAt) { limit, offset in
-                    try await self.service.fetchMusicItemsPage(
-                        includeItemTypes: "Audio",
-                        limit: limit,
-                        startIndex: offset
-                    )
-                } chunk: { items in
-                    LibraryCatalog(
-                        albums: [], artists: [],
-                        tracks: items.map { Track(from: $0, baseURL: baseURL) },
-                        playlists: [], genres: [],
-                        playlistEntries: [],
-                        userData: Self.userDataChanges(from: items)
-                    )
-                }
-
-            case .playlists:
-                try await streamStage(stage, from: startOffset, in: scope, startedAt: syncStartedAt) { limit, offset in
-                    try await self.service.fetchPlaylistsPage(limit: limit, startIndex: offset)
-                } chunk: { items in
-                    LibraryCatalog(
-                        albums: [], artists: [], tracks: [],
-                        playlists: items.map { Playlist(from: $0, baseURL: baseURL) },
-                        genres: [],
-                        playlistEntries: [],
-                        userData: Self.userDataChanges(from: items)
-                    )
-                }
-
-            case .genres:
-                try await streamStage(stage, from: startOffset, in: scope, startedAt: syncStartedAt) { limit, offset in
-                    try await self.service.fetchGenresPage(limit: limit, startIndex: offset)
-                } chunk: { items in
-                    LibraryCatalog(
-                        albums: [], artists: [], tracks: [], playlists: [],
-                        genres: items.map(Genre.init(from:)),
-                        playlistEntries: [],
-                        userData: []
-                    )
-                }
-
-            case .playlistEntries:
-                try await stagePlaylistEntries(
-                    resumeDetail: stage == resumeStage ? resumable?.detail : nil,
-                    resumeOffset: startOffset,
-                    startedAt: syncStartedAt,
-                    baseURL: baseURL,
-                    in: scope
-                )
+            case "item.delete":
+                guard let id = record.entityId else { throw AureliaSyncError.invalidPayload }
+                removed.insert(id)
+            case "playlist.replace":
+                guard let payload = record.payload, let playlistID = payload.playlistID,
+                      let position = payload.position else { throw AureliaSyncError.invalidPayload }
+                refreshed.insert(playlistID)
+                entries.append(.init(playlistID: playlistID, track: try payload.track(fallbackID: record.entityId, baseURL: baseURL), position: position))
+            case "userData.upsert":
+                guard let payload = record.payload, let itemID = payload.id ?? record.entityId else { throw AureliaSyncError.invalidPayload }
+                userData.append(.init(itemID: itemID, isFavorite: payload.isFavorite, lastPlayedAt: payload.lastPlayedAt, playCount: payload.playCount, playbackPositionTicks: payload.playbackPositionTicks))
+            case "relationship.replace", "control.reconcile": break
+            default: throw AureliaSyncError.invalidPayload
             }
         }
-
-        try Task.checkCancellation()
-        status = .syncing(message: "Updating local library…", progress: 0.96)
-        try await repository.promoteStagedLibrary(in: scope, syncedAt: syncStartedAt)
-
-        if let snapshot = try? await repository.librarySnapshot(
-            in: scope,
-            includeTracks: true
-        ) {
-            PhoneConnectivityManager.shared.syncLibrarySnapshotToWatch(
-                snapshot: snapshot,
-                scope: scope
-            )
-        }
-    }
-
-    /// Pages one stage straight into the staging scope. Each page is persisted
-    /// with its cursor in a single transaction before the next is requested, so
-    /// termination costs at most one page of work.
-    private func streamStage(
-        _ stage: FullSyncStage,
-        from startOffset: Int,
-        detail: String? = nil,
-        in scope: LibraryScope,
-        startedAt: Date,
-        fetch: @escaping (_ limit: Int, _ offset: Int) async throws -> ItemsResponse,
-        chunk: ([BaseItemDto]) -> LibraryCatalog
-    ) async throws {
-        var offset = startOffset
-        var expectedTotal = 0
-
-        while true {
-            try Task.checkCancellation()
-            updateProgress(
-                label: stage.rawValue,
-                completed: min(offset, expectedTotal),
-                total: expectedTotal,
-                fraction: expectedTotal > 0 ? min(Double(offset) / Double(expectedTotal), 1) : 0,
-                range: stage.progressRange
-            )
-
-            let page = try await fetchPageWithRetry {
-                try await fetch(self.pageSize, offset)
-            }
-            expectedTotal = max(expectedTotal, page.TotalRecordCount)
-            if page.Items.isEmpty { break }
-
-            offset += page.Items.count
-            try await repository.appendStagedChunk(
-                chunk(page.Items),
-                stage: stage.rawValue,
-                nextOffset: offset,
-                detail: detail,
-                startedAt: startedAt,
-                in: scope
-            )
-
-            if page.Items.count < pageSize || offset >= expectedTotal { break }
-        }
-
-        // Record the stage as finished even when it yielded nothing, so a
-        // resume does not repeat it.
-        try await repository.appendStagedChunk(
-            LibraryCatalog(
-                albums: [], artists: [], tracks: [], playlists: [], genres: [],
-                playlistEntries: [], userData: []
-            ),
-            stage: stage.rawValue,
-            nextOffset: offset,
-            detail: detail,
-            startedAt: startedAt,
-            in: scope
-        )
-    }
-
-    /// Playlist contents are a nested crawl, so the cursor also records which
-    /// playlist is in flight. Playlists are walked in the same deterministic
-    /// order the repository returns them.
-    private func stagePlaylistEntries(
-        resumeDetail: String?,
-        resumeOffset: Int,
-        startedAt: Date,
-        baseURL: String,
-        in scope: LibraryScope
-    ) async throws {
-        let playlistIDs = try await repository.stagedPlaylistIDs(in: scope)
-        guard !playlistIDs.isEmpty else { return }
-
-        var startIndex = 0
-        if let resumeDetail, let index = playlistIDs.firstIndex(of: resumeDetail) {
-            startIndex = index
-        }
-
-        for index in startIndex..<playlistIDs.count {
-            try Task.checkCancellation()
-            let playlistID = playlistIDs[index]
-            let count = max(playlistIDs.count, 1)
-            let lower = 0.78 + 0.17 * Double(index) / Double(count)
-            let upper = 0.78 + 0.17 * Double(index + 1) / Double(count)
-            var offset = (playlistID == resumeDetail) ? resumeOffset : 0
-            var expectedTotal = 0
-            var position = offset
-
-            while true {
-                try Task.checkCancellation()
-                updateProgress(
-                    label: "playlist \(index + 1) of \(playlistIDs.count)",
-                    completed: min(offset, expectedTotal),
-                    total: expectedTotal,
-                    fraction: expectedTotal > 0 ? min(Double(offset) / Double(expectedTotal), 1) : 0,
-                    range: lower...upper
-                )
-
-                let page = try await fetchPageWithRetry {
-                    try await self.service.fetchTracksPage(
-                        parentId: playlistID,
-                        limit: self.pageSize,
-                        startIndex: offset
-                    )
-                }
-                expectedTotal = max(expectedTotal, page.TotalRecordCount)
-                if page.Items.isEmpty { break }
-
-                let entries = page.Items.map { item -> LibraryPlaylistEntry in
-                    let entry = LibraryPlaylistEntry(
-                        playlistID: playlistID,
-                        track: Track(from: item, baseURL: baseURL),
-                        position: position
-                    )
-                    position += 1
-                    return entry
-                }
-                offset += page.Items.count
-
-                try await repository.appendStagedChunk(
-                    LibraryCatalog(
-                        albums: [], artists: [], tracks: [], playlists: [], genres: [],
-                        playlistEntries: entries,
-                        userData: []
-                    ),
-                    stage: FullSyncStage.playlistEntries.rawValue,
-                    nextOffset: offset,
-                    detail: playlistID,
-                    startedAt: startedAt,
-                    in: scope
-                )
-
-                if page.Items.count < pageSize || offset >= expectedTotal { break }
-            }
-        }
-    }
-
-    private func performIncrementalSync(
-        state: LibrarySyncState,
-        in scope: LibraryScope
-    ) async throws {
-        // The server's clock, not this device's: the watermark goes back as
-        // `MinDateLastSaved` and is compared against the server's own
-        // timestamps, so a device running fast would skip the difference.
-        let syncStartedAt = service.serverNow
-        let metadataSince = state.metadataWatermark.addingTimeInterval(-overlap)
-        let userSince = state.userDataWatermark.addingTimeInterval(-overlap)
-        let reconcile = state.lastReconciledAt.map {
-            syncStartedAt.timeIntervalSince($0) >= reconciliationInterval
-        } ?? true
-
-        let metadataItems = try await allPages(
-            label: "recent library changes",
-            progressRange: 0.03...0.32
-        ) { limit, offset in
-            try await self.service.fetchMusicItemsPage(
-                includeItemTypes: "Audio,MusicAlbum,Playlist",
-                limit: limit,
-                startIndex: offset,
-                minDateLastSaved: metadataSince
-            )
-        }
-        try Task.checkCancellation()
-        let userItems = try await allPages(
-            label: "favorites and play state",
-            progressRange: 0.32...0.55
-        ) { limit, offset in
-            try await self.service.fetchMusicItemsPage(
-                includeItemTypes: "Audio,MusicAlbum,Playlist,MusicArtist",
-                limit: limit,
-                startIndex: offset,
-                minDateLastSavedForUser: userSince
-            )
-        }
-
-        let baseURL = service.baseURL
-        var albums = metadataItems.filter { $0.Type == .MusicAlbum }
-            .map { Album(from: $0, baseURL: baseURL) }
-        var tracks = metadataItems.filter { $0.Type == .Audio }
-            .map { Track(from: $0, baseURL: baseURL) }
-        var playlists = metadataItems.filter { $0.Type == .Playlist }
-            .map { Playlist(from: $0, baseURL: baseURL) }
-        let artists = userItems.filter { $0.Type == .MusicArtist }
-            .map { Artist(from: $0, baseURL: baseURL) }
-        albums.append(contentsOf: userItems.filter { $0.Type == .MusicAlbum }
-            .map { Album(from: $0, baseURL: baseURL) })
-        tracks.append(contentsOf: userItems.filter { $0.Type == .Audio }
-            .map { Track(from: $0, baseURL: baseURL) })
-        playlists.append(contentsOf: userItems.filter { $0.Type == .Playlist }
-            .map { Playlist(from: $0, baseURL: baseURL) })
-        var removedIDs = Set<String>()
-        var replacementArtists: [Artist]?
-        var replacementGenres: [Genre]?
-        var playlistItemsToRefresh = metadataItems.filter { $0.Type == .Playlist }
-
-        if reconcile {
-            status = .syncing(message: "Checking the library inventory…", progress: 0.57)
-            let inventory = try await allPages(
-                label: "library inventory",
-                progressRange: 0.57...0.72
-            ) { limit, offset in
-                try await self.service.fetchMusicItemsPage(
-                    includeItemTypes: "Audio,MusicAlbum,Playlist",
-                    limit: limit,
-                    startIndex: offset,
-                    enableUserData: false,
-                    enableImages: false,
-                    fields: "BasicSyncInfo"
-                )
-            }
-            let serverIDs = Set(inventory.map(\.Id))
-            let localIDs = try await repository.primaryCatalogItemIDs(in: scope)
-            removedIDs = localIDs.subtracting(serverIDs)
-
-            // An inventory also repairs old/partial caches by fetching rows
-            // known to Jellyfin but absent locally.
-            let missingIDs = serverIDs.subtracting(localIDs)
-            if !missingIDs.isEmpty {
-                status = .syncing(
-                    message: "Repairing \(missingIDs.count) missing items…",
-                    progress: 0.73
-                )
-                let missing = try await service.fetchMusicItems(ids: Array(missingIDs))
-                albums.append(contentsOf: missing.filter { $0.Type == .MusicAlbum }
-                    .map { Album(from: $0, baseURL: baseURL) })
-                tracks.append(contentsOf: missing.filter { $0.Type == .Audio }
-                    .map { Track(from: $0, baseURL: baseURL) })
-                playlists.append(contentsOf: missing.filter { $0.Type == .Playlist }
-                    .map { Playlist(from: $0, baseURL: baseURL) })
-            }
-
-            let artistItems = try await allPages(
-                label: "artists",
-                progressRange: 0.73...0.79
-            ) { limit, offset in
-                try await self.service.fetchArtistsPage(limit: limit, startIndex: offset)
-            }
-            replacementArtists = artistItems.map { Artist(from: $0, baseURL: baseURL) }
-
-            let genreItems = try await allPages(
-                label: "genres",
-                progressRange: 0.79...0.84
-            ) { limit, offset in
-                try await self.service.fetchGenresPage(limit: limit, startIndex: offset)
-            }
-            replacementGenres = genreItems.map(Genre.init(from:))
-
-            // Daily reconciliation refreshes every playlist membership so
-            // removals and reorderings are reflected even when the playlist
-            // item's own saved timestamp did not change.
-            playlistItemsToRefresh = inventory.filter { $0.Type == .Playlist }
-            if !playlistItemsToRefresh.isEmpty {
-                let detailed = try await service.fetchMusicItems(
-                    ids: playlistItemsToRefresh.map(\.Id)
-                )
-                playlistItemsToRefresh = detailed.filter { $0.Type == .Playlist }
-            }
-        }
-
-        playlistItemsToRefresh = Array(
-            Dictionary(uniqueKeysWithValues: playlistItemsToRefresh.map { ($0.Id, $0) }).values
-        )
-        var playlistEntries: [LibraryPlaylistEntry] = []
-        for (index, playlist) in playlistItemsToRefresh.enumerated() {
-            let count = max(playlistItemsToRefresh.count, 1)
-            let lower = 0.84 + 0.11 * Double(index) / Double(count)
-            let upper = 0.84 + 0.11 * Double(index + 1) / Double(count)
-            let entries = try await allPages(
-                label: "playlist \(index + 1) of \(playlistItemsToRefresh.count)",
-                progressRange: lower...upper
-            ) { limit, offset in
-                try await self.service.fetchTracksPage(
-                    parentId: playlist.Id,
-                    limit: limit,
-                    startIndex: offset
-                )
-            }
-            playlistEntries.append(contentsOf: entries.enumerated().map { position, item in
-                LibraryPlaylistEntry(
-                    playlistID: playlist.Id,
-                    track: Track(from: item, baseURL: baseURL),
-                    position: position
-                )
-            })
-        }
-
-        let userData = Self.userDataChanges(from: userItems)
-        status = .syncing(message: "Applying library changes…", progress: 0.96)
-        let delta = LibraryDelta(
-            albums: Self.unique(albums),
-            artists: Self.unique(artists),
-            tracks: Self.unique(tracks),
-            playlists: Self.unique(playlists),
-            userData: userData,
-            refreshedPlaylistIDs: Set(playlistItemsToRefresh.map(\.Id)),
-            playlistEntries: playlistEntries,
-            removedItemIDs: removedIDs,
-            replacementArtists: replacementArtists,
-            replacementGenres: replacementGenres,
-            metadataWatermark: syncStartedAt,
-            userDataWatermark: syncStartedAt,
-            reconciledAt: reconcile ? syncStartedAt : nil
-        )
-        let commit = try await repository.applyDelta(delta, in: scope)
-        if commit.changed {
-            PhoneConnectivityManager.shared.syncLibraryDeltaToWatch(
-                delta,
-                commit: commit,
-                scope: scope
-            )
-        }
-    }
-
-    private static func unique<T: Identifiable>(_ values: [T]) -> [T] where T.ID == String {
-        var positions: [String: Int] = [:]
-        var result: [T] = []
-        for value in values {
-            if let position = positions[value.id] {
-                result[position] = value
-            } else {
-                positions[value.id] = result.count
-                result.append(value)
-            }
-        }
-        return result
-    }
-
-    private static func userDataChanges(from items: [BaseItemDto]) -> [LibraryUserDataChange] {
-        items.compactMap { item in
-            guard let value = item.UserData else { return nil }
-            return LibraryUserDataChange(
-                itemID: item.Id,
-                isFavorite: value.IsFavorite,
-                lastPlayedAt: value.lastPlayedDate,
-                playCount: value.PlayCount,
-                playbackPositionTicks: value.PlaybackPositionTicks
-            )
-        }
-    }
-
-    private func allPages(
-        label: String,
-        progressRange: ClosedRange<Double>,
-        fetch: @escaping (_ limit: Int, _ offset: Int) async throws -> ItemsResponse
-    ) async throws -> [BaseItemDto] {
-        var offset = 0
-        var result: [BaseItemDto] = []
-        var seen = Set<String>()
-        var expectedTotal = 0
-
-        while true {
-            try Task.checkCancellation()
-            let initialFraction = expectedTotal > 0
-                ? min(Double(offset) / Double(expectedTotal), 1)
-                : 0
-            updateProgress(
-                label: label,
-                completed: min(offset, expectedTotal),
-                total: expectedTotal,
-                fraction: initialFraction,
-                range: progressRange
-            )
-
-            let page = try await fetchPageWithRetry {
-                try await fetch(self.pageSize, offset)
-            }
-            expectedTotal = max(expectedTotal, page.TotalRecordCount)
-            for item in page.Items where seen.insert(item.Id).inserted {
-                result.append(item)
-            }
-            let completed = expectedTotal > 0
-                ? min(offset + pageSize, expectedTotal)
-                : result.count
-            let fraction = expectedTotal > 0
-                ? min(Double(completed) / Double(expectedTotal), 1)
-                : (page.Items.count < pageSize ? 1 : 0)
-            updateProgress(
-                label: label,
-                completed: completed,
-                total: expectedTotal,
-                fraction: fraction,
-                range: progressRange
-            )
-
-            if expectedTotal > 0 {
-                offset += pageSize
-                guard offset < expectedTotal else { break }
-            } else {
-                guard page.Items.count == pageSize else { break }
-                offset += page.Items.count
-            }
-        }
-        return result
-    }
-
-    private func fetchPageWithRetry(
-        _ fetch: () async throws -> ItemsResponse
-    ) async throws -> ItemsResponse {
-        var attempt = 0
-        while true {
-            do {
-                return try await fetch()
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                attempt += 1
-                guard attempt < 3, isTransientNetworkError(error) else { throw error }
-                try await Task.sleep(for: .milliseconds(500 * attempt))
-            }
-        }
-    }
-
-    private func isTransientNetworkError(_ error: Error) -> Bool {
-        let error = error as NSError
-        guard error.domain == NSURLErrorDomain else { return false }
-        return [
-            NSURLErrorTimedOut,
-            NSURLErrorNetworkConnectionLost,
-            NSURLErrorCannotConnectToHost,
-            NSURLErrorDNSLookupFailed,
-            NSURLErrorNotConnectedToInternet
-        ].contains(error.code)
-    }
-
-    private func updateProgress(
-        label: String,
-        completed: Int,
-        total: Int,
-        fraction: Double,
-        range: ClosedRange<Double>
-    ) {
-        let progress = range.lowerBound + (range.upperBound - range.lowerBound) * fraction
-        let count = total > 0 ? " \(completed) of \(total)" : ""
-        status = .syncing(
-            message: "Syncing \(label)…\(count)",
-            progress: min(max(progress, 0), 1)
-        )
-    }
-}
-
-/// Observable, cache-only metadata facade used by SwiftUI. Server access is
-/// deliberately confined to LibrarySyncCoordinator.
-@MainActor
-final class LibraryStore: ObservableObject {
-    static let shared = LibraryStore(
-        service: .shared,
-        repository: .shared,
-        coordinator: .shared
-    )
-
-    @Published private(set) var albums: [Album] = []
-    @Published private(set) var artists: [Artist] = []
-    @Published private(set) var tracks: [Track] = []
-    @Published private(set) var playlists: [Playlist] = []
-    @Published private(set) var genres: [Genre] = []
-    @Published private(set) var recentAlbums: [Album] = []
-    @Published private(set) var isInitialLoading = true
-    @Published private(set) var isRefreshing = false
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var syncMessage: String?
-    @Published private(set) var syncProgress: Double?
-    @Published private(set) var hasCachedLibrary = false
-    @Published private(set) var catalogRevision: Int64 = 0
-
-    private let service: JellyfinService
-    private let repository: LibraryRepository
-    private let coordinator: LibrarySyncCoordinator
-    private var activeScope: LibraryScope?
-    private var launchedScopes = Set<LibraryScope>()
-    private var cancellables = Set<AnyCancellable>()
-
-    init(
-        service: JellyfinService,
-        repository: LibraryRepository,
-        coordinator: LibrarySyncCoordinator
-    ) {
-        self.service = service
-        self.repository = repository
-        self.coordinator = coordinator
-
-        coordinator.$status
-            .sink { [weak self] status in
-                switch status {
-                case .idle:
-                    self?.syncMessage = nil
-                    self?.syncProgress = nil
-                case .syncing(let message, let progress):
-                    self?.syncMessage = message
-                    self?.syncProgress = progress
-                case .failed:
-                    self?.syncProgress = nil
-                }
-            }
-            .store(in: &cancellables)
-    }
-
-    func activate() async {
-        guard let scope = service.libraryScope else {
-            clear()
-            return
-        }
-
-        if activeScope != scope {
-            activeScope = scope
-            await repository.importLegacyCacheIfNeeded(in: scope)
-            await reload(in: scope)
-        }
-
-        guard launchedScopes.insert(scope).inserted else { return }
-        if isInitialLoading {
-            await refresh(trigger: .launch)
-        } else {
-            Task { @MainActor [weak self] in
-                await self?.refresh(trigger: .launch)
-            }
-        }
-    }
-
-    func refresh(trigger: LibrarySyncTrigger = .pullToRefresh) async {
-        guard let scope = service.libraryScope else { return }
-        // A previous failure describes the previous attempt. Clear it before
-        // starting so progress and status from this attempt are not presented
-        // underneath a stale offline/error message.
-        errorMessage = nil
-        isRefreshing = true
-        defer {
-            isRefreshing = false
-        }
-
-        do {
-            try await coordinator.sync(trigger: trigger)
-            errorMessage = nil
-            await reload(in: scope)
-        } catch is CancellationError {
-            // Navigating away while a refresh is in flight is benign. The old
-            // complete database snapshot remains visible.
-        } catch {
-            errorMessage = error.localizedDescription
-            await reload(in: scope)
-        }
-    }
-
-    func reload() async {
-        guard let scope = activeScope ?? service.libraryScope else { return }
-        await reload(in: scope)
-    }
-
-    func rebuild() async {
-        await refresh(trigger: .rebuild)
-    }
-
-    func albums(inGenre genreID: String) async -> [Album] {
-        guard let scope = activeScope ?? service.libraryScope else { return [] }
-        return (try? await repository.albums(inGenre: genreID, in: scope)) ?? []
-    }
-
-    private func reload(in scope: LibraryScope) async {
-        guard let snapshot = try? await repository.librarySnapshot(
-            in: scope,
-            includeTracks: false
-        ) else {
-            isInitialLoading = true
-            return
-        }
-        albums = snapshot.albums
-        artists = snapshot.artists
-        // Tracks stay query-backed. Loading tens of thousands of rows into an
-        // observable array made every routine sync needlessly expensive.
-        tracks = []
-        playlists = snapshot.playlists
-        genres = snapshot.genres
-        recentAlbums = await repository.cachedRecentAlbums(in: scope, limit: 40)
-        hasCachedLibrary = snapshot.hasCachedLibrary
-        catalogRevision = snapshot.revision
-        isInitialLoading = !hasCachedLibrary
-    }
-
-    private func clear() {
-        activeScope = nil
-        albums = []
-        artists = []
-        tracks = []
-        playlists = []
-        genres = []
-        recentAlbums = []
-        errorMessage = nil
-        syncMessage = nil
-        syncProgress = nil
-        hasCachedLibrary = false
-        catalogRevision = 0
-        isInitialLoading = true
-        isRefreshing = false
+        let now = Date()
+        let catalog = LibraryCatalog(albums: albums, artists: artists, tracks: tracks, playlists: playlists, genres: genres, playlistEntries: entries, userData: userData, albumArtistIDs: albumArtistIDs)
+        let delta = LibraryDelta(albums: albums, artists: artists, tracks: tracks, playlists: playlists, genres: genres, userData: userData, refreshedPlaylistIDs: refreshed, playlistEntries: entries, removedItemIDs: removed, metadataWatermark: now, userDataWatermark: now)
+        return Changes(catalog: catalog, delta: delta)
     }
 }

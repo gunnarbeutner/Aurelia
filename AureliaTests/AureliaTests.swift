@@ -14,6 +14,141 @@ import SwiftUI
 
 struct AureliaTests {
 
+    @Test func aureliaSyncRejectsAnIncompleteSegment() async throws {
+        let bytes = Self.byteStream("""
+        {"kind":"segment.begin"}\n
+        {"cursor":"c1","kind":"item.upsert","entityType":"genre","entityId":"g1","payload":{"id":"g1","name":"Electronic"}}\n
+        """)
+        do {
+            _ = try await AureliaSyncNDJSON.decode(bytes: bytes)
+            Issue.record("An unterminated segment must never be applied")
+        } catch let error as AureliaSyncError {
+            guard case .invalidStream = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
+            }
+        }
+    }
+
+    @Test func aureliaSyncDecodesCompleteSegmentAndBuildsArtworkLocally() async throws {
+        let bytes = Self.byteStream("""
+        {"kind":"segment.begin"}\n
+        {"cursor":"c1","sequence":1,"kind":"item.upsert","entityType":"track","entityId":"track","payload":{"id":"track","name":"Song","artistName":"Artist","albumName":"Album","albumId":"album","duration":12.5,"imageTag":"track-tag","albumImageTag":"album-tag"}}\n
+        {"kind":"segment.end","cursor":"c1","caughtUp":true}\n
+        """)
+        let decoded = try await AureliaSyncNDJSON.decode(bytes: bytes)
+        #expect(decoded.segment.caughtUp)
+        #expect(decoded.segment.records.count == 1)
+        #expect(decoded.segment.checksum == nil)
+        let payload = try #require(decoded.segment.records.first?.payload)
+        let track = try payload.track(baseURL: "https://music.example/")
+        #expect(track.artworkURL == "https://music.example/Items/album/Images/Primary?maxWidth=300&tag=album-tag")
+    }
+
+    @Test func aureliaSyncRejectsMismatchedSegmentChecksum() async throws {
+        let bytes = Self.byteStream("""
+        {"kind":"segment.begin"}\n
+        {"cursor":"c1","kind":"item.upsert","entityType":"genre","entityId":"g1","payload":{"id":"g1","name":"Electronic"}}\n
+        {"kind":"segment.end","cursor":"c1","caughtUp":true,"aggregateChecksum":"sha256:not-the-delivered-payload"}\n
+        """)
+        do {
+            _ = try await AureliaSyncNDJSON.decode(bytes: bytes)
+            Issue.record("A segment whose payload digest does not match must never be applied")
+        } catch let error as AureliaSyncError {
+            guard case .invalidStream = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
+            }
+        }
+    }
+
+    @Test func aureliaSyncFinalSnapshotSegmentIsPublishedAtomically() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let session = AureliaSyncSession(
+            sessionId: "session", mode: .snapshot, protocolVersion: 1, schemaVersion: 1,
+            cursor: nil, checkpointToken: nil, snapshotGeneration: "1",
+            journalHead: 0, expiresAt: nil, state: "streaming", message: nil
+        )
+        let firstAck = AureliaSyncAcknowledgement(
+            throughCursor: "c1", clientCommitId: "commit-1", recordCount: 1,
+            aggregateChecksum: "sha256:first"
+        )
+        let finalAck = AureliaSyncAcknowledgement(
+            throughCursor: "c2", clientCommitId: "commit-2", recordCount: 1,
+            aggregateChecksum: "sha256:final"
+        )
+        let first = Album(id: "first", name: "First", artistName: "Artist", artistId: nil, year: 2020, artworkURL: nil)
+        let final = Album(id: "final", name: "Final", artistName: "Artist", artistId: nil, year: 2021, artworkURL: nil)
+
+        try await repository.appendAureliaSyncSnapshotSegment(
+            LibraryCatalog(albums: [first], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: []),
+            session: session, acknowledgement: firstAck, sequence: 1, in: scope
+        )
+        #expect(try await repository.librarySnapshot(in: scope).albums.isEmpty)
+
+        try await repository.promoteAureliaSyncSnapshot(
+            LibraryCatalog(albums: [final], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: []),
+            session: session, acknowledgement: finalAck, sequence: 2, in: scope
+        )
+        #expect(try await repository.librarySnapshot(in: scope).albums.map(\.id) == ["final", "first"])
+        let state = try #require(try await repository.aureliaSyncState(in: scope))
+        #expect(state.snapshotGeneration == "1")
+        #expect(state.publishedSnapshotGeneration == "1")
+        #expect(state.pendingSessionID == "session")
+        #expect(state.pendingAcknowledgement == finalAck)
+    }
+
+    @Test func aureliaSyncEmptyPlaylistUpdateClearsExistingMembership() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let playlist = Playlist(
+            id: "playlist", name: "Playlist", trackCount: 1,
+            artworkURL: nil, dateCreated: nil
+        )
+        let track = Track(
+            id: "track", name: "Track", artistName: "Artist",
+            albumName: "Album", duration: 1, artworkURL: nil
+        )
+        let now = Date()
+
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                playlists: [playlist], refreshedPlaylistIDs: [playlist.id],
+                playlistEntries: [.init(playlistID: playlist.id, track: track, position: 0)],
+                metadataWatermark: now, userDataWatermark: now
+            ),
+            in: scope
+        )
+        #expect(try await repository.tracks(inPlaylist: playlist.id, in: scope).count == 1)
+
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                playlists: [Playlist(
+                    id: playlist.id, name: playlist.name, trackCount: 0,
+                    artworkURL: nil, dateCreated: nil
+                )],
+                refreshedPlaylistIDs: [playlist.id],
+                metadataWatermark: now, userDataWatermark: now
+            ),
+            in: scope
+        )
+        #expect(try await repository.tracks(inPlaylist: playlist.id, in: scope).isEmpty)
+    }
+
+    private static func byteStream(_ string: String) -> AsyncStream<UInt8> {
+        AsyncStream { continuation in
+            for byte in string.utf8 { continuation.yield(byte) }
+            continuation.finish()
+        }
+    }
+
     @Test func appearancePreferenceMapsSchemesAndPreservesExistingDarkValue() {
         #expect(AppearancePreference.allCases == [.system, .light, .dark])
         #expect(AppearancePreference.system.colorScheme == nil)

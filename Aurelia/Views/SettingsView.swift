@@ -47,6 +47,16 @@ enum StreamingQuality: String, CaseIterable, Identifiable {
     }
 }
 
+private enum AureliaSyncSettingsState: Equatable {
+    case checking
+    case ready(String)
+    case missingCanInstall
+    case missingNeedsAdministrator
+    case installing
+    case restartRequired
+    case unavailable(String)
+}
+
 struct SettingsView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var downloadManager = DownloadManager.shared
@@ -57,6 +67,7 @@ struct SettingsView: View {
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
     @State private var audioMuseAvailability: AudioMuseAvailability = .checking
+    @State private var aureliaSyncState: AureliaSyncSettingsState = .checking
     /// Carried across readings so a single failed request cannot report a
     /// working plugin as missing.
     @State private var audioMusePresenceConfirmed = false
@@ -93,6 +104,8 @@ struct SettingsView: View {
                     // Library sync — the single place sync is observed and started
                     librarySyncSection
 
+                    aureliaSyncSection
+
                     // Server Info Section
                     serverInfoSection
 
@@ -125,7 +138,121 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This performs a complete Jellyfin metadata download. Routine refreshes will remain incremental.")
+            Text("This downloads a fresh copy of your library. Your current library remains available until the rebuild finishes.")
+        }
+        .task { await checkAureliaSync() }
+    }
+
+    private var aureliaSyncSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Aurelia Sync")
+                .font(.appHeadline)
+                .foregroundColor(.appAccent)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: aureliaSyncStateIcon)
+                        .foregroundColor(aureliaSyncStateColor)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(aureliaSyncStateTitle)
+                            .font(.appBody)
+                            .foregroundColor(.appText)
+                        Text(aureliaSyncStateDetail)
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if aureliaSyncState == .checking || aureliaSyncState == .installing {
+                        ProgressView().tint(.appAccent)
+                    }
+                }
+
+                if aureliaSyncState == .missingCanInstall {
+                    Button("Install Aurelia Sync") {
+                        Task { await installAureliaSync() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.appAccent)
+                } else if aureliaSyncState == .restartRequired {
+                    Button("Check Again") { Task { await checkAureliaSync() } }
+                        .buttonStyle(.bordered)
+                        .tint(.appAccent)
+                }
+            }
+            .settingsCard()
+        }
+    }
+
+    private var aureliaSyncStateTitle: String {
+        switch aureliaSyncState {
+        case .checking: "Checking plugin…"
+        case .ready(let version): "Ready · \(version)"
+        case .missingCanInstall: "Plugin required"
+        case .missingNeedsAdministrator: "Plugin required"
+        case .installing: "Installing…"
+        case .restartRequired: "Server restart required"
+        case .unavailable: "Plugin unavailable"
+        }
+    }
+
+    private var aureliaSyncStateDetail: String {
+        switch aureliaSyncState {
+        case .checking: "Checking the required sync service."
+        case .ready: "Aurelia Sync keeps your local library up to date."
+        case .missingCanInstall: "Install the plugin from Aurelia's Jellyfin repository."
+        case .missingNeedsAdministrator: "Ask a Jellyfin administrator to install Aurelia Sync."
+        case .installing: "Adding the repository and installing the plugin package."
+        case .restartRequired: "Restart Jellyfin, then check again."
+        case .unavailable(let message): message
+        }
+    }
+
+    private var aureliaSyncStateIcon: String {
+        switch aureliaSyncState {
+        case .ready: "checkmark.circle.fill"
+        case .missingCanInstall, .missingNeedsAdministrator, .unavailable: "exclamationmark.triangle"
+        case .restartRequired: "power"
+        case .checking, .installing: "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var aureliaSyncStateColor: Color {
+        switch aureliaSyncState {
+        case .ready: .appSuccess
+        case .missingCanInstall, .missingNeedsAdministrator, .unavailable: .appError
+        default: .appAccent
+        }
+    }
+
+    private func checkAureliaSync() async {
+        guard jellyfinService.isAuthenticated else { return }
+        aureliaSyncState = .checking
+        do {
+            let status = try await AureliaSyncClient.shared.status()
+            aureliaSyncState = status.enabled && status.healthy
+                ? .ready(status.pluginVersion)
+                : .unavailable(status.healthDetail ?? "The plugin is disabled or unhealthy.")
+        } catch AureliaSyncError.required {
+            do {
+                aureliaSyncState = try await AureliaSyncPluginManager.shared.currentUserIsAdministrator()
+                    ? .missingCanInstall : .missingNeedsAdministrator
+            } catch {
+                aureliaSyncState = .unavailable(error.localizedDescription)
+            }
+        } catch {
+            aureliaSyncState = .unavailable(error.localizedDescription)
+        }
+    }
+
+    private func installAureliaSync() async {
+        aureliaSyncState = .installing
+        do {
+            try await AureliaSyncPluginManager.shared.install()
+            aureliaSyncState = .restartRequired
+        } catch {
+            aureliaSyncState = .unavailable(error.localizedDescription)
         }
     }
 

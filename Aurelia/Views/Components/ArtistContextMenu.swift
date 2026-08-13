@@ -3,7 +3,6 @@ import SwiftUI
 struct ArtistContextMenu: View {
     let artist: Artist
 
-    private let jellyfinService = JellyfinService.shared
     private let playerManager = PlayerManager.shared
 
     var body: some View {
@@ -42,14 +41,10 @@ struct ArtistContextMenu: View {
     private func perform(_ action: Action) {
         Task {
             do {
-                let items = try await jellyfinService.fetchMusicItems(
-                    includeItemTypes: "Audio",
-                    artistIds: artist.id,
-                    limit: 200
-                )
-                let tracks = items
-                    .map { Track(from: $0, baseURL: jellyfinService.baseURL) }
-                    .sorted(by: trackOrder)
+                guard let scope = JellyfinService.shared.libraryScope else {
+                    throw JellyfinError.notAuthenticated
+                }
+                let tracks = try await LibraryRepository.shared.tracks(forArtist: artist.id, in: scope)
 
                 guard !tracks.isEmpty else {
                     playerManager.errorMessage = "This artist has no playable tracks."
@@ -70,26 +65,6 @@ struct ArtistContextMenu: View {
                 playerManager.errorMessage = "Unable to load \(artist.name): \(error.localizedDescription)"
             }
         }
-    }
-
-    private func trackOrder(_ lhs: Track, _ rhs: Track) -> Bool {
-        if lhs.albumName != rhs.albumName {
-            return lhs.albumName.localizedStandardCompare(rhs.albumName) == .orderedAscending
-        }
-
-        let lhsDisc = lhs.parentIndexNumber ?? 0
-        let rhsDisc = rhs.parentIndexNumber ?? 0
-        if lhsDisc != rhsDisc {
-            return lhsDisc < rhsDisc
-        }
-
-        let lhsIndex = lhs.indexNumber ?? 0
-        let rhsIndex = rhs.indexNumber ?? 0
-        if lhsIndex != rhsIndex {
-            return lhsIndex < rhsIndex
-        }
-
-        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
     }
 
     private enum Action {

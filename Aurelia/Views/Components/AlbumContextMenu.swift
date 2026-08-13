@@ -6,7 +6,6 @@ struct AlbumContextMenu: View {
     /// would only offer to take you where you already are.
     var offersGoToArtist = true
 
-    private let jellyfinService = JellyfinService.shared
     private let playerManager = PlayerManager.shared
 
     var body: some View {
@@ -55,10 +54,10 @@ struct AlbumContextMenu: View {
     private func perform(_ action: Action) {
         Task {
             do {
-                let items = try await jellyfinService.getAlbumTracks(albumId: album.id)
-                let tracks = items
-                    .map { Track(from: $0, baseURL: jellyfinService.baseURL) }
-                    .sorted(by: trackOrder)
+                guard let scope = JellyfinService.shared.libraryScope else {
+                    throw JellyfinError.notAuthenticated
+                }
+                let tracks = try await LibraryRepository.shared.tracks(inAlbum: album.id, in: scope)
 
                 guard !tracks.isEmpty else {
                     playerManager.errorMessage = "This album contains no playable tracks."
@@ -79,15 +78,6 @@ struct AlbumContextMenu: View {
                 playerManager.errorMessage = "Unable to load \(album.name): \(error.localizedDescription)"
             }
         }
-    }
-
-    private func trackOrder(_ lhs: Track, _ rhs: Track) -> Bool {
-        let lhsDisc = lhs.parentIndexNumber ?? 0
-        let rhsDisc = rhs.parentIndexNumber ?? 0
-        if lhsDisc != rhsDisc {
-            return lhsDisc < rhsDisc
-        }
-        return (lhs.indexNumber ?? 0) < (rhs.indexNumber ?? 0)
     }
 
     private enum Action {

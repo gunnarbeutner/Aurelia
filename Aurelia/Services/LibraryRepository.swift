@@ -72,6 +72,18 @@ nonisolated struct LibrarySyncState: Equatable, Sendable {
     let catalogRevision: Int64
 }
 
+nonisolated struct AureliaSyncLocalState: Equatable, Sendable {
+    let checkpointToken: String?
+    let cursor: String?
+    let acknowledgedSequence: Int64?
+    let protocolVersion: Int?
+    let schemaVersion: Int?
+    let snapshotGeneration: String?
+    let publishedSnapshotGeneration: String?
+    let pendingSessionID: String?
+    let pendingAcknowledgement: AureliaSyncAcknowledgement?
+}
+
 nonisolated struct LibraryPlaylistEntry: Hashable, Sendable {
     let playlistID: String
     let track: Track
@@ -86,6 +98,7 @@ nonisolated struct LibraryCatalog: Sendable {
     let genres: [Genre]
     let playlistEntries: [LibraryPlaylistEntry]
     let userData: [LibraryUserDataChange]
+    let albumArtistIDs: Set<String>
 
     init(
         albums: [Album],
@@ -94,7 +107,8 @@ nonisolated struct LibraryCatalog: Sendable {
         playlists: [Playlist],
         genres: [Genre],
         playlistEntries: [LibraryPlaylistEntry],
-        userData: [LibraryUserDataChange] = []
+        userData: [LibraryUserDataChange] = [],
+        albumArtistIDs: Set<String> = []
     ) {
         self.albums = albums
         self.artists = artists
@@ -103,6 +117,7 @@ nonisolated struct LibraryCatalog: Sendable {
         self.genres = genres
         self.playlistEntries = playlistEntries
         self.userData = userData
+        self.albumArtistIDs = albumArtistIDs
     }
 }
 
@@ -362,6 +377,132 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
+    func aureliaSyncState(in scope: LibraryScope) throws -> AureliaSyncLocalState? {
+        try database.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM aureliaSyncState WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            ) else { return nil }
+            let commitID: String? = row["pendingCommitID"]
+            let ack = commitID.flatMap { id -> AureliaSyncAcknowledgement? in
+                guard let cursor: String = row["pendingCursor"] else { return nil }
+                return AureliaSyncAcknowledgement(
+                    throughCursor: cursor,
+                    clientCommitId: id,
+                    recordCount: row["pendingRecordCount"] ?? 0,
+                    aggregateChecksum: row["pendingChecksum"]
+                )
+            }
+            return AureliaSyncLocalState(
+                checkpointToken: row["checkpointToken"], cursor: row["cursor"],
+                acknowledgedSequence: row["acknowledgedSequence"],
+                protocolVersion: row["protocolVersion"], schemaVersion: row["schemaVersion"],
+                snapshotGeneration: row["snapshotGeneration"],
+                publishedSnapshotGeneration: row["publishedSnapshotGeneration"],
+                pendingSessionID: row["pendingSessionID"], pendingAcknowledgement: ack
+            )
+        }
+    }
+
+    func markAureliaSyncAcknowledged(
+        _ acknowledgement: AureliaSyncAcknowledgement,
+        checkpointToken: String?,
+        in scope: LibraryScope
+    ) throws {
+        try database.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE aureliaSyncState SET
+                        checkpointToken = COALESCE(?, checkpointToken),
+                        pendingCursor = NULL, pendingCommitID = NULL,
+                        pendingRecordCount = NULL, pendingChecksum = NULL,
+                        pendingSessionID = NULL,
+                        updatedAt = ?
+                    WHERE serverKey = ? AND userID = ? AND pendingCommitID = ?
+                    """,
+                arguments: [checkpointToken, Date(), scope.serverKey, scope.userID, acknowledgement.clientCommitId]
+            )
+        }
+    }
+
+    func resetAureliaSyncStaging(in scope: LibraryScope) throws {
+        try resetStagedLibrary(in: scope)
+        try database.write { db in
+            try db.execute(
+                sql: "DELETE FROM aureliaSyncState WHERE serverKey = ? AND userID = ?",
+                arguments: [scope.serverKey, scope.userID]
+            )
+        }
+    }
+
+    /// Drops only unpublished snapshot rows. The durable checkpoint remains
+    /// available so a newly opened server generation can decide how to resume.
+    func discardAureliaSyncSnapshotRows(in scope: LibraryScope) throws {
+        try resetStagedLibrary(in: scope)
+    }
+
+    func appendAureliaSyncSnapshotSegment(
+        _ catalog: LibraryCatalog,
+        session: AureliaSyncSession,
+        acknowledgement: AureliaSyncAcknowledgement,
+        sequence: Int64?,
+        in scope: LibraryScope
+    ) throws {
+        let staging = scope.staging
+        try database.write { db in
+            try Self.write(catalog: catalog, db: db, scope: staging)
+            try Self.persistAureliaSyncProgress(
+                db, scope: scope, session: session,
+                acknowledgement: acknowledgement, sequence: sequence
+            )
+            try db.execute(
+                sql: "UPDATE aureliaSyncState SET publishedSnapshotGeneration = ? WHERE serverKey = ? AND userID = ?",
+                arguments: [session.snapshotGeneration, scope.serverKey, scope.userID]
+            )
+        }
+    }
+
+    func promoteAureliaSyncSnapshot(
+        _ catalog: LibraryCatalog,
+        session: AureliaSyncSession,
+        acknowledgement: AureliaSyncAcknowledgement,
+        sequence: Int64?,
+        in scope: LibraryScope
+    ) throws {
+        let staging = scope.staging
+        try database.write { db in
+            // The terminating segment carries records too. They must join the
+            // staged snapshot in the same transaction that publishes it.
+            try Self.write(catalog: catalog, db: db, scope: staging)
+            try Self.deleteCatalogRows(db, scope: scope)
+            for table in ["libraryItem", "userItemState", "itemArtist", "itemGenre", "playlistEntry", "albumArtist"] {
+                try db.execute(
+                    sql: "UPDATE \(table) SET userID = ? WHERE serverKey = ? AND userID = ?",
+                    arguments: [scope.userID, staging.serverKey, staging.userID]
+                )
+            }
+            try Self.rebuildSearchIndex(db, scope: scope)
+            let now = Date()
+            try db.execute(
+                sql: """
+                    INSERT INTO librarySyncState (
+                        serverKey, userID, librarySyncedAt, metadataWatermark,
+                        userDataWatermark, lastReconciledAt, catalogRevision
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                    ON CONFLICT(serverKey, userID) DO UPDATE SET
+                        librarySyncedAt = excluded.librarySyncedAt,
+                        catalogRevision = librarySyncState.catalogRevision + 1
+                    """,
+                arguments: [scope.serverKey, scope.userID, now, now, now, now]
+            )
+            try Self.persistAureliaSyncProgress(
+                db, scope: scope, session: session,
+                acknowledgement: acknowledgement, sequence: sequence
+            )
+        }
+    }
+
     func replaceLibrary(
         albums: [Album],
         artists: [Artist],
@@ -457,6 +598,13 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
             try Self.save(tracks: catalog.tracks, db: db, scope: scope)
             try Self.save(playlists: catalog.playlists, db: db, scope: scope)
             try Self.save(genres: catalog.genres, db: db, scope: scope)
+
+            for artistID in catalog.albumArtistIDs {
+                try db.execute(
+                    sql: "INSERT OR IGNORE INTO albumArtist (serverKey, userID, artistID) VALUES (?, ?, ?)",
+                    arguments: [scope.serverKey, scope.userID, artistID]
+                )
+            }
 
             for album in catalog.albums {
                 if let artistID = album.artistId {
@@ -662,7 +810,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
 
     private static func deleteCatalogRows(_ db: Database, scope: LibraryScope) throws {
         for table in [
-            "itemArtist", "itemGenre", "playlistEntry",
+            "itemArtist", "itemGenre", "playlistEntry", "albumArtist",
             "libraryItemFTS", "libraryItem", "userItemState"
         ] {
             try db.execute(
@@ -674,7 +822,13 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
 
     /// Applies a routine Jellyfin delta as one SQLite transaction. UI readers
     /// see either the previous revision or the complete new revision.
-    func applyDelta(_ delta: LibraryDelta, in scope: LibraryScope) throws -> LibraryDeltaCommit {
+    func applyDelta(
+        _ delta: LibraryDelta,
+        in scope: LibraryScope,
+        aureliaSync session: AureliaSyncSession? = nil,
+        acknowledgement: AureliaSyncAcknowledgement? = nil,
+        sequence: Int64? = nil
+    ) throws -> LibraryDeltaCommit {
         try database.write { db in
             let baseRevision = try Int64.fetchOne(
                 db,
@@ -794,6 +948,12 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     delta.reconciledAt, revision
                 ]
             )
+            if let session, let acknowledgement {
+                try Self.persistAureliaSyncProgress(
+                    db, scope: scope, session: session,
+                    acknowledgement: acknowledgement, sequence: sequence
+                )
+            }
             return LibraryDeltaCommit(
                 baseRevision: baseRevision,
                 revision: revision,
@@ -801,6 +961,45 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 removedItemIDs: removed
             )
         }
+    }
+
+    private static func persistAureliaSyncProgress(
+        _ db: Database,
+        scope: LibraryScope,
+        session: AureliaSyncSession,
+        acknowledgement: AureliaSyncAcknowledgement,
+        sequence: Int64?
+    ) throws {
+        try db.execute(
+            sql: """
+                INSERT INTO aureliaSyncState (
+                    serverKey, userID, checkpointToken, cursor, acknowledgedSequence,
+                    protocolVersion, schemaVersion, snapshotGeneration,
+                    pendingCursor, pendingCommitID, pendingRecordCount,
+                    pendingChecksum, pendingSessionID, updatedAt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(serverKey, userID) DO UPDATE SET
+                    cursor = excluded.cursor,
+                    acknowledgedSequence = COALESCE(excluded.acknowledgedSequence, acknowledgedSequence),
+                    protocolVersion = excluded.protocolVersion,
+                    schemaVersion = excluded.schemaVersion,
+                    snapshotGeneration = excluded.snapshotGeneration,
+                    pendingCursor = excluded.pendingCursor,
+                    pendingCommitID = excluded.pendingCommitID,
+                    pendingRecordCount = excluded.pendingRecordCount,
+                    pendingChecksum = excluded.pendingChecksum,
+                    pendingSessionID = excluded.pendingSessionID,
+                    updatedAt = excluded.updatedAt
+                """,
+            arguments: [
+                scope.serverKey, scope.userID, session.checkpointToken,
+                acknowledgement.throughCursor, sequence,
+                session.protocolVersion, session.schemaVersion, session.snapshotGeneration,
+                acknowledgement.throughCursor, acknowledgement.clientCommitId,
+                acknowledgement.recordCount, acknowledgement.aggregateChecksum,
+                session.sessionId, Date()
+            ]
+        )
     }
 
     func primaryCatalogItemIDs(in scope: LibraryScope) throws -> Set<String> {
@@ -1812,6 +2011,34 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 table.column("detail", .text)
                 table.column("startedAt", .datetime).notNull()
                 table.primaryKey(["serverKey", "userID"])
+            }
+        }
+        migrator.registerMigration("aureliaSyncCheckpoints") { db in
+            try db.create(table: "aureliaSyncState") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("checkpointToken", .text)
+                table.column("cursor", .text)
+                table.column("acknowledgedSequence", .integer)
+                table.column("protocolVersion", .integer)
+                table.column("schemaVersion", .integer)
+                table.column("snapshotGeneration", .text)
+                table.column("pendingCursor", .text)
+                table.column("pendingCommitID", .text)
+                table.column("pendingRecordCount", .integer)
+                table.column("pendingChecksum", .text)
+                table.column("updatedAt", .datetime).notNull()
+                table.primaryKey(["serverKey", "userID"])
+            }
+        }
+        migrator.registerMigration("aureliaSyncPendingSession") { db in
+            try db.alter(table: "aureliaSyncState") { table in
+                table.add(column: "pendingSessionID", .text)
+            }
+        }
+        migrator.registerMigration("aureliaSyncPublishedSnapshot") { db in
+            try db.alter(table: "aureliaSyncState") { table in
+                table.add(column: "publishedSnapshotGeneration", .text)
             }
         }
         return migrator

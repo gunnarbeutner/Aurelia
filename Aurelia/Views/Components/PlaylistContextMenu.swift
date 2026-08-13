@@ -3,7 +3,6 @@ import SwiftUI
 struct PlaylistContextMenu: View {
     let playlist: Playlist
 
-    private let jellyfinService = JellyfinService.shared
     private let playerManager = PlayerManager.shared
 
     var body: some View {
@@ -42,10 +41,10 @@ struct PlaylistContextMenu: View {
     private func perform(_ action: Action) {
         Task {
             do {
-                let items = try await jellyfinService.fetchTracks(parentId: playlist.id)
-                let tracks = items
-                    .map { Track(from: $0, baseURL: jellyfinService.baseURL) }
-                    .sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
+                guard let scope = JellyfinService.shared.libraryScope else {
+                    throw JellyfinError.notAuthenticated
+                }
+                let tracks = try await LibraryRepository.shared.tracks(inPlaylist: playlist.id, in: scope)
 
                 guard !tracks.isEmpty else {
                     playerManager.errorMessage = "This playlist contains no playable tracks."
