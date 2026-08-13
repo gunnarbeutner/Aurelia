@@ -273,6 +273,9 @@ struct NowPlayingView: View {
     @ObservedObject var sleepTimer = SleepTimerManager.shared
     /// Measured height of everything in the compact column except the artwork.
     @State private var chromeHeight = NowPlayingLayout.compactChromeEstimate
+    /// Whether the queue is scrolled back to the player, held in state so it
+    /// can be republished from outside the scroll content.
+    @State private var scrollAtTop = true
     /// Stationary reference for reading how far the player has been scrolled.
     private static let scrollSpace = "now-playing-scroll-space"
     @Environment(\.playerIsDismissing) private var isDismissing
@@ -376,16 +379,19 @@ struct NowPlayingView: View {
             }
             .frame(width: contentWidth)
             .padding(.horizontal, NowPlayingLayout.horizontalPadding)
-            // Reported upward so the pull-to-dismiss drag knows to stand down
-            // once the listener has scrolled into the queue.
+            // Measured here so the pull-to-dismiss drag knows to stand down
+            // once the listener has scrolled into the queue, but only latched
+            // into state — see the republishing below for why it cannot be
+            // reported upward from inside the scrolling content.
             .background(
                 GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: PlayerScrollAtTopKey.self,
-                        value: PlayerDismissalInteraction.isAtTop(
-                            contentOffset: proxy.frame(in: .named(Self.scrollSpace)).minY
-                        )
+                    let atTop = PlayerDismissalInteraction.isAtTop(
+                        contentOffset: proxy.frame(in: .named(Self.scrollSpace)).minY
                     )
+                    Color.clear
+                        .onChange(of: atTop, initial: true) { _, value in
+                            scrollAtTop = value
+                        }
                 }
             )
         }
@@ -393,6 +399,13 @@ struct NowPlayingView: View {
         // this the content slides under the finger while the whole screen moves.
         .scrollDisabled(isDismissing)
         .coordinateSpace(name: Self.scrollSpace)
+        // Reported upward from out here, not from the content above: a
+        // preference written inside scroll content is collected when that
+        // content is first laid out and never again as it moves. The drag
+        // therefore only ever saw the opening "at the top" and stayed armed
+        // everywhere, which both grabbed the player mid-queue and — through
+        // playerIsDismissing — froze the scroll it was fighting.
+        .preference(key: PlayerScrollAtTopKey.self, value: scrollAtTop)
         .onPreferenceChange(PlayerChromeHeightKey.self) { height in
             guard height > 0 else { return }
             chromeHeight = height

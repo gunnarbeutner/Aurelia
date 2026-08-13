@@ -482,8 +482,13 @@ struct SwipeToDismissPlayer<Content: View>: View {
 struct PlayerScrollAtTopKey: PreferenceKey {
     static let defaultValue = true
 
+    /// Only the player's scroll reports this, but it has siblings — the
+    /// grabber sits alongside it — and a sibling that reports nothing still
+    /// contributes the default. Letting the last one win therefore let a
+    /// silent sibling overwrite a real "not at the top" with `true`. Anything
+    /// that says the scroll has moved decides.
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = nextValue()
+        value = value && nextValue()
     }
 }
 
