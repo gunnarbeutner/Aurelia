@@ -91,7 +91,10 @@ private nonisolated struct DailyMixFetchResult: Sendable {
 }
 
 nonisolated enum DynamicDiscoverySelector {
-    static let dailyMixStrategyVersion = 3
+    // 4: eight mixes rather than five. The count is part of the strategy, so
+    // stored snapshots built under the old one have to be rebuilt rather than
+    // served until the day rolls over.
+    static let dailyMixStrategyVersion = 4
 
     nonisolated struct DailyMixSeed: Equatable, Sendable {
         let track: Track
@@ -294,7 +297,7 @@ struct DiscoveryCache {
 
 @MainActor
 final class DiscoveryViewModel: ObservableObject {
-    static let maximumMixShelfCount = 5
+    static let maximumMixShelfCount = 8
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Aurelia",
