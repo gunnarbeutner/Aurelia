@@ -27,12 +27,16 @@ private struct MiniPlayerSurface: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             // Clipped as well as shaped, so the progress bar along the top
-            // follows the corners instead of squaring them off.
+            // follows the corners instead of squaring them off. Custom glass
+            // is decorative by default; marking it interactive keeps controls
+            // inside the slab in the native hit-test hierarchy.
             content
                 .clipShape(shape)
-                .glassEffect(.regular, in: shape)
+                .contentShape(shape)
+                .glassEffect(.regular.interactive(), in: shape)
         } else {
             content
+                .contentShape(shape)
                 .background(
                     Color.appMidBackground.opacity(0.92)
                         .background(.ultraThinMaterial)
@@ -120,6 +124,7 @@ struct MiniPlayerView: View {
                         .frame(width: 36, height: 44)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
                 .accessibilityIdentifier("mini-player-playback")
                 .contentTransition(.symbolEffect(.replace))
@@ -133,6 +138,7 @@ struct MiniPlayerView: View {
                         .frame(width: 36, height: 44)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .disabled(!canPlayNext)
                 .accessibilityIdentifier("mini-player-next")
                 .accessibilityLabel("Next track")
