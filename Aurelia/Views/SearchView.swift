@@ -245,7 +245,10 @@ struct SearchView: View {
             // Nothing sits in this strip while typing: the tab bar is behind
             // the keyboard and the mini player has stood down.
             if playerManager.currentTrack != nil, !keyboard.isVisible {
-                Color.appBackground
+                // Clear, not filled: this exists to reserve room so the last
+                // result can scroll clear of the mini player. Painting it drew
+                // a slab across the bottom of the list instead.
+                Color.clear
                     .frame(height: MiniPlayerLayout.contentClearance)
                     .accessibilityHidden(true)
             }
