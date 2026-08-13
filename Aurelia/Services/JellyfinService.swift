@@ -1051,7 +1051,11 @@ class JellyfinService: ObservableObject {
 
         var components = try buildURLComponents(path: "Items/\(itemId)/InstantMix")
         components.queryItems = Self.instantMixQueryItems(userId: userId, limit: limit)
-        let request = try authenticatedRequest(from: components, token: token)
+        var request = try authenticatedRequest(from: components, token: token)
+        // AudioMuse computes recommendations on demand and can legitimately
+        // take longer than ordinary Jellyfin metadata requests, particularly
+        // while its library analysis is running.
+        request.timeoutInterval = 30
         let (data, response) = try await session.data(for: request)
         try validate(response: response, data: data)
         return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items

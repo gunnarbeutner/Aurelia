@@ -13,6 +13,7 @@ struct DiscoveryView: View {
     @ObservedObject private var libraryStore = LibraryStore.shared
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @State private var attemptedAutomaticLibraryRecovery = false
+    @State private var showsDiscoveryErrorDetails = false
 
     init() {
         #if DEBUG
@@ -79,6 +80,11 @@ struct DiscoveryView: View {
         .onChange(of: networkMonitor.isOffline) { _, isOffline in
             guard !isOffline, libraryStore.errorMessage != nil else { return }
             automaticallyRecoverLibraryIfPossible()
+        }
+        .alert("Daily Mix Refresh", isPresented: $showsDiscoveryErrorDetails) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorDetails ?? viewModel.errorMessage ?? "The refresh failed.")
         }
     }
 
@@ -474,10 +480,23 @@ struct DiscoveryView: View {
     }
 
     private func inlineMessage(_ message: String) -> some View {
-        Label(message, systemImage: "exclamationmark.triangle")
+        Button {
+            showsDiscoveryErrorDetails = true
+        } label: {
+            HStack(spacing: 6) {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .multilineTextAlignment(.leading)
+                if viewModel.errorDetails != nil {
+                    Image(systemName: "info.circle")
+                        .accessibilityHidden(true)
+                }
+            }
             .font(.appCaption)
             .foregroundColor(.appTextSecondary)
             .padding(.horizontal, 20)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows details about the refresh failure")
     }
 
     private func startPlayback(_ tracks: [Track], startingAt index: Int) {

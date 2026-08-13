@@ -875,6 +875,7 @@ struct AureliaTests {
 
         #expect(viewModel.shelves == originalShelves)
         #expect(viewModel.errorMessage?.contains("Showing the previous mixes") == true)
+        #expect(viewModel.errorDetails?.contains("unavailable") == true)
     }
 
     @Test @MainActor func discoveryRetainsGoodDynamicStateWhenCandidateRefreshFails() async throws {

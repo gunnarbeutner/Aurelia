@@ -79,6 +79,17 @@ nonisolated struct DiscoverySnapshot: Codable, Equatable, Sendable {
     let refreshedAt: Date
 }
 
+private nonisolated enum DailyMixFetchOutcome: Sendable {
+    case items([BaseItemDto])
+    case failed(String)
+    case cancelled
+}
+
+private nonisolated struct DailyMixFetchResult: Sendable {
+    let seed: DynamicDiscoverySelector.DailyMixSeed
+    let outcome: DailyMixFetchOutcome
+}
+
 nonisolated enum DynamicDiscoverySelector {
     static let dailyMixStrategyVersion = 3
 
@@ -299,6 +310,7 @@ final class DiscoveryViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isRefreshing = false
     @Published var errorMessage: String?
+    @Published private(set) var errorDetails: String?
 
     private let api: any DiscoveryAPI
     private let recentTracksProvider: () -> [Track]
@@ -497,12 +509,30 @@ final class DiscoveryViewModel: ObservableObject {
             var mixFailures: [String] = []
             var emptyMixCount = 0
 
-            for dailySeed in dailySeeds where newShelves.count < Self.maximumMixShelfCount {
-                do {
-                    let seed = dailySeed.track
-                    try Task.checkCancellation()
-                    let items = try await api.fetchInstantMix(itemId: seed.id, limit: 40)
-                    try Task.checkCancellation()
+            // AudioMuse requests can be computationally expensive. Run two at
+            // a time: enough to prevent sequential timeouts from stacking up,
+            // without stampeding the plugin with every seed simultaneously.
+            var mixResults: [DailyMixFetchResult] = []
+            var seedIndex = 0
+            while seedIndex < dailySeeds.count {
+                let firstSeed = dailySeeds[seedIndex]
+                if seedIndex + 1 < dailySeeds.count {
+                    let secondSeed = dailySeeds[seedIndex + 1]
+                    async let first = fetchDailyMix(for: firstSeed)
+                    async let second = fetchDailyMix(for: secondSeed)
+                    let pair = await (first, second)
+                    mixResults.append(contentsOf: [pair.0, pair.1])
+                } else {
+                    mixResults.append(await fetchDailyMix(for: firstSeed))
+                }
+                seedIndex += 2
+            }
+
+            for result in mixResults where newShelves.count < Self.maximumMixShelfCount {
+                let dailySeed = result.seed
+                let seed = dailySeed.track
+                switch result.outcome {
+                case .items(let items):
                     let tracks = items
                         .filter { $0.Type == .Audio && $0.Id != seed.id }
                         .map { Track(from: $0, baseURL: api.baseURL) }
@@ -518,14 +548,13 @@ final class DiscoveryViewModel: ObservableObject {
                             "Instant Mix returned no recommendations for seed \(seed.id, privacy: .private(mask: .hash))"
                         )
                     }
-                } catch is CancellationError {
+                case .cancelled:
                     throw CancellationError()
-                } catch {
-                    mixFailures.append(error.localizedDescription)
+                case .failed(let message):
+                    mixFailures.append("\(dailySeed.title): \(message)")
                     Self.logger.warning(
-                        "Instant Mix failed for seed \(dailySeed.track.id, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .public)"
+                        "Instant Mix failed for seed \(seed.id, privacy: .private(mask: .hash)): \(message, privacy: .public)"
                     )
-                    continue
                 }
             }
 
@@ -579,6 +608,10 @@ final class DiscoveryViewModel: ObservableObject {
                 pendingSnapshot = nil
                 apply(snapshot)
                 errorMessage = mixIssue
+                errorDetails = mixIssue == nil ? nil : mixRefreshDetails(
+                    failureDescriptions: mixFailures,
+                    emptyMixCount: emptyMixCount
+                )
             } else {
                 pendingSnapshot = snapshot
             }
@@ -591,7 +624,23 @@ final class DiscoveryViewModel: ObservableObject {
         } catch {
             if publishResult {
                 errorMessage = error.localizedDescription
+                errorDetails = String(describing: error)
             }
+        }
+    }
+
+    private func fetchDailyMix(
+        for seed: DynamicDiscoverySelector.DailyMixSeed
+    ) async -> DailyMixFetchResult {
+        do {
+            try Task.checkCancellation()
+            let items = try await api.fetchInstantMix(itemId: seed.track.id, limit: 40)
+            try Task.checkCancellation()
+            return DailyMixFetchResult(seed: seed, outcome: .items(items))
+        } catch is CancellationError {
+            return DailyMixFetchResult(seed: seed, outcome: .cancelled)
+        } catch {
+            return DailyMixFetchResult(seed: seed, outcome: .failed(error.localizedDescription))
         }
     }
 
@@ -690,8 +739,19 @@ final class DiscoveryViewModel: ObservableObject {
         let summary = retainedPreviousShelves
             ? "Couldn’t refresh Daily Mixes. Showing the previous mixes."
             : "Daily Mixes are temporarily unavailable."
-        guard let detail = failureDescriptions.first else { return summary }
-        return "\(summary) \(detail)"
+        return summary
+    }
+
+    private func mixRefreshDetails(
+        failureDescriptions: [String],
+        emptyMixCount: Int
+    ) -> String {
+        var lines = failureDescriptions
+        if emptyMixCount > 0 {
+            let noun = emptyMixCount == 1 ? "mix" : "mixes"
+            lines.append("\(emptyMixCount) \(noun) returned no usable recommendations.")
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func applyPendingSnapshot() {
@@ -699,6 +759,7 @@ final class DiscoveryViewModel: ObservableObject {
         apply(pendingSnapshot)
         self.pendingSnapshot = nil
         errorMessage = nil
+        errorDetails = nil
     }
 
     private func apply(_ snapshot: DiscoverySnapshot) {
