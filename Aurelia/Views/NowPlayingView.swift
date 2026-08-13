@@ -607,6 +607,23 @@ struct NowPlayingView: View {
 
             Spacer()
 
+            // The one track in the app with no context menu was the one
+            // playing. A visible control rather than a long press, because
+            // nothing about the artwork suggests it can be held.
+            if let track = playerManager.currentTrack {
+                Menu {
+                    TrackContextMenu(track: track, isNowPlaying: true)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.body.weight(.medium))
+                        .foregroundColor(.appTextSecondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More actions")
+                .accessibilityIdentifier("now-playing-more")
+            }
+
             if embedsAirPlayButton {
                 AirPlayButton()
                     .frame(width: 44, height: 44)

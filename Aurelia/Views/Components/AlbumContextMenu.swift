@@ -105,6 +105,10 @@ struct TrackContextMenu: View {
     /// track instead of inserting a second copy, and "Add to Queue" is dropped
     /// because it would be a no-op.
     var queueIndex: Int? = nil
+    /// Opened from the player itself. Queue placement is dropped entirely:
+    /// this track is playing, so "Play Next" and its neighbours have nothing
+    /// left to mean.
+    var isNowPlaying = false
 
     @ObservedObject private var downloadManager = DownloadManager.shared
     @ObservedObject private var playerManager = PlayerManager.shared
@@ -131,7 +135,9 @@ struct TrackContextMenu: View {
 
             Divider()
 
-            if let queueIndex {
+            if isNowPlaying {
+                EmptyView()
+            } else if let queueIndex {
                 Button {
                     playerManager.moveInQueue(
                         from: queueIndex,
