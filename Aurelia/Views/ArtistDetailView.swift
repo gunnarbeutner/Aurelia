@@ -25,6 +25,7 @@ struct ArtistDetailView: View {
 
     @State private var albums: [Album] = []
     @State private var isLoadingAlbums = false
+    @State private var hasLoadedAlbums = false
     // Navigation handled by NavigationStack
     @State private var viewMode: ArtistViewMode = .allAlbums
     @State private var selectedYear: Int?
@@ -75,6 +76,50 @@ struct ArtistDetailView: View {
         _isFavorite = State(initialValue: artist.isFavorite)
     }
 
+    private func loadHeaderImage() async {
+        guard let url = headerImageURL else {
+            headerImage = nil
+            headerTopColor = nil
+            return
+        }
+        // Cached hit or network fetch, whichever applies — the point is that
+        // the strip does not have to wait for somebody else to warm the cache.
+        guard let image = try? await ImageCache.shared.loadImage(from: url) else {
+            headerImage = nil
+            headerTopColor = nil
+            return
+        }
+        let color = DominantColorExtractor.shared.dominantColor(
+            from: image,
+            trackId: artist.id
+        )
+        withAnimation(.easeInOut(duration: 0.4)) {
+            headerImage = image
+            headerTopColor = color
+        }
+    }
+
+    /// The resolved header image. Held here so the strip above the photo and
+    /// the colour behind it come from one load: reading the cache alone meant
+    /// the strip only appeared on a second visit, once something else had put
+    /// the image there.
+    @State private var headerImage: UIImage?
+
+    /// Sampled from the header image so the strip behind the status bar and the
+    /// Dynamic Island belongs to the picture rather than cutting into it.
+    @State private var headerTopColor: Color?
+
+    /// The screen's top inset. Read from the window rather than the layout,
+    /// because the scroll view here deliberately ignores the top safe area and
+    /// the value would already be consumed by the time the header asks for it.
+    private var topInset: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .map(\.safeAreaInsets.top)
+            .max() ?? 0
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Main Content
@@ -102,9 +147,12 @@ struct ArtistDetailView: View {
 
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Hero Header with Artist Image (extends behind status bar)
-                        artistHeaderSection
-                            .padding(.top, -60) // Pull up behind status bar
+                        // Hero Header with Artist Image, drawn to the top edge.
+                        // The negative padding this replaces could not work: a
+                        // scroll view clips its content, so pulling the header
+                        // up only cut 60pt off the image and left the status
+                        // bar showing the page background.
+                        artistHeaderSection(topInset: topInset)
 
                         // Bio Section
                         if let bio = artist.bio {
@@ -118,13 +166,21 @@ struct ArtistDetailView: View {
                         Color.clear.frame(height: 100)
                     }
                 }
+                // Top only: the header reaches the screen edge while the
+                // bottom keeps its inset for the tab bar and mini player.
+                .ignoresSafeArea(edges: .top)
 
                 // Navigation handled by NavigationStack
             }
 
         }
         .ignoresSafeArea(.keyboard)
+        .task(id: headerImageURL) {
+            await loadHeaderImage()
+        }
         .onAppear {
+            guard !hasLoadedAlbums else { return }
+            hasLoadedAlbums = true
             Task {
                 await fetchArtistAlbums()
             }
@@ -240,8 +296,54 @@ struct ArtistDetailView: View {
     }
 
     // MARK: - Artist Header Section
-    private var artistHeaderSection: some View {
+    /// Grown by the safe-area inset rather than shifted into it. Bleeding a
+    /// fixed-height header to the screen edge moves the whole image up, which
+    /// puts the subject's face under the Dynamic Island and clips their head
+    /// again; adding the inset to the height instead leaves everything where it
+    /// was and fills the strip above with picture instead of page background.
+    @ViewBuilder
+    private func headerBleed(topInset: CGFloat) -> some View {
+        ZStack(alignment: .bottom) {
+            (headerTopColor ?? Color.appBackground)
+
+            if let headerImage {
+                GeometryReader { geo in
+                    Image(uiImage: headerImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geo.size.width, height: 280, alignment: .top)
+                        // Flipped, and pinned to the bottom of the strip, so the
+                        // row that meets the photo is the photo's own first row.
+                        .scaleEffect(y: -1)
+                        // Stretched sideways as well as blurred: a mirrored
+                        // photograph still reads as a photograph, and detail up
+                        // here competes with the status bar. Smeared, it is just
+                        // the picture's colour arriving from the right place.
+                        .scaleEffect(x: 1.6, y: 1.6)
+                        .blur(radius: 28)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+                        .clipped()
+                }
+            }
+        }
+        .frame(height: topInset)
+        .clipped()
+        .allowsHitTesting(false)
+    }
+
+    private func artistHeaderSection(topInset: CGFloat) -> some View {
         VStack(spacing: 0) {
+            // The strip the status bar and the notch sit in. The picture
+            // starts below it, so nothing lands on the subject's face.
+            //
+            // Filled by mirroring the photo upward from its own top row rather
+            // than with a sampled colour: an averaged colour cannot match what
+            // it meets — the top edge here is a dark picture frame on one side
+            // and a pale wall on the other — so it read as a bar laid over the
+            // header. Mirroring matches at the seam by construction, and the
+            // blur keeps it from looking like a reflection.
+            headerBleed(topInset: topInset)
+
             // Large artist artwork/gradient
             ZStack {
                 if let url = headerImageURL {
@@ -254,7 +356,12 @@ struct ArtistDetailView: View {
                                 image
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
-                                    .frame(width: geo.size.width, height: 280)
+                                    // Anchored to the top, not centred. Filling
+                                    // a short wide header from a portrait
+                                    // source spills over both edges, and a
+                                    // centred crop takes half of that off the
+                                    // top — which is exactly where the face is.
+                                    .frame(width: geo.size.width, height: 280, alignment: .top)
                                     .clipped()
                             case .failure:
                                 placeholderArtistHeader
@@ -429,7 +536,7 @@ struct ArtistDetailView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .frame(height: 280)
+            .frame(maxHeight: .infinity)
 
             // Artist icon overlay
             Image(systemName: "person.circle.fill")
@@ -489,7 +596,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 20)
             .padding(.top, 10)
 
-            if isLoadingAlbums {
+            if isLoadingAlbums && albums.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
