@@ -7,6 +7,9 @@ import Foundation
 final class JellyfinLibraryEventStream {
     enum Event {
         case libraryChanged
+        /// Items the server says are gone. Carried in the same message as the
+        /// change notice, so deletions need not wait for a reconciliation.
+        case itemsRemoved([String])
         case userDataChanged
         case reconnected
         /// The handshake completed — firsthand proof the server is answering.
@@ -118,7 +121,10 @@ final class JellyfinLibraryEventStream {
                     continue
                 }
                 switch envelope.MessageType {
-                case "LibraryChanged": onEvent?(.libraryChanged)
+                case "LibraryChanged":
+                    let removed = envelope.Data?.ItemsRemoved ?? []
+                    if !removed.isEmpty { onEvent?(.itemsRemoved(removed)) }
+                    onEvent?(.libraryChanged)
                 case "UserDataChanged": onEvent?(.userDataChanged)
                 case "ForceKeepAlive":
                     try await task.send(.string("{\"MessageType\":\"KeepAlive\"}"))
@@ -151,6 +157,14 @@ final class JellyfinLibraryEventStream {
 
     private struct Envelope: Decodable {
         let MessageType: String
+        let Data: LibraryUpdateInfo?
+
+        /// Only the part that cannot be recovered from a later query. Additions
+        /// and updates are found by the watermark sweep; a deletion leaves
+        /// nothing behind to find.
+        struct LibraryUpdateInfo: Decodable {
+            let ItemsRemoved: [String]?
+        }
     }
 }
 

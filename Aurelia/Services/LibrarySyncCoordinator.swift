@@ -58,6 +58,8 @@ final class LibrarySyncCoordinator: ObservableObject {
                 NetworkMonitor.shared.noteServerReachable()
             case .disconnected:
                 NetworkMonitor.shared.noteServerConnectionLost()
+            case .itemsRemoved(let ids):
+                self?.applyRemovals(ids)
             case .libraryChanged, .userDataChanged, .reconnected:
                 self?.scheduleEventSync()
             }
@@ -74,6 +76,28 @@ final class LibrarySyncCoordinator: ObservableObject {
         eventDebounceTask?.cancel()
         eventDebounceTask = nil
         eventStream.stop()
+    }
+
+    /// Deletions are applied straight away rather than waiting for the daily
+    /// reconciliation: the server names the items, and nothing else will.
+    private func applyRemovals(_ ids: [String]) {
+        guard !ids.isEmpty, let scope = service.libraryScope else { return }
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let state = try? await self.repository.syncState(in: scope) else { return }
+            // The existing watermarks are passed straight back: this removes
+            // named items, it does not stand in for a sweep, and advancing them
+            // here would skip whatever changed in the meantime.
+            _ = try? await self.repository.applyDelta(
+                LibraryDelta(
+                    removedItemIDs: Set(ids),
+                    metadataWatermark: state.metadataWatermark,
+                    userDataWatermark: state.userDataWatermark
+                ),
+                in: scope
+            )
+            await LibraryStore.shared.reload()
+        }
     }
 
     private func scheduleEventSync() {
