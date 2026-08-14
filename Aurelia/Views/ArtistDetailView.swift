@@ -425,7 +425,7 @@ struct ArtistDetailView: View {
                         HStack(spacing: 10) {
                             if isShuffling {
                                 ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .black))
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .appBackground))
                                     .scaleEffect(0.9)
                             } else {
                                 Image(systemName: "shuffle")
@@ -434,12 +434,16 @@ struct ArtistDetailView: View {
                             Text(isShuffling ? "LOADING..." : "SHUFFLE")
                                 .font(.body.weight(.bold))
                         }
-                        .foregroundColor(.black)
+                        // Themed rather than literal: a white capsule with
+                        // black text is right on a dark page and invisible on a
+                        // light one. These two are exact inverses across
+                        // appearances, so dark mode looks as it did.
+                        .foregroundColor(.appBackground)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(
                             Capsule()
-                                .fill(Color.white)
+                                .fill(Color.appText)
                         )
                     }
                     .disabled(isShuffling)
@@ -451,7 +455,7 @@ struct ArtistDetailView: View {
                     } label: {
                         Image(systemName: isFavorite ? "heart.fill" : "heart")
                             .font(.title3.weight(.semibold))
-                            .foregroundColor(isFavorite ? .appSecondary : .white)
+                            .foregroundColor(isFavorite ? .appSecondary : .appText)
                             .frame(width: 56, height: 56)
                             .background(
                                 Circle()
@@ -579,7 +583,13 @@ struct ArtistDetailView: View {
                             } label: {
                                 Image(systemName: icon)
                                     .font(.caption.weight(.semibold))
-                                    .foregroundColor(viewMode == mode ? .black : .white)
+                                    // Themed, not literal: black-on-accent and
+                                    // white-on-fill are both illegible once the
+                                    // page turns light. `appAccentText` is the
+                                    // colour meant to sit on the accent.
+                                    .foregroundColor(
+                                        viewMode == mode ? .appAccentText : .appTextSecondary
+                                    )
                                     .frame(width: 36, height: 30)
                                     .background(
                                         RoundedRectangle(cornerRadius: viewMode == mode ? 8 : 0)
