@@ -43,7 +43,7 @@ final class AureliaUITests: XCTestCase {
         XCTAssertTrue(recentTitle.waitForExistence(timeout: 5))
         XCTAssertLessThan(mixesTitle.frame.minY, recentTitle.frame.minY)
 
-        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-mix"]
         XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
         discoveryMix.tap()
 
@@ -93,7 +93,7 @@ final class AureliaUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
-        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-mix"]
         XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
         discoveryMix.tap()
 
@@ -115,12 +115,15 @@ final class AureliaUITests: XCTestCase {
         XCTAssertTrue(artwork.waitForExistence(timeout: 5))
         XCTAssertEqual(artwork.frame.midX, app.windows.firstMatch.frame.midX, accuracy: 2)
 
+        // From the top of the player, a downward swipe is a dismissal rather
+        // than a scroll.
         let scrollView = app.scrollViews["now-playing-scroll"]
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
-        let originalArtworkY = artwork.frame.minY
         scrollView.swipeDown()
-        XCTAssertTrue(closeButton.exists)
-        XCTAssertEqual(artwork.frame.minY, originalArtworkY, accuracy: 3)
+        XCTAssertTrue(closeButton.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(miniPlayer, timeout: 5))
+        miniPlayer.tap()
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
 
         let dismissHandle = app.descendants(matching: .any)["now-playing-dismiss-handle"]
         XCTAssertTrue(dismissHandle.waitForExistence(timeout: 5))
@@ -137,7 +140,7 @@ final class AureliaUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
-        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-mix"]
         XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
         discoveryMix.tap()
 
@@ -177,7 +180,7 @@ final class AureliaUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
-        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-mix"]
         XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
         discoveryMix.tap()
 
@@ -204,7 +207,7 @@ final class AureliaUITests: XCTestCase {
         app.launchArguments = ["--ui-test-player-layout"]
         app.launch()
 
-        let discoveryMix = app.buttons["discovery-mix-ui-layout-seed"]
+        let discoveryMix = app.buttons["discovery-mix-ui-layout-mix"]
         XCTAssertTrue(discoveryMix.waitForExistence(timeout: 5))
         discoveryMix.tap()
 
@@ -323,11 +326,11 @@ final class AureliaUITests: XCTestCase {
     private func scrollToHittable(
         _ element: XCUIElement,
         in scrollView: XCUIElement,
-        maxAttempts: Int = 4
+        maxAttempts: Int = 6
     ) -> Bool {
-        guard element.waitForExistence(timeout: 5) else { return false }
-
-        for _ in 0..<maxAttempts where !element.isHittable {
+        // Rows far enough down the queue are not built until they are scrolled
+        // towards, so keep scrolling while the element is still missing.
+        for _ in 0..<maxAttempts where !element.exists || !element.isHittable {
             let start = scrollView.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.15, dy: 0.8)
             )
@@ -342,7 +345,7 @@ final class AureliaUITests: XCTestCase {
             )
         }
 
-        return element.isHittable
+        return element.exists && element.isHittable
     }
 
     @MainActor

@@ -828,7 +828,8 @@ struct AureliaTests {
         await viewModel.refresh()
 
         #expect(viewModel.shelves.count == DiscoveryViewModel.maximumMixShelfCount)
-        #expect(Set(viewModel.shelves.map(\.seed.id)).count == 5)
+        // Every shelf is led by a different song.
+        #expect(Set(viewModel.shelves.map(\.seed.id)).count == viewModel.shelves.count)
     }
 
     @Test @MainActor func discoveryUsesJellyfinRecentlyPlayedStateWhenAvailable() async {
@@ -847,7 +848,9 @@ struct AureliaTests {
 
         await viewModel.refresh()
 
-        #expect(viewModel.recentTracks.map(\.id) == ["server"])
+        // The server's history leads, and what we already knew locally is kept
+        // behind it rather than erased by a partial server response.
+        #expect(viewModel.recentTracks.map(\.id) == ["server", "local"])
         #expect(api.requestedMixes.isEmpty)
     }
 
@@ -1948,10 +1951,11 @@ struct AureliaTests {
         ) == 0)
     }
 
-    @Test @MainActor func playerDismissalTracksOnlyDownwardVerticalDragsOneToOne() {
+    @Test @MainActor func playerDismissalTracksDownwardDragsOneToOneRegardlessOfDrift() {
         #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: 96)) == 96)
         #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 0, height: -96)) == 0)
-        #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 96, height: 48)) == 0)
+        // Sideways drift during a dismissal must not snap the player back.
+        #expect(PlayerDismissalInteraction.offset(for: CGSize(width: 96, height: 48)) == 48)
     }
 
     @Test @MainActor func playerDismissalUsesDistanceOrProjectedVelocity() {
@@ -2033,7 +2037,12 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
         requestedMixes.append(itemId)
         if shouldFailMixes { throw FakeError.unavailable }
         if shouldReturnEmptyMixes { return [] }
-        return [audio(id: "mix-\(itemId)", artist: "Mix \(itemId)")]
+        // A shelf only survives selection if the mix crosses an artist
+        // boundary, so a usable mix needs at least two of them.
+        return [
+            audio(id: "mix-\(itemId)", artist: "Mix \(itemId)"),
+            audio(id: "mix-\(itemId)-second", artist: "Second \(itemId)")
+        ]
     }
 
     func fetchRecentlyPlayedTracks(limit: Int) async throws -> [BaseItemDto] {
@@ -2091,8 +2100,16 @@ private actor FakeDiscoveryCandidateProvider: DiscoveryCandidateProviding {
     }
 }
 
-private enum FakeError: Error {
+private enum FakeError: LocalizedError {
     case unavailable
+
+    // Failure details are reported to the listener as localized text, so a fake
+    // failure needs one for its cause to reach them.
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: return "The service is unavailable."
+        }
+    }
 }
 
 /// Covers the shared action layer that backs both the AppleScript commands and

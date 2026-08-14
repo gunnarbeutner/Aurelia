@@ -116,7 +116,13 @@ struct PlayerLayoutDiscoveryAPI: DiscoveryAPI {
                 name: "The Age Of Love (Extended Live Version) (Live)"
             ),
             audio(id: "ui-layout-next", name: "Next Test Track"),
-            audio(id: "ui-layout-after-next", name: "After Delete Test Track")
+            // A mix only reaches a shelf if it crosses an artist boundary.
+            audio(
+                id: "ui-layout-after-next",
+                name: "After Delete Test Track",
+                artist: "Second Layout Artist",
+                artistID: "ui-layout-artist-2"
+            )
         ]
     }
 
@@ -124,23 +130,51 @@ struct PlayerLayoutDiscoveryAPI: DiscoveryAPI {
         [audio(id: "ui-layout-seed", name: "Layout Seed")]
     }
     func fetchRandomTracks(limit: Int) async throws -> [BaseItemDto] { [] }
-    func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo { throw JellyfinError.notFound }
-    func checkAudioMuseHealth() async throws -> Bool { false }
+    // Daily Mixes are an AudioMuse feature, so the fixture has to claim the
+    // plugin is installed for the mixes shelf to exist at all.
+    func fetchAudioMuseInfo() async throws -> AudioMusePluginInfo {
+        AudioMusePluginInfo(version: "ui-test", availableEndpoints: [])
+    }
+    func checkAudioMuseHealth() async throws -> Bool { true }
     func fetchActiveAudioMuseTask() async throws -> AudioMuseTaskStatus? { nil }
 
-    private func audio(id: String, name: String) -> BaseItemDto {
+    private func audio(
+        id: String,
+        name: String,
+        artist: String = "Layout Artist",
+        artistID: String = "ui-layout-artist"
+    ) -> BaseItemDto {
         BaseItemDto(
             Id: id,
             Name: name,
             Type: .Audio,
             RunTimeTicks: 2_400_000_000,
             Album: "Layout Album",
-            AlbumArtist: "Layout Artist",
-            Artists: ["Layout Artist"],
+            AlbumArtist: artist,
+            Artists: [artist],
             AlbumId: "ui-layout-album",
             AlbumPrimaryImageTag: "ui-test",
-            ArtistItems: [NameIdPair(Name: "Layout Artist", Id: "ui-layout-artist")]
+            ArtistItems: [NameIdPair(Name: artist, Id: artistID)]
         )
+    }
+}
+
+/// Mix shelves are seeded from the local library, so the UI test needs one
+/// candidate to stand in for it.
+struct PlayerLayoutDiscoveryCandidates: DiscoveryCandidateProviding {
+    static let seed = Track(
+        id: "ui-layout-mix",
+        name: "Layout Mix Seed",
+        artistName: "Layout Artist",
+        albumName: "Layout Album",
+        duration: 240,
+        artworkURL: nil,
+        albumId: "ui-layout-album",
+        artistId: "ui-layout-artist"
+    )
+
+    func discoveryCandidates(in scope: LibraryScope) async -> [DiscoveryCandidate] {
+        [DiscoveryCandidate(track: Self.seed, lastPlayedAt: nil, playCount: 1, isFavorite: false)]
     }
 }
 #endif

@@ -633,7 +633,6 @@ struct AlbumDetailView: View {
                             selectedTrackIds = [track.id]
                             showAddToPlaylist = true
                         }
-                        .accessibilityIdentifier("album-track-\(track.id)")
                         .padding(.horizontal, 20)
 
                         if index < albumTracks.count - 1 {
@@ -745,6 +744,8 @@ struct AlbumTrackRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Track \(trackNumber): \(track.name), \(track.durationFormatted)")
             .accessibilityHint("Play track")
+            // Identifying the row itself would name the heart beside it too.
+            .accessibilityIdentifier("album-track-\(track.id)")
 
             Button(action: onToggleFavorite) {
                 Image(systemName: track.isFavorite ? "heart.fill" : "heart")
@@ -755,6 +756,9 @@ struct AlbumTrackRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(track.isFavorite ? "Remove \(track.name) from favorites" : "Add \(track.name) to favorites")
+            // Without an identifier of its own, the heart inherits the row's
+            // and leaves two elements answering to the same name.
+            .accessibilityIdentifier("album-track-favorite-\(track.id)")
         }
         .padding(.vertical, 12)
         .background(

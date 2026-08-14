@@ -31,7 +31,12 @@ struct DiscoveryView: View {
             _viewModel = StateObject(
                 wrappedValue: DiscoveryViewModel(
                     api: PlayerLayoutDiscoveryAPI(),
-                    recentTracksProvider: { [seed] }
+                    recentTracksProvider: { [seed] },
+                    snapshotScope: LibraryScope(
+                        baseURL: PlayerLayoutDiscoveryAPI().baseURL,
+                        userID: "ui-test"
+                    ),
+                    candidateProvider: PlayerLayoutDiscoveryCandidates()
                 )
             )
             return
