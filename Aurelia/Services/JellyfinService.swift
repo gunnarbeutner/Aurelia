@@ -643,42 +643,6 @@ class JellyfinService: ObservableObject {
         }
     }
 
-    /// Fetch user's favorite items
-    func fetchFavorites(includeItemTypes: String = "Audio,MusicAlbum,Playlist") async throws -> [BaseItemDto] {
-        guard let token = KeychainService.shared.getAccessToken(),
-              let userId = KeychainService.shared.getUserID() else {
-            throw JellyfinError.notAuthenticated
-        }
-
-        var components = URLComponents(string: "\(baseURL)/Users/\(userId)/Items")!
-        components.queryItems = [
-            URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes),
-            URLQueryItem(name: "Recursive", value: "true"),
-            URLQueryItem(name: "SortBy", value: "DatePlayed,SortName"),
-            URLQueryItem(name: "SortOrder", value: "Descending"),
-            URLQueryItem(name: "Filters", value: "IsFavorite"),
-            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,CanDelete,BasicSyncInfo"),
-            URLQueryItem(name: "EnableImageTypes", value: "Primary,Backdrop,Banner,Thumb")
-        ]
-
-        guard let url = components.url else {
-            throw JellyfinError.invalidResponse
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw JellyfinError.invalidResponse
-        }
-
-        let itemsResponse = try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
-        return itemsResponse.Items
-    }
-
     // MARK: - Discovery and Instant Mix
 
     /// Fetches Jellyfin's Instant Mix for any playable library item. AudioMuse-AI
@@ -698,10 +662,6 @@ class JellyfinService: ObservableObject {
         let (data, response) = try await session.data(for: request)
         try validate(response: response, data: data)
         return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data).Items
-    }
-
-    func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] {
-        Array(try await fetchFavorites(includeItemTypes: "Audio").prefix(limit))
     }
 
     /// Fetch the signed-in user's cross-client playback state. Jellyfin stores

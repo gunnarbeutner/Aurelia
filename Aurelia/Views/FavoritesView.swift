@@ -10,6 +10,7 @@ import SwiftUI
 struct FavoritesView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var mutationCenter = FavoriteMutationCenter.shared
+    @ObservedObject private var libraryStore = LibraryStore.shared
     @StateObject private var viewModel: FavoritesViewModel
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -46,9 +47,7 @@ struct FavoritesView: View {
                 }
             } else {
                 ScrollView {
-                    if let error = viewModel.initialErrorMessage {
-                        errorStateView(error)
-                    } else if viewModel.isEmpty {
+                    if viewModel.isEmpty {
                         emptyStateView
                     } else {
                         favoritesContent
@@ -74,11 +73,13 @@ struct FavoritesView: View {
             Task { await viewModel.activate() }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
-                viewModel.markStale()
-            } else if newPhase == .active && isActive {
+            if newPhase == .active && isActive {
                 Task { await viewModel.activate() }
             }
+        }
+        .onChange(of: libraryStore.catalogRevision) { _, _ in
+            guard isActive else { return }
+            Task { await viewModel.refresh() }
         }
         .onReceive(mutationCenter.$latestEvent) { event in
             guard let event else { return }
@@ -105,14 +106,6 @@ struct FavoritesView: View {
 
     private var favoritesContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let revalidationError = viewModel.revalidationErrorMessage {
-                Label(revalidationError, systemImage: "exclamationmark.triangle")
-                    .font(.appCaption)
-                    .foregroundColor(.appTextSecondary)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
-            }
-
             headerSection
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
@@ -301,31 +294,6 @@ struct FavoritesView: View {
         .padding(.bottom, 260)
     }
 
-    private func errorStateView(_ error: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundColor(.appSecondary)
-            Text("Error Loading Favorites")
-                .font(.appHeadline)
-                .foregroundColor(Color.appText)
-            Text(error)
-                .font(.appBody)
-                .foregroundColor(.appTextSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            Button("Try Again") {
-                Task { await viewModel.refresh() }
-            }
-            .foregroundColor(.appAccentText)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(Capsule().fill(Color.appSecondary))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 120)
-        .padding(.bottom, 260)
-    }
 }
 
 // MARK: - Favorite Track Row
@@ -342,23 +310,26 @@ struct FavoriteTrackRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 // Artwork
-                if let artworkURL = track.artworkURL, let url = URL(string: artworkURL) {
-                    CachedAsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            Rectangle().fill(Color.appMidBackground)
-                                .overlay(Image(systemName: "music.note").font(.caption).foregroundColor(.appTextSecondary))
+                Group {
+                    if let artworkURL = track.artworkURL, let url = URL(string: artworkURL) {
+                        CachedAsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            default:
+                                placeholderArtwork
+                            }
                         }
+                    } else {
+                        placeholderArtwork
                     }
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.appControlFill, lineWidth: 1)
-                    )
                 }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.appControlFill, lineWidth: 1)
+                )
 
                 // Now playing indicator
                 if isCurrentlyPlaying {
@@ -373,7 +344,7 @@ struct FavoriteTrackRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name)
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(isCurrentlyPlaying ? .appAccent : .white.opacity(0.7))
+                        .foregroundColor(isCurrentlyPlaying ? .appAccent : .appText)
                         .lineLimit(1)
                     Text(track.artistName)
                         .font(.caption)
@@ -395,6 +366,16 @@ struct FavoriteTrackRow: View {
             TrackContextMenu(track: track)
         }
         .offlineAvailability(.track(track.id))
+    }
+
+    private var placeholderArtwork: some View {
+        Rectangle()
+            .fill(Color.appMidBackground)
+            .overlay {
+                Image(systemName: "music.note")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
     }
 }
 

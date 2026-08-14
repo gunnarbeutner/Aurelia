@@ -77,64 +77,29 @@ final class FavoriteMutationCenter: ObservableObject {
 final class FavoritesViewModel: ObservableObject {
     @Published private(set) var snapshot: FavoritesSnapshot = .empty
     @Published private(set) var isInitialLoading = true
-    @Published private(set) var initialErrorMessage: String?
-    @Published private(set) var revalidationErrorMessage: String?
 
-    private let fetcher: () async throws -> FavoritesSnapshot
-    private let cachedSnapshotProvider: () async -> FavoritesSnapshot
-    private let cacheSnapshot: (FavoritesSnapshot) async -> Void
-    private let now: () -> Date
+    private let snapshotProvider: () async -> FavoritesSnapshot
     private let revisionProvider: () -> UInt64
-    private let revalidationInterval: TimeInterval
-
-    private var hasLoaded = false
-    private var hasLoadedCache = false
-    private var isStale = true
-    private var lastValidatedAt: Date?
-    private var fetchTask: Task<FavoritesSnapshot, Error>?
+    private var loadTask: Task<FavoritesSnapshot, Never>?
 
     convenience init() {
-        let service = JellyfinService.shared
-        let scope = service.libraryScope
         self.init(
             revisionProvider: { FavoriteMutationCenter.shared.revision },
-            cachedSnapshotProvider: {
-                guard let scope else { return .empty }
+            snapshotProvider: {
+                let service = JellyfinService.shared
+                guard let scope = service.libraryScope else { return .empty }
                 await LibraryRepository.shared.importLegacyCacheIfNeeded(in: scope)
                 return await LibraryRepository.shared.favoriteSnapshot(in: scope)
-            },
-            cacheSnapshot: { _ in },
-            fetcher: {
-                // Favourites refresh on their own rather than dragging a whole
-                // library sync behind them, which is what pull-to-refresh here
-                // used to trigger.
-                guard let currentScope = service.libraryScope else { return .empty }
-                let items = try await service.fetchFavorites(
-                    includeItemTypes: "Audio,MusicAlbum,MusicArtist"
-                )
-                await LibraryRepository.shared.replaceFavorites(
-                    FavoritesSnapshot.from(items: items, baseURL: service.baseURL),
-                    in: currentScope
-                )
-                return await LibraryRepository.shared.favoriteSnapshot(in: currentScope)
             }
         )
     }
 
     init(
-        revalidationInterval: TimeInterval = 5 * 60,
-        now: @escaping () -> Date = Date.init,
         revisionProvider: @escaping () -> UInt64 = { 0 },
-        cachedSnapshotProvider: @escaping () async -> FavoritesSnapshot = { .empty },
-        cacheSnapshot: @escaping (FavoritesSnapshot) async -> Void = { _ in },
-        fetcher: @escaping () async throws -> FavoritesSnapshot
+        snapshotProvider: @escaping () async -> FavoritesSnapshot = { .empty }
     ) {
-        self.revalidationInterval = revalidationInterval
-        self.now = now
         self.revisionProvider = revisionProvider
-        self.cachedSnapshotProvider = cachedSnapshotProvider
-        self.cacheSnapshot = cacheSnapshot
-        self.fetcher = fetcher
+        self.snapshotProvider = snapshotProvider
     }
 
     var tracks: [Track] { snapshot.tracks }
@@ -143,25 +108,11 @@ final class FavoritesViewModel: ObservableObject {
     var isEmpty: Bool { snapshot.isEmpty }
 
     func activate() async {
-        if !hasLoadedCache {
-            hasLoadedCache = true
-            let cached = await cachedSnapshotProvider()
-            if !cached.isEmpty {
-                snapshot = cached
-                hasLoaded = true
-                isInitialLoading = false
-            }
-        }
-        guard shouldRevalidate else { return }
-        await load()
+        await reload()
     }
 
     func refresh() async {
-        await load()
-    }
-
-    func markStale() {
-        isStale = true
+        await reload()
     }
 
     func apply(_ mutation: FavoriteMutation) {
@@ -195,55 +146,23 @@ final class FavoritesViewModel: ObservableObject {
         }
     }
 
-    private var shouldRevalidate: Bool {
-        guard !isStale, let lastValidatedAt else { return true }
-        return now().timeIntervalSince(lastValidatedAt) >= revalidationInterval
-    }
-
-    private func load() async {
-        if let fetchTask {
-            _ = try? await fetchTask.value
+    private func reload() async {
+        if let loadTask {
+            _ = await loadTask.value
             return
         }
 
-        let showsInitialLoader = !hasLoaded
-        if showsInitialLoader {
-            isInitialLoading = true
-            initialErrorMessage = nil
-        }
-        revalidationErrorMessage = nil
-
         let startingRevision = revisionProvider()
-        let task = Task { try await fetcher() }
-        fetchTask = task
-
-        do {
-            let fetchedSnapshot = try await task.value
-            if revisionProvider() == startingRevision {
-                snapshot = fetchedSnapshot
-                lastValidatedAt = now()
-                isStale = false
-                await cacheSnapshot(fetchedSnapshot)
-            } else {
-                // A successful local mutation landed while this request was in
-                // flight. Keep the incrementally updated state instead of
-                // allowing an older server response to resurrect stale items.
-                isStale = true
-            }
-            hasLoaded = true
-            isInitialLoading = false
-            initialErrorMessage = nil
-        } catch {
-            hasLoaded = true
-            isInitialLoading = false
-            if snapshot.isEmpty {
-                initialErrorMessage = error.localizedDescription
-            } else {
-                revalidationErrorMessage = error.localizedDescription
-            }
+        let task = Task { await snapshotProvider() }
+        loadTask = task
+        let loadedSnapshot = await task.value
+        // An optimistic favorite mutation made while SQLite was being read is
+        // newer than that read and must remain visible.
+        if revisionProvider() == startingRevision {
+            snapshot = loadedSnapshot
         }
-
-        fetchTask = nil
+        isInitialLoading = false
+        loadTask = nil
     }
 
 }

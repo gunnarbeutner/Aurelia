@@ -1160,37 +1160,26 @@ struct AureliaTests {
         #expect(viewModel.shelves.first?.seed.id == "taste-b")
     }
 
-    @Test @MainActor func favoritesRevalidatesWhenStaleOrExpiredAndPTRAlwaysRefreshes() async {
-        var currentDate = Date(timeIntervalSince1970: 1_000)
-        var fetchCount = 0
+    @Test @MainActor func favoritesReloadsFromLocalSnapshotProvider() async {
+        var loadCount = 0
         let expected = Self.favoriteSnapshot(id: "one")
         let viewModel = FavoritesViewModel(
-            revalidationInterval: 300,
-            now: { currentDate },
-            fetcher: {
-                fetchCount += 1
+            snapshotProvider: {
+                loadCount += 1
                 return expected
             }
         )
 
         await viewModel.activate()
-        await viewModel.activate()
-        #expect(fetchCount == 1)
-
-        currentDate = currentDate.addingTimeInterval(301)
-        await viewModel.activate()
-        #expect(fetchCount == 2)
-
         await viewModel.refresh()
-        #expect(fetchCount == 3)
 
-        viewModel.markStale()
-        await viewModel.activate()
-        #expect(fetchCount == 4)
+        #expect(loadCount == 2)
+        #expect(viewModel.snapshot == expected)
+        #expect(viewModel.isInitialLoading == false)
     }
 
     @Test @MainActor func favoriteMutationsUpdateTheVisibleSnapshotIncrementally() {
-        let viewModel = FavoritesViewModel(fetcher: { .empty })
+        let viewModel = FavoritesViewModel(snapshotProvider: { .empty })
         let track = Track(
             id: "track",
             name: "Track",
@@ -1229,26 +1218,6 @@ struct AureliaTests {
         viewModel.apply(.artist(artist, isFavorite: false))
 
         #expect(viewModel.isEmpty)
-    }
-
-    @Test @MainActor func failedFavoritesRevalidationKeepsExistingContent() async {
-        var shouldFail = false
-        let expected = Self.favoriteSnapshot(id: "kept")
-        let viewModel = FavoritesViewModel(fetcher: {
-            if shouldFail {
-                throw FavoritesTestError.failed
-            }
-            return expected
-        })
-
-        await viewModel.activate()
-        shouldFail = true
-        viewModel.markStale()
-        await viewModel.activate()
-
-        #expect(viewModel.snapshot == expected)
-        #expect(viewModel.initialErrorMessage == nil)
-        #expect(viewModel.revalidationErrorMessage != nil)
     }
 
     @Test @MainActor func signedBuildCanAccessKeychain() {
@@ -1937,7 +1906,6 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
     var requestedMixes: [String] = []
     var shouldFailMixes = false
     var shouldReturnEmptyMixes = false
-    var shouldFailFavorites = false
     var shouldFailRecent = true
     var serverRecentTracks: [BaseItemDto] = []
     var audioMuseAvailable = true
@@ -1951,11 +1919,6 @@ private final class FakeDiscoveryAPI: DiscoveryAPI {
         if shouldFailMixes { throw FakeError.unavailable }
         if shouldReturnEmptyMixes { return [] }
         return [audio(id: "mix-\(itemId)", artist: "Mix \(itemId)")]
-    }
-
-    func fetchFavoriteTracks(limit: Int) async throws -> [BaseItemDto] {
-        if shouldFailFavorites { throw FakeError.unavailable }
-        return [audio(id: "favorite-c", artist: "Artist C")]
     }
 
     func fetchRecentlyPlayedTracks(limit: Int) async throws -> [BaseItemDto] {
