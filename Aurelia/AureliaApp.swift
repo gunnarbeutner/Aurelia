@@ -10,8 +10,23 @@ import AVFoundation
 import UserNotifications
 import UIKit
 
+/// Exists for one callback: when a background download finishes while the app
+/// is not running, the system relaunches it and expects to be told when the
+/// session's delegate has caught up. Without this the downloads still land, but
+/// iOS never learns the app is done and grows reluctant to wake it again.
+final class AureliaAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        DownloadManager.shared.backgroundCompletionHandler = completionHandler
+    }
+}
+
 @main
 struct AureliaApp: App {
+    @UIApplicationDelegateAdaptor(AureliaAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 
     #if DEBUG
@@ -54,6 +69,12 @@ struct AureliaApp: App {
         NetworkMonitor.shared.start()
         OfflineAvailability.shared.start()
         KeyboardObserver.shared.start()
+
+        // The download queue holds rule-driven work back on a metered
+        // connection, so it needs the reachability signal before it starts
+        // draining whatever the last session left behind.
+        DownloadManager.shared.start()
+        FavoritesOfflineSync.shared.start()
     }
 
     #if DEBUG
@@ -116,6 +137,9 @@ struct AureliaApp: App {
                 // The path handler stays silent about changes that happened
                 // while the app was suspended, so re-probe on the way back in.
                 NetworkMonitor.shared.refresh()
+                // Likes made on another device land through a sync the app was
+                // not awake to observe.
+                FavoritesOfflineSync.shared.refresh()
             }
 
         case .inactive:

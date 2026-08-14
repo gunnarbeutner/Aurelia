@@ -9,6 +9,7 @@ import SwiftUI
 
 private enum SettingsDestination: Hashable {
     case downloads
+    case favoritesOffline
 }
 
 enum StreamingQuality: String, CaseIterable, Identifiable {
@@ -62,6 +63,7 @@ struct SettingsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject private var playerManager = PlayerManager.shared
     @ObservedObject private var libraryStore = LibraryStore.shared
+    @ObservedObject private var favoritesOffline = FavoritesOfflineSync.shared
     @State private var showSignOutConfirmation = false
     @State private var showRebuildConfirmation = false
     @State private var showLibrarySyncError = false
@@ -123,6 +125,8 @@ struct SettingsView: View {
             switch destination {
             case .downloads:
                 DownloadsView()
+            case .favoritesOffline:
+                FavoritesOfflineView()
             }
         }
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
@@ -399,6 +403,34 @@ struct SettingsView: View {
                 .settingsCard()
             }
             .buttonStyle(.plain)
+
+            NavigationLink(value: SettingsDestination.favoritesOffline) {
+                HStack(spacing: 14) {
+                    Image(systemName: "heart.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.appAccent)
+                        .frame(width: 34)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Favorites Offline")
+                            .font(.appBody)
+                            .foregroundColor(.appText)
+                        Text(favoritesOfflineSummary)
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.appTextMuted)
+                }
+                .settingsCard()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings-favorites-offline")
         }
     }
 
@@ -406,6 +438,25 @@ struct SettingsView: View {
         let tracks = downloadManager.downloadedTracks.count
         let storage = downloadManager.formatBytes(downloadManager.totalStorageUsed)
         return "\(tracks) \(tracks == 1 ? "track" : "tracks") · \(storage)"
+    }
+
+    private var favoritesOfflineSummary: String {
+        switch favoritesOffline.status {
+        case .off:
+            return "Off"
+        case .unavailable:
+            return "On · library unavailable"
+        case .upToDate(let count):
+            return count == 0 ? "On · nothing liked yet" : "On · \(count) tracks · up to date"
+        case .syncing(let completed, let total):
+            return "On · downloading \(completed) of \(total)"
+        case .waitingForWiFi(let remaining):
+            return "On · waiting for Wi-Fi · \(remaining) left"
+        case .paused(let completed, let total):
+            return "On · paused at \(completed) of \(total)"
+        case .failed(_, _, let failures):
+            return "On · \(failures) failed"
+        }
     }
 
     // MARK: - Header Section
@@ -800,7 +851,7 @@ struct SettingsView: View {
 
 // MARK: - Preview
 
-private extension View {
+extension View {
     /// The card treatment every Settings section shares. Defined once so the
     /// sections cannot drift apart in padding, fill or outline.
     func settingsCard() -> some View {

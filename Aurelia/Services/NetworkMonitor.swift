@@ -26,6 +26,15 @@ final class NetworkMonitor: ObservableObject {
     /// cold launch never flashes the whole library as unavailable.
     @Published private(set) var isOffline = false
 
+    /// True on a connection the system considers metered — cellular, or a
+    /// personal hotspot. Bulk downloading waits for something cheaper unless
+    /// the user has said otherwise.
+    @Published private(set) var isExpensive = false
+
+    /// True in Low Data Mode, where the user has asked for background traffic
+    /// to stay out of the way.
+    @Published private(set) var isConstrained = false
+
     /// Called when an interface comes back, so a listener sitting in a
     /// reconnect backoff can retry immediately instead of waiting it out.
     var onPathRestored: (() -> Void)?
@@ -57,7 +66,10 @@ final class NetworkMonitor: ObservableObject {
         isStarted = true
         pathMonitor?.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == .satisfied
+            let expensive = path.isExpensive
+            let constrained = path.isConstrained
             Task { @MainActor in
+                self?.costDidChange(expensive: expensive, constrained: constrained)
                 self?.pathDidChange(satisfied: satisfied)
             }
         }
@@ -114,6 +126,13 @@ final class NetworkMonitor: ObservableObject {
         guard !Task.isCancelled else { return }
         serverReachable = reachable
         recompute()
+    }
+
+    /// Cost is independent of reachability: a metered path is still a working
+    /// path, so this never feeds into `isOffline`.
+    private func costDidChange(expensive: Bool, constrained: Bool) {
+        if expensive != isExpensive { isExpensive = expensive }
+        if constrained != isConstrained { isConstrained = constrained }
     }
 
     private func pathDidChange(satisfied: Bool) {

@@ -10,6 +10,7 @@ import SwiftUI
 struct DownloadsView: View {
     @ObservedObject var downloadManager = DownloadManager.shared
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject private var favoritesOffline = FavoritesOfflineSync.shared
     @State private var showDeleteAllConfirmation = false
 
     var body: some View {
@@ -46,8 +47,16 @@ struct DownloadsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to delete all \(downloadManager.downloadedTracks.count) tracks from \(downloadManager.downloadedAlbumCount) albums? This will free up \(downloadManager.formatBytes(downloadManager.totalStorageUsed)).")
+            Text(deleteAllMessage)
         }
+    }
+
+    private var deleteAllMessage: String {
+        let base = "Are you sure you want to delete all \(downloadManager.downloadedTracks.count) tracks from \(downloadManager.downloadedAlbumCount) albums? This will free up \(downloadManager.formatBytes(downloadManager.totalStorageUsed))."
+        guard favoritesOffline.isEnabled else { return base }
+        // Deleting a file the rule wants only schedules it again. Better to say
+        // so than to let the storage figure creep back up on its own.
+        return base + "\n\nFavorites Offline is on, so your liked music will download again. Turn it off first to keep the space."
     }
 
     // MARK: - Empty State
@@ -358,6 +367,12 @@ struct DownloadedAlbumContextMenu: View {
         album.tracks.map { $0.toTrack() }
     }
 
+    /// The favorites rule would fetch this straight back, so the menu says so
+    /// instead of offering a delete that undoes itself.
+    private var isManagedByRule: Bool {
+        album.tracks.allSatisfy { $0.owners.contains(.favoritesRule) }
+    }
+
     var body: some View {
         Group {
             Button {
@@ -396,10 +411,17 @@ struct DownloadedAlbumContextMenu: View {
 
             Divider()
 
-            Button(role: .destructive) {
-                downloadManager.deleteDownloads(for: album)
-            } label: {
-                Label("Delete Download", systemImage: "trash")
+            if isManagedByRule {
+                Button {} label: {
+                    Label("Kept by Favorites Offline", systemImage: "heart.circle")
+                }
+                .disabled(true)
+            } else {
+                Button(role: .destructive) {
+                    downloadManager.deleteDownloads(for: album)
+                } label: {
+                    Label("Delete Download", systemImage: "trash")
+                }
             }
         }
         .tint(nil)
@@ -560,7 +582,38 @@ struct DownloadedAlbumDetailView: View {
         }
     }
 
+    /// Matches the context menu: a rule-owned album cannot be deleted from here
+    /// because it would simply download again.
+    private var isManagedByRule: Bool {
+        album.tracks.allSatisfy { $0.owners.contains(.favoritesRule) }
+    }
+
+    @ViewBuilder
     private var deleteAlbumButton: some View {
+        if isManagedByRule {
+            HStack {
+                Image(systemName: "heart.circle")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Kept by Favorites Offline")
+                        .font(.appHeadline)
+                    Text("Unlike it, or turn the rule off in Settings, to remove it.")
+                        .font(.appCaption)
+                        .foregroundColor(.appTextSecondary)
+                }
+                Spacer()
+            }
+            .foregroundColor(.appTextSecondary)
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.appControlFill)
+            )
+        } else {
+            deleteAlbumControl
+        }
+    }
+
+    private var deleteAlbumControl: some View {
         Button {
             showDeleteAlbumConfirmation = true
         } label: {

@@ -182,7 +182,15 @@ struct TrackContextMenu: View {
                 }
             }
 
-            if downloadManager.isDownloaded(trackId: track.id) {
+            if downloadManager.isManagedByRule(trackId: track.id) {
+                // Deleting this by hand would achieve nothing: the favorites
+                // rule wants it and would fetch it straight back. Saying so
+                // beats letting the row reappear on its own.
+                Button {} label: {
+                    Label("Kept by Favorites Offline", systemImage: "heart.circle")
+                }
+                .disabled(true)
+            } else if downloadManager.isDownloaded(trackId: track.id) {
                 Button(role: .destructive) {
                     downloadManager.deleteDownload(trackId: track.id)
                 } label: {

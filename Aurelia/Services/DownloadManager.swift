@@ -25,10 +25,17 @@ enum DownloadState: Equatable {
         }
         return false
     }
+
+    var isDownloading: Bool {
+        if case .downloading = self {
+            return true
+        }
+        return false
+    }
 }
 
 /// Metadata for a downloaded track
-struct DownloadedTrack: Codable {
+nonisolated struct DownloadedTrack: Codable, Sendable, Equatable {
     let trackId: String
     let fileName: String
     let fileSize: Int64
@@ -45,6 +52,67 @@ struct DownloadedTrack: Codable {
     let artistId: String?
     let productionYear: Int?
     let artworkURL: String? // For caching album artwork
+
+    /// Who is holding onto this file. The file is deleted when the last owner
+    /// lets go, so a hand-picked download survives the favorites rule losing
+    /// interest in it, and vice versa.
+    var owners: Set<DownloadOrigin>
+
+    init(
+        trackId: String,
+        fileName: String,
+        fileSize: Int64,
+        downloadDate: Date,
+        trackName: String,
+        artistName: String,
+        albumName: String,
+        duration: TimeInterval?,
+        albumId: String,
+        trackNumber: Int?,
+        discNumber: Int?,
+        artistId: String?,
+        productionYear: Int?,
+        artworkURL: String?,
+        owners: Set<DownloadOrigin> = [.manual]
+    ) {
+        self.trackId = trackId
+        self.fileName = fileName
+        self.fileSize = fileSize
+        self.downloadDate = downloadDate
+        self.trackName = trackName
+        self.artistName = artistName
+        self.albumName = albumName
+        self.duration = duration
+        self.albumId = albumId
+        self.trackNumber = trackNumber
+        self.discNumber = discNumber
+        self.artistId = artistId
+        self.productionYear = productionYear
+        self.artworkURL = artworkURL
+        self.owners = owners
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        trackId = try container.decode(String.self, forKey: .trackId)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        fileSize = try container.decode(Int64.self, forKey: .fileSize)
+        downloadDate = try container.decode(Date.self, forKey: .downloadDate)
+        trackName = try container.decode(String.self, forKey: .trackName)
+        artistName = try container.decode(String.self, forKey: .artistName)
+        albumName = try container.decode(String.self, forKey: .albumName)
+        duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration)
+        albumId = try container.decode(String.self, forKey: .albumId)
+        trackNumber = try container.decodeIfPresent(Int.self, forKey: .trackNumber)
+        discNumber = try container.decodeIfPresent(Int.self, forKey: .discNumber)
+        artistId = try container.decodeIfPresent(String.self, forKey: .artistId)
+        productionYear = try container.decodeIfPresent(Int.self, forKey: .productionYear)
+        artworkURL = try container.decodeIfPresent(String.self, forKey: .artworkURL)
+        // Records written before downloads had owners predate the favorites
+        // rule, so everything they describe was put on the device by hand.
+        // Decoding them as unowned would let the first reconcile delete them.
+        owners = try container.decodeIfPresent(Set<DownloadOrigin>.self, forKey: .owners) ?? [.manual]
+    }
 
     /// Convert to Track for playback
     func toTrack() -> Track {
@@ -119,17 +187,47 @@ struct DownloadedAlbum: Identifiable {
     }
 }
 
-/// Manages downloading and storing music files for offline playback
+/// Why a track is not downloaded and is not going to be without help.
+struct DownloadFailure: Equatable {
+    let message: String
+    let isPermanent: Bool
+}
+
+/// Manages downloading and storing music files for offline playback.
+///
+/// All mutable state is owned by the main thread. `URLSession` delegate
+/// callbacks arrive on the session's own queue, so each one does only the work
+/// that has to happen there — moving the finished file off the temporary
+/// location — and hands the bookkeeping to main.
 class DownloadManager: NSObject, ObservableObject {
     static let shared = DownloadManager()
 
     private let logger = Logger(subsystem: "de.beutner.Aurelia", category: "DownloadManager")
+
+    /// How many files may be in flight at once. A favorites sync can ask for
+    /// thousands; handing all of them to URLSession at once buys nothing and
+    /// makes progress reporting a firehose.
+    private let maxConcurrentDownloads = 4
+
+    /// Give up after this many tries and park the track in `failedDownloads`,
+    /// where the UI can offer a retry.
+    private let maxAttempts = 3
 
     // MARK: - Published Properties
     @Published var downloadStates: [String: DownloadState] = [:] // trackId -> state
     @Published var downloadedTracks: [DownloadedTrack] = []
     @Published var totalStorageUsed: Int64 = 0
     @Published var activeDownloads: Int = 0 // Number of currently downloading tracks
+    @Published private(set) var queuedDownloads: Int = 0 // Waiting for a slot
+    @Published private(set) var isPaused = false
+    @Published private(set) var failedDownloads: [String: DownloadFailure] = [:]
+    /// True when work is queued but held back because the only connection is a
+    /// metered one the favorites rule is not allowed to use.
+    @Published private(set) var isWaitingForWiFi = false
+
+    /// Set by the app delegate when the system wakes the app to report that a
+    /// background session finished while it was not running.
+    var backgroundCompletionHandler: (() -> Void)?
 
     // MARK: - Computed Properties for Organization
 
@@ -217,6 +315,8 @@ class DownloadManager: NSObject, ObservableObject {
 
     // MARK: - Private Properties
     private let fileManager = FileManager.default
+    private let store: DownloadStore
+    private let defaults: UserDefaults
     private var downloadTasks: [String: URLSessionDownloadTask] = [:] // trackId -> task
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: "de.beutner.Aurelia.downloads")
@@ -227,15 +327,48 @@ class DownloadManager: NSObject, ObservableObject {
 
     private let jellyfinService = JellyfinService.shared
 
-    // Storage keys
-    private let downloadedTracksKey = "downloadedTracks"
+    /// Metadata for everything that has been asked for but has not produced a
+    /// file yet — queued, in flight, or parked after a failure.
+    private var pending: [String: PendingDownload] = [:]
+    /// Track IDs waiting for a slot, oldest first.
+    private var waiting: [String] = []
+    /// Track IDs handed to URLSession right now.
+    private var inFlight: Set<String> = []
+    /// Retry timers, so a cancelled download does not come back to life.
+    private var retryWorkItems: [String: DispatchWorkItem] = [:]
+
+    // Track which albums are being downloaded to send completion notifications
+    private var downloadingAlbums: [String: Set<String>] = [:] // albumId -> Set of trackIds
+
+    /// Progress arrives per chunk per task. Publishing each one would invalidate
+    /// every download row in the UI thousands of times a second, so updates are
+    /// buffered here and flushed on a timer.
+    private let progressLock = NSLock()
+    private var bufferedProgress: [String: Double] = [:]
+    private var progressFlushScheduled = false
+    private let progressFlushInterval: TimeInterval = 0.2
+
+    private var cancellables: Set<AnyCancellable> = []
 
     // MARK: - Initialization
 
-    override init() {
+    init(store: DownloadStore = .shared, defaults: UserDefaults = .standard) {
+        self.store = store
+        self.defaults = defaults
         super.init()
         loadDownloadedTracks()
-        calculateStorageUsed()
+        restoreInFlightTasks()
+    }
+
+    /// Starts listening for the signals that unblock a held queue. Called once
+    /// at launch, after `NetworkMonitor` is running.
+    func start() {
+        NetworkMonitor.shared.$isExpensive
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.pumpQueue()
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Download Directory
@@ -266,47 +399,11 @@ class DownloadManager: NSObject, ObservableObject {
         return artworkPath
     }
 
-    // Store track metadata temporarily for downloads in progress
-    private var pendingDownloads: [String: Track] = [:] // trackId -> Track
-
-    // Track which albums are being downloaded to send completion notifications
-    private var downloadingAlbums: [String: Set<String>] = [:] // albumId -> Set of trackIds
-
     // MARK: - Download Operations
 
     /// Download a single track
-    func downloadTrack(_ track: Track) {
-        guard downloadStates[track.id] != .downloaded else {
-            logger.info("Track already downloaded: \(track.name)")
-            return
-        }
-
-        guard downloadStates[track.id] != .downloading(progress: 0) else {
-            logger.info("Track already downloading: \(track.name)")
-            return
-        }
-
-        // Get download URL from Jellyfin (direct file, not transcoded)
-        guard let downloadURL = jellyfinService.getDownloadURL(for: track.id) else {
-            logger.error("Failed to get download URL for track: \(track.name)")
-            downloadStates[track.id] = .failed(error: "Could not get download URL")
-            return
-        }
-
-        logger.info("Starting download: \(track.name)")
-
-        DispatchQueue.main.async {
-            self.downloadStates[track.id] = .downloading(progress: 0)
-            self.activeDownloads += 1
-        }
-
-        // Store track metadata for when download completes
-        pendingDownloads[track.id] = track
-
-        let task = urlSession.downloadTask(with: downloadURL)
-        task.taskDescription = track.id // Store track ID in task for later reference
-        downloadTasks[track.id] = task
-        task.resume()
+    func downloadTrack(_ track: Track, origin: DownloadOrigin = .manual) {
+        enqueue([track], origin: origin)
     }
 
     /// Download all tracks in an album
@@ -324,26 +421,154 @@ class DownloadManager: NSObject, ObservableObject {
             }
         }
 
-        // Download all tracks
+        enqueue(tracks, origin: .manual)
+    }
+
+    /// Adds tracks to the download queue on behalf of `origin`.
+    ///
+    /// Safe to call repeatedly with the same tracks: anything already
+    /// downloaded, queued, or in flight only picks up the new owner.
+    func enqueue(_ tracks: [Track], origin: DownloadOrigin) {
+        guard !tracks.isEmpty else { return }
+
+        // A rule-driven batch spans many albums, and each one needs its cover
+        // for the Downloads screen to have anything to show offline.
+        if origin == .favoritesRule {
+            var seenAlbums: Set<String> = []
+            let artwork: [(String, String?)] = tracks.compactMap { track in
+                guard let albumId = track.albumId, seenAlbums.insert(albumId).inserted else { return nil }
+                return (albumId, track.artworkURL)
+            }
+            Task { [weak self] in
+                for (albumId, url) in artwork {
+                    await self?.cacheArtwork(for: albumId, from: url)
+                }
+            }
+        }
+
+        var added = false
         for track in tracks {
-            downloadTrack(track)
+            guard track.albumId != nil else {
+                logger.error("Cannot download track without albumId: \(track.name)")
+                continue
+            }
+
+            if let index = downloadedTracks.firstIndex(where: { $0.trackId == track.id }) {
+                // Already on disk. Record the new claim and move on.
+                if downloadedTracks[index].owners.insert(origin).inserted {
+                    store.upsert(downloadedTracks[index])
+                }
+                continue
+            }
+
+            if var existing = pending[track.id] {
+                var changed = existing.owners.insert(origin).inserted
+
+                // A parked failure that someone asks for again is worth another
+                // try — the request says the situation changed.
+                if failedDownloads.removeValue(forKey: track.id) != nil {
+                    existing.attempts = 0
+                    changed = true
+                    appendToQueue(track.id, priority: origin == .manual)
+                    added = true
+                }
+
+                if changed {
+                    pending[track.id] = existing
+                    store.upsertPending(existing)
+                }
+                continue
+            }
+
+            let record = PendingDownload(track: track, owners: [origin])
+            pending[track.id] = record
+            store.upsertPending(record)
+            downloadStates[track.id] = .downloading(progress: 0)
+            appendToQueue(track.id, priority: origin == .manual)
+            added = true
+        }
+
+        if added {
+            pumpQueue()
         }
     }
 
-    /// Delete a downloaded track
-    func deleteDownload(trackId: String) {
-        // Cancel active download if any
-        if let task = downloadTasks[trackId] {
-            task.cancel()
-            downloadTasks.removeValue(forKey: trackId)
+    /// Records that `origin` also wants a track that is already on disk.
+    func adopt(trackID: String, by origin: DownloadOrigin) {
+        if let index = downloadedTracks.firstIndex(where: { $0.trackId == trackID }) {
+            guard downloadedTracks[index].owners.insert(origin).inserted else { return }
+            store.upsert(downloadedTracks[index])
+        } else if var record = pending[trackID] {
+            guard record.owners.insert(origin).inserted else { return }
+            pending[trackID] = record
+            store.upsertPending(record)
+        }
+    }
+
+    /// Drops `origin`'s claim on a track. The file goes only if nobody else
+    /// still wants it.
+    func relinquish(trackID: String, by origin: DownloadOrigin) {
+        if let index = downloadedTracks.firstIndex(where: { $0.trackId == trackID }) {
+            guard downloadedTracks[index].owners.contains(origin) else { return }
+            downloadedTracks[index].owners.remove(origin)
+            if downloadedTracks[index].owners.isEmpty {
+                deleteDownload(trackId: trackID)
+            } else {
+                store.upsert(downloadedTracks[index])
+            }
+            return
         }
 
-        // Clean up pending downloads
-        pendingDownloads.removeValue(forKey: trackId)
+        guard var record = pending[trackID], record.owners.contains(origin) else { return }
+        record.owners.remove(origin)
+        if record.owners.isEmpty {
+            cancelPending(trackID)
+        } else {
+            pending[trackID] = record
+            store.upsertPending(record)
+        }
+    }
+
+    /// Track IDs that `origin` has asked for and that have not produced a file
+    /// yet — queued, in flight, or parked after a failure.
+    func pendingTrackIDs(ownedBy origin: DownloadOrigin) -> [String] {
+        pending.compactMap { $0.value.owners.contains(origin) ? $0.key : nil }
+    }
+
+    /// Called when the cellular preference changes, so a queue held back for a
+    /// cheaper connection can start immediately instead of on the next event.
+    func networkPolicyDidChange() {
+        let allowsCellular = defaults.bool(forKey: FavoritesOfflineDefaults.allowsCellular)
+        if allowsCellular, NetworkMonitor.shared.isExpensive {
+            // A task created while cellular was off refuses the only interface
+            // there is and would sit there indefinitely. Rebuild those under
+            // the new policy rather than leaving the queue wedged.
+            let stalled = inFlight.filter { pending[$0]?.owners.contains(.manual) == false }
+            for trackID in stalled {
+                downloadTasks.removeValue(forKey: trackID)?.cancel()
+                inFlight.remove(trackID)
+                appendToQueue(trackID, priority: false)
+            }
+            activeDownloads = inFlight.count
+        }
+        pumpQueue()
+    }
+
+    /// True when the favorites rule is the reason this file is here and the
+    /// user has no business deleting it by hand — it would come straight back.
+    func isManagedByRule(trackId: String) -> Bool {
+        if let track = downloadedTracks.first(where: { $0.trackId == trackId }) {
+            return track.owners.contains(.favoritesRule)
+        }
+        return pending[trackId]?.owners.contains(.favoritesRule) ?? false
+    }
+
+    /// Delete a downloaded track, regardless of who was holding it.
+    func deleteDownload(trackId: String) {
+        cancelPending(trackId)
 
         // Find downloaded track metadata
         guard let downloadedTrack = downloadedTracks.first(where: { $0.trackId == trackId }) else {
-            logger.warning("No downloaded track found for ID: \(trackId)")
             downloadStates[trackId] = .notDownloaded
             return
         }
@@ -355,9 +580,8 @@ class DownloadManager: NSObject, ObservableObject {
         // Remove from metadata
         downloadedTracks.removeAll { $0.trackId == trackId }
         downloadStates[trackId] = .notDownloaded
-
-        saveDownloadedTracks()
-        calculateStorageUsed()
+        totalStorageUsed = max(0, totalStorageUsed - downloadedTrack.fileSize)
+        store.remove(trackID: trackId)
 
         logger.info("Deleted download: \(downloadedTrack.trackName)")
     }
@@ -371,9 +595,16 @@ class DownloadManager: NSObject, ObservableObject {
             task.cancel()
         }
         downloadTasks.removeAll()
+        for (_, item) in retryWorkItems {
+            item.cancel()
+        }
+        retryWorkItems.removeAll()
 
-        // Clear pending downloads
-        pendingDownloads.removeAll()
+        pending.removeAll()
+        waiting.removeAll()
+        inFlight.removeAll()
+        failedDownloads.removeAll()
+        store.removeAllPending()
 
         // Get all unique album IDs for artwork cleanup
         let albumIds = Set(downloadedTracks.map { $0.albumId })
@@ -392,9 +623,12 @@ class DownloadManager: NSObject, ObservableObject {
         // Clear metadata
         downloadedTracks.removeAll()
         downloadStates.removeAll()
+        store.removeAllDownloads()
 
-        saveDownloadedTracks()
-        calculateStorageUsed()
+        totalStorageUsed = 0
+        activeDownloads = 0
+        queuedDownloads = 0
+        isWaitingForWiFi = false
     }
 
     /// Delete every downloaded track and cached artwork belonging to an album.
@@ -403,6 +637,200 @@ class DownloadManager: NSObject, ObservableObject {
             deleteDownload(trackId: track.trackId)
         }
         deleteCachedArtwork(for: album.albumId)
+    }
+
+    /// Drops every queued and in-flight download owned only by `origin`.
+    /// Files already on disk are left alone.
+    func cancelDownloads(for origin: DownloadOrigin) {
+        for (trackID, record) in pending where record.owners.contains(origin) {
+            if record.owners.count == 1 {
+                cancelPending(trackID)
+            } else {
+                var updated = record
+                updated.owners.remove(origin)
+                pending[trackID] = updated
+                store.upsertPending(updated)
+            }
+        }
+        pumpQueue()
+    }
+
+    // MARK: - Queue Control
+
+    func pause() {
+        guard !isPaused else { return }
+        isPaused = true
+        for trackID in inFlight {
+            downloadTasks[trackID]?.suspend()
+        }
+        logger.info("Paused downloads: \(self.inFlight.count) in flight")
+    }
+
+    func resume() {
+        guard isPaused else { return }
+        isPaused = false
+        for trackID in inFlight {
+            downloadTasks[trackID]?.resume()
+        }
+        pumpQueue()
+    }
+
+    /// Puts every parked failure back in the queue.
+    func retryFailedDownloads() {
+        let failures = failedDownloads.keys
+        guard !failures.isEmpty else { return }
+
+        for trackID in failures {
+            guard var record = pending[trackID] else { continue }
+            record.attempts = 0
+            pending[trackID] = record
+            store.upsertPending(record)
+            appendToQueue(trackID, priority: false)
+        }
+        failedDownloads.removeAll()
+        pumpQueue()
+    }
+
+    // MARK: - Queue
+
+    private func appendToQueue(_ trackID: String, priority: Bool) {
+        guard !inFlight.contains(trackID), !waiting.contains(trackID) else { return }
+        if priority {
+            waiting.insert(trackID, at: 0)
+        } else {
+            waiting.append(trackID)
+        }
+        queuedDownloads = waiting.count
+    }
+
+    /// Starts as many queued downloads as the concurrency limit allows.
+    private func pumpQueue() {
+        guard !isPaused else { return }
+
+        var held = false
+        while inFlight.count < maxConcurrentDownloads {
+            guard let index = waiting.firstIndex(where: { trackID in
+                guard let record = pending[trackID] else { return false }
+                if canStart(record) { return true }
+                held = true
+                return false
+            }) else {
+                break
+            }
+
+            let trackID = waiting.remove(at: index)
+            startTask(for: trackID)
+        }
+
+        queuedDownloads = waiting.count
+        activeDownloads = inFlight.count
+        isWaitingForWiFi = held && inFlight.isEmpty
+    }
+
+    /// A rule-driven download waits for a cheaper connection unless the user
+    /// has said otherwise. A download the user asked for by hand goes now — it
+    /// is one album, and they are standing there watching it.
+    private func canStart(_ record: PendingDownload) -> Bool {
+        guard !record.owners.contains(.manual) else { return true }
+        guard NetworkMonitor.shared.isExpensive || NetworkMonitor.shared.isConstrained else { return true }
+        return defaults.bool(forKey: FavoritesOfflineDefaults.allowsCellular)
+    }
+
+    private func startTask(for trackID: String) {
+        guard let record = pending[trackID] else { return }
+
+        guard let downloadURL = jellyfinService.getDownloadURL(for: trackID) else {
+            logger.error("Failed to get download URL for track: \(record.track.name)")
+            fail(trackID, message: "Could not get download URL", permanent: true)
+            return
+        }
+
+        var request = URLRequest(url: downloadURL)
+        // The background session is created once and its configuration cannot
+        // change afterwards, so the network policy rides on the request.
+        if !record.owners.contains(.manual) {
+            let allowsCellular = defaults.bool(forKey: FavoritesOfflineDefaults.allowsCellular)
+            request.allowsCellularAccess = allowsCellular
+            request.allowsExpensiveNetworkAccess = allowsCellular
+            request.allowsConstrainedNetworkAccess = false
+        }
+
+        logger.info("Starting download: \(record.track.name)")
+
+        let task = urlSession.downloadTask(with: request)
+        task.taskDescription = trackID // Store track ID in task for later reference
+        downloadTasks[trackID] = task
+        inFlight.insert(trackID)
+        downloadStates[trackID] = .downloading(progress: 0)
+        activeDownloads = inFlight.count
+        task.resume()
+    }
+
+    /// Removes a track from the queue entirely, cancelling any work in flight.
+    private func cancelPending(_ trackID: String) {
+        retryWorkItems.removeValue(forKey: trackID)?.cancel()
+        if let task = downloadTasks.removeValue(forKey: trackID) {
+            task.cancel()
+        }
+        inFlight.remove(trackID)
+        waiting.removeAll { $0 == trackID }
+        pending.removeValue(forKey: trackID)
+        failedDownloads.removeValue(forKey: trackID)
+        store.removePending(trackID: trackID)
+
+        if downloadStates[trackID]?.isDownloaded != true {
+            downloadStates[trackID] = .notDownloaded
+        }
+
+        activeDownloads = inFlight.count
+        queuedDownloads = waiting.count
+    }
+
+    private func fail(_ trackID: String, message: String, permanent: Bool) {
+        inFlight.remove(trackID)
+        downloadTasks.removeValue(forKey: trackID)
+        activeDownloads = inFlight.count
+
+        guard var record = pending[trackID] else {
+            downloadStates[trackID] = .failed(error: message)
+            pumpQueue()
+            return
+        }
+
+        record.attempts += 1
+        pending[trackID] = record
+        store.upsertPending(record)
+
+        if permanent || record.attempts >= maxAttempts {
+            downloadStates[trackID] = .failed(error: message)
+            failedDownloads[trackID] = DownloadFailure(message: message, isPermanent: permanent)
+            logger.error("Giving up on \(record.track.name) after \(record.attempts) attempts: \(message)")
+
+            NotificationCenter.default.post(
+                name: NSNotification.Name("TrackDownloadFailed"),
+                object: nil,
+                userInfo: ["trackId": trackID, "error": message]
+            )
+            pumpQueue()
+            return
+        }
+
+        // Back off, then try again. A batch on a flaky connection produces a
+        // steady trickle of these and retrying immediately just burns them.
+        let delay = pow(2.0, Double(record.attempts)) * 5.0
+        logger.info("Retrying \(record.track.name) in \(Int(delay))s (attempt \(record.attempts))")
+
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.retryWorkItems.removeValue(forKey: trackID)
+            guard self.pending[trackID] != nil else { return }
+            self.appendToQueue(trackID, priority: false)
+            self.pumpQueue()
+        }
+        retryWorkItems[trackID] = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+
+        pumpQueue()
     }
 
     // MARK: - Playback Support
@@ -421,7 +849,8 @@ class DownloadManager: NSObject, ObservableObject {
             // Clean up metadata
             downloadedTracks.removeAll { $0.trackId == trackId }
             downloadStates[trackId] = .notDownloaded
-            saveDownloadedTracks()
+            totalStorageUsed = max(0, totalStorageUsed - downloadedTrack.fileSize)
+            store.remove(trackID: trackId)
             return nil
         }
 
@@ -456,43 +885,57 @@ class DownloadManager: NSObject, ObservableObject {
             )
             downloadedTracks = [fixture]
             downloadStates[fixture.trackId] = .downloaded
+            totalStorageUsed = fixture.fileSize
             return
         }
         #endif
 
-        guard let data = UserDefaults.standard.data(forKey: downloadedTracksKey),
-              let tracks = try? JSONDecoder().decode([DownloadedTrack].self, from: data) else {
-            return
-        }
-
-        downloadedTracks = tracks
-
-        // Set download states
-        for track in tracks {
+        downloadedTracks = store.loadDownloads()
+        for track in downloadedTracks {
             downloadStates[track.trackId] = .downloaded
         }
+        totalStorageUsed = downloadedTracks.reduce(0) { $0 + $1.fileSize }
 
-        logger.info("Loaded \(tracks.count) downloaded tracks")
-    }
-
-    private func saveDownloadedTracks() {
-        guard let data = try? JSONEncoder().encode(downloadedTracks) else {
-            logger.error("Failed to encode downloaded tracks")
-            return
+        for record in store.loadPending() {
+            pending[record.track.id] = record
+            downloadStates[record.track.id] = .downloading(progress: 0)
         }
 
-        UserDefaults.standard.set(data, forKey: downloadedTracksKey)
+        logger.info("Loaded \(self.downloadedTracks.count) downloads, \(self.pending.count) pending")
     }
 
-    private func calculateStorageUsed() {
-        var total: Int64 = 0
+    /// Reattaches to whatever the background session was still doing while the
+    /// app was not running, then starts anything left over.
+    ///
+    /// Without this a relaunch would re-request tracks that are already
+    /// downloading, and the duplicates would fight over the same destination.
+    private func restoreInFlightTasks() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-downloads") { return }
+        #endif
+        guard !pending.isEmpty else { return }
 
-        for downloadedTrack in downloadedTracks {
-            total += downloadedTrack.fileSize
-        }
+        urlSession.getAllTasks { [weak self] tasks in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for task in tasks {
+                    guard let downloadTask = task as? URLSessionDownloadTask,
+                          let trackID = task.taskDescription,
+                          self.pending[trackID] != nil else {
+                        continue
+                    }
+                    self.downloadTasks[trackID] = downloadTask
+                    self.inFlight.insert(trackID)
+                }
 
-        DispatchQueue.main.async {
-            self.totalStorageUsed = total
+                for trackID in self.pending.keys where !self.inFlight.contains(trackID) {
+                    self.appendToQueue(trackID, priority: false)
+                }
+
+                self.activeDownloads = self.inFlight.count
+                self.logger.info("Reattached to \(self.inFlight.count) background downloads")
+                self.pumpQueue()
+            }
         }
     }
 
@@ -502,6 +945,20 @@ class DownloadManager: NSObject, ObservableObject {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+
+    /// Average bytes per second of audio across what is already downloaded.
+    ///
+    /// Jellyfin's item metadata carries a duration but no file size, so the
+    /// only honest way to predict how much room a batch needs is to measure
+    /// what this library's files have actually cost so far.
+    var observedBytesPerSecond: Double {
+        let samples = downloadedTracks.filter { ($0.duration ?? 0) > 0 }
+        guard !samples.isEmpty else { return 40_000 } // ~320 kbps, until we know better
+        let bytes = samples.reduce(0.0) { $0 + Double($1.fileSize) }
+        let seconds = samples.reduce(0.0) { $0 + ($1.duration ?? 0) }
+        guard seconds > 0 else { return 40_000 }
+        return bytes / seconds
     }
 
     // MARK: - Artwork Caching
@@ -518,7 +975,6 @@ class DownloadManager: NSObject, ObservableObject {
 
         // Skip if already cached
         if fileManager.fileExists(atPath: artworkPath.path) {
-            logger.info("Artwork already cached for album: \(albumId)")
             return
         }
 
@@ -532,7 +988,6 @@ class DownloadManager: NSObject, ObservableObject {
             }
 
             try data.write(to: artworkPath)
-            logger.info("✅ Cached artwork for album: \(albumId) (\(self.formatBytes(Int64(data.count))))")
         } catch {
             logger.error("Failed to cache artwork for album \(albumId): \(error.localizedDescription)")
         }
@@ -556,7 +1011,6 @@ class DownloadManager: NSObject, ObservableObject {
         let artworkPath = artworkCacheDirectory.appendingPathComponent(artworkFileName)
 
         try? fileManager.removeItem(at: artworkPath)
-        logger.info("Deleted cached artwork for album: \(albumId)")
     }
 
     // MARK: - Album Completion Tracking
@@ -577,10 +1031,8 @@ class DownloadManager: NSObject, ObservableObject {
             // Get album info from downloaded tracks
             if let albumTracks = downloadedTracks.filter({ $0.albumId == albumId }).first {
                 // Haptic feedback for completion
-                DispatchQueue.main.async {
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.success)
-                }
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
 
                 sendAlbumCompleteNotification(
                     albumName: albumTracks.albumName,
@@ -611,9 +1063,112 @@ class DownloadManager: NSObject, ObservableObject {
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 self.logger.error("Failed to send notification: \(error.localizedDescription)")
-            } else {
-                self.logger.info("✅ Sent album completion notification: \(albumName)")
             }
+        }
+    }
+
+    // MARK: - Completion
+
+    /// Main-thread half of a finished download: the file is already in place,
+    /// this records it.
+    private func finalize(trackID: String, fileName: String, fileSize: Int64) {
+        guard let record = pending[trackID] else {
+            // Nothing claims these bytes any more — the download was cancelled
+            // or deleted while it was in flight.
+            logger.warning("Discarding unclaimed download: \(trackID)")
+            try? fileManager.removeItem(at: downloadsDirectory.appendingPathComponent(fileName))
+            inFlight.remove(trackID)
+            downloadTasks.removeValue(forKey: trackID)
+            activeDownloads = inFlight.count
+            pumpQueue()
+            return
+        }
+
+        let track = record.track
+        guard let albumId = track.albumId else {
+            logger.error("Cannot store download without albumId: \(track.name)")
+            cancelPending(trackID)
+            pumpQueue()
+            return
+        }
+
+        let downloadedTrack = DownloadedTrack(
+            trackId: trackID,
+            fileName: fileName,
+            fileSize: fileSize,
+            downloadDate: Date(),
+            trackName: track.name,
+            artistName: track.artistName,
+            albumName: track.albumName,
+            duration: track.duration,
+            albumId: albumId,
+            trackNumber: track.indexNumber,
+            discNumber: track.parentIndexNumber,
+            artistId: track.artistId,
+            productionYear: track.productionYear,
+            artworkURL: track.artworkURL,
+            owners: record.owners
+        )
+
+        pending.removeValue(forKey: trackID)
+        store.removePending(trackID: trackID)
+        retryWorkItems.removeValue(forKey: trackID)?.cancel()
+        failedDownloads.removeValue(forKey: trackID)
+        inFlight.remove(trackID)
+        downloadTasks.removeValue(forKey: trackID)
+
+        if let index = downloadedTracks.firstIndex(where: { $0.trackId == trackID }) {
+            totalStorageUsed -= downloadedTracks[index].fileSize
+            downloadedTracks[index] = downloadedTrack
+        } else {
+            downloadedTracks.append(downloadedTrack)
+        }
+        totalStorageUsed += fileSize
+        downloadStates[trackID] = .downloaded
+        activeDownloads = inFlight.count
+        store.upsert(downloadedTrack)
+
+        NotificationCenter.default.post(
+            name: NSNotification.Name("TrackDownloadCompleted"),
+            object: nil,
+            userInfo: ["trackName": downloadedTrack.trackName, "albumName": downloadedTrack.albumName]
+        )
+
+        // Only hand-picked album downloads announce themselves. A favorites
+        // sync touches hundreds of albums and would bury the user in alerts;
+        // it posts a single summary of its own when the whole set lands.
+        checkAlbumCompletion(trackId: trackID, albumId: albumId)
+
+        pumpQueue()
+    }
+
+    // MARK: - Progress buffering
+
+    private func bufferProgress(_ progress: Double, for trackID: String) {
+        progressLock.lock()
+        bufferedProgress[trackID] = progress
+        let needsFlush = !progressFlushScheduled
+        if needsFlush {
+            progressFlushScheduled = true
+        }
+        progressLock.unlock()
+
+        guard needsFlush else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + progressFlushInterval) { [weak self] in
+            self?.flushProgress()
+        }
+    }
+
+    private func flushProgress() {
+        progressLock.lock()
+        let batch = bufferedProgress
+        bufferedProgress.removeAll(keepingCapacity: true)
+        progressFlushScheduled = false
+        progressLock.unlock()
+
+        guard !batch.isEmpty else { return }
+        for (trackID, progress) in batch where downloadStates[trackID]?.isDownloaded != true {
+            downloadStates[trackID] = .downloading(progress: progress)
         }
     }
 }
@@ -627,117 +1182,58 @@ extension DownloadManager: URLSessionDownloadDelegate {
             return
         }
 
-        logger.info("Download completed for track: \(trackId)")
-
-        // Get file extension from response or default to mp3
+        // The temporary file is gone the moment this method returns, so the
+        // move has to happen here rather than on the main thread. It touches
+        // no shared state, only the filesystem.
         let fileExtension = downloadTask.response?.suggestedFilename?.split(separator: ".").last.map(String.init) ?? "mp3"
         let fileName = "\(trackId).\(fileExtension)"
         let destinationURL = downloadsDirectory.appendingPathComponent(fileName)
 
         do {
-            // Remove existing file if present
             if fileManager.fileExists(atPath: destinationURL.path) {
                 try fileManager.removeItem(at: destinationURL)
             }
-
-            // Move downloaded file to permanent location
             try fileManager.moveItem(at: location, to: destinationURL)
 
-            // Get file size
             let attributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
 
-            // Get track metadata from pending downloads
-            guard let track = pendingDownloads[trackId] else {
-                logger.error("❌ No track metadata found for download: \(trackId)")
-                return
-            }
-
-            guard let albumId = track.albumId else {
-                logger.error("❌ Cannot download track without albumId: \(track.name)")
-                return
-            }
-
-            let downloadedTrack = DownloadedTrack(
-                trackId: trackId,
-                fileName: fileName,
-                fileSize: fileSize,
-                downloadDate: Date(),
-                trackName: track.name,
-                artistName: track.artistName,
-                albumName: track.albumName,
-                duration: track.duration,
-                albumId: albumId,
-                trackNumber: track.indexNumber,
-                discNumber: track.parentIndexNumber,
-                artistId: track.artistId,
-                productionYear: track.productionYear,
-                artworkURL: track.artworkURL
-            )
-
-            // Clean up pending downloads
-            pendingDownloads.removeValue(forKey: trackId)
-
             DispatchQueue.main.async {
-                self.downloadedTracks.append(downloadedTrack)
-                self.downloadStates[trackId] = .downloaded
-                self.downloadTasks.removeValue(forKey: trackId)
-                self.activeDownloads = max(0, self.activeDownloads - 1)
-                self.saveDownloadedTracks()
-                self.calculateStorageUsed()
-
-                // Post notification for download completion
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("TrackDownloadCompleted"),
-                    object: nil,
-                    userInfo: ["trackName": downloadedTrack.trackName, "albumName": downloadedTrack.albumName]
-                )
-
-                // Check if album is complete and send notification
-                self.checkAlbumCompletion(trackId: trackId, albumId: albumId)
+                self.finalize(trackID: trackId, fileName: fileName, fileSize: fileSize)
             }
-
-            logger.info("✅ Successfully saved download: \(fileName) (\(self.formatBytes(fileSize)))")
-
         } catch {
-            logger.error("❌ Failed to save download: \(error.localizedDescription)")
+            logger.error("Failed to save download: \(error.localizedDescription)")
             DispatchQueue.main.async {
-                self.downloadStates[trackId] = .failed(error: error.localizedDescription)
-                self.downloadTasks.removeValue(forKey: trackId)
+                self.fail(trackId, message: error.localizedDescription, permanent: false)
             }
         }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let trackId = downloadTask.taskDescription else { return }
+        guard totalBytesExpectedToWrite > 0 else { return }
 
-        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-
-        DispatchQueue.main.async {
-            self.downloadStates[trackId] = .downloading(progress: progress)
-        }
+        bufferProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite), for: trackId)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error = error,
-              let trackId = task.taskDescription else { return }
+        guard let error = error, let trackId = task.taskDescription else { return }
 
-        logger.error("Download failed for track \(trackId): \(error.localizedDescription)")
+        // A cancelled task was cancelled by us; its bookkeeping is already done.
+        if (error as NSError).code == NSURLErrorCancelled { return }
 
-        // Clean up pending downloads
-        pendingDownloads.removeValue(forKey: trackId)
-
+        let message = error.localizedDescription
         DispatchQueue.main.async {
-            self.downloadStates[trackId] = .failed(error: error.localizedDescription)
-            self.downloadTasks.removeValue(forKey: trackId)
-            self.activeDownloads = max(0, self.activeDownloads - 1)
+            guard self.downloadStates[trackId]?.isDownloaded != true else { return }
+            self.fail(trackId, message: message, permanent: false)
+        }
+    }
 
-            // Post notification for download failure
-            NotificationCenter.default.post(
-                name: NSNotification.Name("TrackDownloadFailed"),
-                object: nil,
-                userInfo: ["trackId": trackId, "error": error.localizedDescription]
-            )
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        DispatchQueue.main.async {
+            let handler = self.backgroundCompletionHandler
+            self.backgroundCompletionHandler = nil
+            handler?()
         }
     }
 }

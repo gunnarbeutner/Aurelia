@@ -209,6 +209,15 @@ struct AlbumDetailView: View {
     }
 
     // MARK: - Download Management
+
+    /// True when the favorites rule is holding this album. Deleting it by hand
+    /// would only start the download again, so the button stops offering to.
+    private var isAlbumManagedByRule: Bool {
+        !albumTracks.isEmpty && albumTracks.allSatisfy {
+            downloadManager.isManagedByRule(trackId: $0.id)
+        }
+    }
+
     private func toggleDownload() {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             if albumDownloadState.isDownloaded {
@@ -217,7 +226,9 @@ struct AlbumDetailView: View {
                 generator.notificationOccurred(.warning)
 
                 for track in albumTracks {
-                    downloadManager.deleteDownload(trackId: track.id)
+                    // Drop this screen's claim only. A file the favorites rule
+                    // also wants stays exactly where it is.
+                    downloadManager.relinquish(trackID: track.id, by: .manual)
                 }
             } else {
                 // Download all tracks
@@ -563,9 +574,13 @@ struct AlbumDetailView: View {
                 }
 
             }
-            .accessibilityLabel(albumDownloadState.isDownloaded ? "Delete download" : "Download album")
+            .accessibilityLabel(
+                isAlbumManagedByRule
+                    ? "Kept by Favorites Offline"
+                    : albumDownloadState.isDownloaded ? "Delete download" : "Download album"
+            )
             .accessibilityIdentifier("album-download")
-            .disabled(albumTracks.isEmpty)
+            .disabled(albumTracks.isEmpty || isAlbumManagedByRule)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
