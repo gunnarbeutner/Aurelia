@@ -130,6 +130,49 @@ enum PlaybackRestartRecovery {
     }
 }
 
+/// Decides whether an end-of-item notification really means the song ended.
+///
+/// AVQueuePlayer starts the next item before the notification reaches us, so by
+/// then the observed playback position can already describe the *next* song.
+/// Judging completion by that number reads a genuine advance as a false alarm
+/// and strands the display on the finished track, so the item's own position is
+/// the primary evidence; the observed time only decides when the item can no
+/// longer report one.
+enum TrackCompletion {
+    /// Jellyfin's duration metadata routinely disagrees with the real stream
+    /// length by a few seconds, so "the end" is a window rather than a point.
+    static let tolerance: Double = 10
+
+    static func isGenuine(
+        itemPlayedTime: Double?,
+        itemDuration: Double?,
+        observedTime: Double,
+        trackDuration: Double
+    ) -> Bool {
+        if let itemPlayedTime, itemPlayedTime.isFinite, itemPlayedTime > 0 {
+            // Streams that transcode report an indefinite duration, in which
+            // case the track's metadata length is the best yardstick we have.
+            let reference = [itemDuration, trackDuration]
+                .compactMap { $0 }
+                .first { $0.isFinite && $0 > 0 }
+            if let reference, reference - itemPlayedTime <= tolerance { return true }
+        }
+        return trackDuration - observedTime <= tolerance
+    }
+}
+
+/// The queue player advancing on its own is normal for a beat; staying ahead of
+/// the queue we track is not, and leaves the listener looking at the wrong song.
+enum StalledAdvanceRecovery {
+    /// Time observer samples (half a second apart) to tolerate before forcing
+    /// the queue back into step with what is actually playing.
+    static let requiredMismatchedSamples = 3
+
+    static func shouldForceAdvance(mismatchedSamples: Int) -> Bool {
+        mismatchedSamples >= requiredMismatchedSamples
+    }
+}
+
 /// Manages audio playback with AVPlayer and iOS Now Playing integration
 /// Handles background audio, interruptions, and remote controls
 class PlayerManager: NSObject, ObservableObject {
@@ -224,6 +267,7 @@ class PlayerManager: NSObject, ObservableObject {
     private var originalQueue: [Track] = []
     private var originalIndex: Int = 0
     private var lastValidPlaybackTime: Double = 0.0  // Track last known position to detect unexpected restarts
+    private var mismatchedItemSamples = 0  // Consecutive samples where the player ran ahead of our queue
     private let statePersistenceQueue = DispatchQueue(
         label: "de.beutner.Aurelia.player-state-persistence",
         qos: .utility
@@ -1270,18 +1314,29 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
-        // Use a wider window (10s) to account for time observer lag and metadata inaccuracies.
-        // Jellyfin duration metadata can be off by several seconds vs actual stream length.
-        let timeRemaining = currentTrack.duration - self.currentTime
-        if timeRemaining > 10.0 {
-            // More than 10s from the end — almost certainly a false notification
-            logger.warning("⚠️ IGNORING false 'track finished' notification - still \(timeRemaining)s remaining in '\(currentTrack.name)'")
-            logger.warning("   Current time: \(self.currentTime)s, Duration: \(currentTrack.duration)s")
+        // Sometimes AVPlayerItemDidPlayToEndTime fires incorrectly mid-song, so
+        // check how far the finished item itself actually got. Our own observed
+        // time is no longer trustworthy here: the queue player has already moved
+        // on, so the last sample may belong to the song now playing.
+        guard TrackCompletion.isGenuine(
+            itemPlayedTime: finishedItem.currentTime().seconds,
+            itemDuration: finishedItem.duration.seconds,
+            observedTime: self.currentTime,
+            trackDuration: currentTrack.duration
+        ) else {
+            logger.warning("⚠️ IGNORING false 'track finished' notification for '\(currentTrack.name)'")
+            logger.warning("   Item time: \(finishedItem.currentTime().seconds)s, observed: \(self.currentTime)s, duration: \(currentTrack.duration)s")
             return
         }
 
         logger.info("✅ Current track finished playing: \(currentTrack.name) (time: \(self.currentTime)s, duration: \(currentTrack.duration)s)")
 
+        advanceAfterTrackEnded()
+    }
+
+    /// Moves the queue on to whatever the player is already playing, doing the
+    /// bookkeeping (reporting, metadata, preloading) the advance implies.
+    private func advanceAfterTrackEnded() {
         // Report stopped for the track that just finished
         stopProgressReporting(reportStopped: true)
 
@@ -1379,6 +1434,13 @@ class PlayerManager: NSObject, ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// True while the queue player has moved on to an item the queue we track
+    /// still treats as upcoming.
+    private func playerHasOutrunQueue() -> Bool {
+        guard let playing = player?.currentItem, let expected = playerItems.first else { return false }
+        return playing !== expected
+    }
+
     private func setupPlayerObservers() {
         guard let player = player else {
             logger.error("Player is nil in setupPlayerObservers")
@@ -1400,6 +1462,22 @@ class PlayerManager: NSObject, ObservableObject {
 
             // Don't update time during an active seek — let the seek completion handle it
             guard !self.isSeeking else { return }
+
+            // The queue player starts the next item before the end-of-item
+            // notification lets us move `currentTrack` with it. Samples taken in
+            // that window describe the next song, so publishing them would put a
+            // stranger's position under the current title — and would hide how
+            // far the finished track really got from the completion check.
+            if self.playerHasOutrunQueue() {
+                self.mismatchedItemSamples += 1
+                if StalledAdvanceRecovery.shouldForceAdvance(mismatchedSamples: self.mismatchedItemSamples) {
+                    self.logger.warning("⚠️ Player is playing ahead of the queue — advancing to catch up")
+                    self.mismatchedItemSamples = 0
+                    self.advanceAfterTrackEnded()
+                }
+                return
+            }
+            self.mismatchedItemSamples = 0
 
             let newTime = time.seconds
 
@@ -1713,7 +1791,10 @@ class PlayerManager: NSObject, ObservableObject {
     private func setupNotifications() {
         // CRITICAL: Track endings for gapless playback
         // This observer is set up ONCE and persists for the lifetime of PlayerManager
+        // AVFoundation posts this off the main thread, and the handler publishes
+        // the new track to the UI, so hop before touching any of that state.
         NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 self?.handleTrackFinishedGapless(notification)
             }

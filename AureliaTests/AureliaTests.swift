@@ -1450,6 +1450,62 @@ struct AureliaTests {
         ))
     }
 
+    @Test func trackEndSurvivesTheQueuePlayerAdvancingFirst() {
+        // The observed time already belongs to the next song, but the finished
+        // item played all the way through, so the queue must move with it.
+        #expect(TrackCompletion.isGenuine(
+            itemPlayedTime: 166,
+            itemDuration: 166,
+            observedTime: 0.4,
+            trackDuration: 166
+        ))
+    }
+
+    @Test func midSongEndNotificationIsStillIgnored() {
+        #expect(!TrackCompletion.isGenuine(
+            itemPlayedTime: 42,
+            itemDuration: 166,
+            observedTime: 42,
+            trackDuration: 166
+        ))
+    }
+
+    @Test func indefiniteStreamsFallBackToTrackMetadata() {
+        // Transcoded streams report an indefinite duration.
+        #expect(TrackCompletion.isGenuine(
+            itemPlayedTime: 163,
+            itemDuration: .nan,
+            observedTime: 0,
+            trackDuration: 166
+        ))
+        #expect(!TrackCompletion.isGenuine(
+            itemPlayedTime: 20,
+            itemDuration: .nan,
+            observedTime: 20,
+            trackDuration: 166
+        ))
+    }
+
+    @Test func unreadableItemTimeFallsBackToObservedPosition() {
+        #expect(TrackCompletion.isGenuine(
+            itemPlayedTime: nil,
+            itemDuration: nil,
+            observedTime: 164,
+            trackDuration: 166
+        ))
+        #expect(!TrackCompletion.isGenuine(
+            itemPlayedTime: .nan,
+            itemDuration: nil,
+            observedTime: 30,
+            trackDuration: 166
+        ))
+    }
+
+    @Test func queueOnlyForcesAnAdvanceAfterAPersistentMismatch() {
+        #expect(!StalledAdvanceRecovery.shouldForceAdvance(mismatchedSamples: 1))
+        #expect(StalledAdvanceRecovery.shouldForceAdvance(mismatchedSamples: 3))
+    }
+
     @Test @MainActor func imageMemoryCacheHitsAreSynchronous() {
         let url = URL(string: "https://aurelia.test/artwork/\(UUID().uuidString)")!
         let image = UIImage()
