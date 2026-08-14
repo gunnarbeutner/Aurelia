@@ -212,8 +212,36 @@ struct DiscoveryView: View {
                 .padding(.horizontal, 20)
                 .accessibilityIdentifier("discovery-recent-title")
 
-            trackScroller(viewModel.recentTracks)
+            recentPlayScroller(Array(RecentPlayGrouping.group(viewModel.recentTracks).prefix(12)))
         }
+    }
+
+    private func recentPlayScroller(_ items: [RecentPlayItem]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 14) {
+                ForEach(items) { item in
+                    Button {
+                        startRecentPlayback(item)
+                    } label: {
+                        RecentPlayCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("discovery-recent-\(item.id)")
+                    .accessibilityLabel(
+                        item.isAlbumSession ? "Resume album \(item.title)" : "Play \(item.title)"
+                    )
+                    .contextMenu {
+                        if let album = item.album {
+                            AlbumContextMenu(album: album)
+                        } else {
+                            TrackContextMenu(track: item.resumeTrack)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .scrollClipDisabled()
     }
 
     private var mixesShelf: some View {
@@ -513,6 +541,29 @@ struct DiscoveryView: View {
 
         playerManager.play(tracks: tracks, startingAt: index)
     }
+
+    private func startRecentPlayback(_ item: RecentPlayItem) {
+        guard let albumID = item.albumID else {
+            let index = viewModel.recentTracks.firstIndex { $0.id == item.resumeTrack.id } ?? 0
+            startPlayback(viewModel.recentTracks, startingAt: index)
+            return
+        }
+
+        Task {
+            guard let scope = JellyfinService.shared.libraryScope else { return }
+            do {
+                let albumTracks = try await LibraryRepository.shared.tracks(inAlbum: albumID, in: scope)
+                guard !albumTracks.isEmpty else {
+                    startPlayback(item.tracks, startingAt: 0)
+                    return
+                }
+                let resumeIndex = albumTracks.firstIndex { $0.id == item.resumeTrack.id } ?? 0
+                startPlayback(albumTracks, startingAt: resumeIndex)
+            } catch {
+                playerManager.errorMessage = "Unable to load \(item.title): \(error.localizedDescription)"
+            }
+        }
+    }
 }
 
 private struct DiscoveryMixCard: View {
@@ -587,6 +638,40 @@ private struct DiscoveryTrackCard: View {
                 .foregroundColor(.appText)
                 .lineLimit(1)
             Text(track.artistName)
+                .font(.appCaption)
+                .foregroundColor(.appTextSecondary)
+                .lineLimit(1)
+        }
+        .frame(width: 150, alignment: .leading)
+    }
+}
+
+private struct RecentPlayCard: View {
+    let item: RecentPlayItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CachedAsyncImage(url: item.resumeTrack.artworkURL.flatMap(URL.init(string:))) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        Color.appElevated
+                        Image(systemName: item.isAlbumSession ? "square.stack" : "music.note")
+                            .font(.title)
+                            .foregroundColor(.appTextMuted)
+                    }
+                }
+            }
+            .frame(width: 150, height: 150)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.appControlFill))
+
+            Text(item.title)
+                .font(.appSubheadline)
+                .foregroundColor(.appText)
+                .lineLimit(1)
+            Text(item.subtitle)
                 .font(.appCaption)
                 .foregroundColor(.appTextSecondary)
                 .lineLimit(1)

@@ -1520,6 +1520,65 @@ struct AureliaTests {
         #expect(albums.first?.artworkURL?.contains("/Items/album-a/Images/Primary") == true)
     }
 
+    @Test func recentlyPlayedCollapsesAlbumsAcrossNonAdjacentTracks() throws {
+        func track(_ id: String, albumID: String?, albumName: String) -> Track {
+            Track(
+                id: id,
+                name: "Track \(id)",
+                artistName: "Artist",
+                albumName: albumName,
+                duration: 1,
+                artworkURL: nil,
+                albumId: albumID
+            )
+        }
+
+        let grouped = RecentPlayGrouping.group([
+            track("a2", albumID: "album-a", albumName: "Album A"),
+            track("a1", albumID: "album-a", albumName: "Album A"),
+            track("single", albumID: "album-b", albumName: "Album B"),
+            track("a3", albumID: "album-a", albumName: "Album A"),
+            track("loose-1", albumID: nil, albumName: "Unknown Album"),
+            track("loose-2", albumID: nil, albumName: "Unknown Album")
+        ])
+
+        #expect(grouped.count == 4)
+        #expect(grouped[0].tracks.map(\.id) == ["a2", "a1", "a3"])
+        #expect(grouped[0].isAlbumSession)
+        #expect(grouped[0].title == "Album A")
+        #expect(grouped[0].resumeTrack.id == "a2")
+        #expect(!grouped[1].isAlbumSession)
+        #expect(!grouped[2].isAlbumSession)
+        #expect(!grouped[3].isAlbumSession)
+    }
+
+    @Test func recentlyPlayedAppliesTheCardLimitAfterAlbumGrouping() {
+        func track(_ id: String, albumID: String) -> Track {
+            Track(
+                id: id,
+                name: "Track \(id)",
+                artistName: "Artist",
+                albumName: "Album \(albumID)",
+                duration: 1,
+                artworkURL: nil,
+                albumId: albumID
+            )
+        }
+
+        let longSession = (1...20).map { track("a-\($0)", albumID: "a") }
+        let laterSessions = (1...12).map { track("single-\($0)", albumID: "album-\($0)") }
+        let retained = RecentPlayGrouping.tracksForVisibleItems(
+            longSession + laterSessions,
+            limit: 12
+        )
+        let visibleItems = RecentPlayGrouping.group(retained)
+
+        #expect(retained.count == 31)
+        #expect(visibleItems.count == 12)
+        #expect(visibleItems.first?.tracks.count == 20)
+        #expect(visibleItems.last?.resumeTrack.id == "single-11")
+    }
+
     @Test @MainActor func mediaNavigationUsesKnownTrackAndArtistIdentifiers() {
         let coordinator = NavigationCoordinator()
         let track = Track(

@@ -353,8 +353,8 @@ class PlayerManager: NSObject, ObservableObject {
         recentPlayRevision &+= 1
         recentlyPlayedTracks.removeAll { $0.id == track.id }
         recentlyPlayedTracks.insert(track, at: 0)
-        if recentlyPlayedTracks.count > 20 {
-            recentlyPlayedTracks = Array(recentlyPlayedTracks.prefix(20))
+        if recentlyPlayedTracks.count > 100 {
+            recentlyPlayedTracks = Array(recentlyPlayedTracks.prefix(100))
         }
         if let scope = jellyfinService.libraryScope {
             Task {
@@ -378,7 +378,7 @@ class PlayerManager: NSObject, ObservableObject {
         guard let scope = jellyfinService.libraryScope else { return }
         let startingRevision = recentPlayRevision
         await LibraryRepository.shared.importLegacyCacheIfNeeded(in: scope)
-        let tracks = await LibraryRepository.shared.cachedRecentTracks(in: scope, limit: 20)
+        let tracks = await LibraryRepository.shared.cachedRecentTracks(in: scope, limit: 100)
         guard recentPlayRevision == startingRevision else { return }
         recentlyPlayedTracks = tracks
     }

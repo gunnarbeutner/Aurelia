@@ -39,6 +39,66 @@ nonisolated struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+nonisolated struct RecentPlayItem: Identifiable, Equatable, Sendable {
+    let tracks: [Track]
+
+    var resumeTrack: Track { tracks[0] }
+    var albumID: String? { isAlbumSession ? resumeTrack.albumId : nil }
+    var isAlbumSession: Bool { tracks.count > 1 && resumeTrack.albumId != nil }
+    var id: String {
+        isAlbumSession
+            ? "album-session-\(resumeTrack.albumId!)-\(resumeTrack.id)"
+            : "track-\(resumeTrack.id)"
+    }
+    var title: String { isAlbumSession ? resumeTrack.albumName : resumeTrack.name }
+    var subtitle: String { resumeTrack.artistName }
+
+    var album: Album? {
+        guard let albumID else { return nil }
+        return Album(
+            id: albumID,
+            name: resumeTrack.albumName,
+            artistName: resumeTrack.artistName,
+            artistId: resumeTrack.artistId,
+            year: resumeTrack.productionYear,
+            trackCount: nil,
+            artworkURL: resumeTrack.artworkURL
+        )
+    }
+}
+
+nonisolated enum RecentPlayGrouping {
+    /// Jellyfin exposes each track's latest play time rather than a true event
+    /// stream, so apparent adjacency cannot identify listening sessions. Group
+    /// every track with the same album ID and keep the group at the position of
+    /// its newest member (the first one encountered in recency order).
+    static func group(_ tracks: [Track]) -> [RecentPlayItem] {
+        var groups: [[Track]] = []
+        var albumGroupIndices: [String: Int] = [:]
+
+        for track in tracks {
+            if let albumID = track.albumId, let groupIndex = albumGroupIndices[albumID] {
+                groups[groupIndex].append(track)
+            } else {
+                if let albumID = track.albumId {
+                    albumGroupIndices[albumID] = groups.count
+                }
+                groups.append([track])
+            }
+        }
+
+        return groups.map(RecentPlayItem.init(tracks:))
+    }
+
+    /// Retains enough raw history to render the requested number of cards.
+    /// Applying a raw-track limit first can turn a shelf into a single card
+    /// when the listener just played a long album.
+    static func tracksForVisibleItems(_ tracks: [Track], limit: Int) -> [Track] {
+        guard limit > 0 else { return [] }
+        return group(tracks).prefix(limit).flatMap(\.tracks)
+    }
+}
+
 nonisolated enum DailyMixRecommendations {
     /// AudioMuse can occasionally return a nearest-neighbour set dominated by
     /// one artist. A Daily Mix should cross at least one artist boundary and
@@ -297,6 +357,8 @@ struct DiscoveryCache {
 
 @MainActor
 final class DiscoveryViewModel: ObservableObject {
+    private static let recentTrackWindow = 100
+    private static let maximumRecentItemCount = 12
     static let maximumMixShelfCount = 8
 
     private static let logger = Logger(
@@ -473,7 +535,7 @@ final class DiscoveryViewModel: ObservableObject {
             let recentTracks = Self.mergingRecentTracks(
                 fresh: fetchedRecentTracks,
                 retained: self.recentTracks,
-                limit: 20
+                limit: Self.recentTrackWindow
             )
             let discoveryCandidates: [DiscoveryCandidate]
             if let candidateProvider, let snapshotScope {
@@ -587,14 +649,18 @@ final class DiscoveryViewModel: ObservableObject {
             let fallbackTracks = resolvedShelves.isEmpty && recentTracks.isEmpty
                 ? Array(discoveryCandidates.map(\.track).prefix(12))
                 : []
+            let visibleRecentTracks = RecentPlayGrouping.tracksForVisibleItems(
+                recentTracks,
+                limit: Self.maximumRecentItemCount
+            )
             let snapshot = DiscoverySnapshot(
                 shelves: resolvedShelves,
                 fallbackTracks: fallbackTracks,
-                recentTracks: Array(recentTracks.prefix(12)),
+                recentTracks: visibleRecentTracks,
                 rediscoverTracks: resolvedRediscoverTracks,
                 offTheBeatenPathTracks: resolvedOffTheBeatenPathTracks,
                 strategyVersion: DynamicDiscoverySelector.dailyMixStrategyVersion,
-                recentSignature: Array(recentTracks.prefix(12).map(\.id)),
+                recentSignature: visibleRecentTracks.map(\.id),
                 refreshedAt: now()
             )
             let mixIssue = mixRefreshIssue(
@@ -698,7 +764,7 @@ final class DiscoveryViewModel: ObservableObject {
 
     private func fetchRecentlyPlayedTracks() async throws -> [Track] {
         do {
-            let items = try await api.fetchRecentlyPlayedTracks(limit: 20)
+            let items = try await api.fetchRecentlyPlayedTracks(limit: Self.recentTrackWindow)
             let tracks = Self.uniqueRecentTracks(
                 items
                     .filter { $0.Type == .Audio }
@@ -720,7 +786,7 @@ final class DiscoveryViewModel: ObservableObject {
             if !local.isEmpty { return local }
             if let recentCache, let recentScope {
                 return Self.uniqueRecentTracks(
-                    await recentCache.cachedRecentTracks(in: recentScope, limit: 20)
+                    await recentCache.cachedRecentTracks(in: recentScope, limit: Self.recentTrackWindow)
                 )
             }
             return []
