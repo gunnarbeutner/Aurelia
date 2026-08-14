@@ -179,6 +179,35 @@ struct AlbumDetailView: View {
         }
     }
 
+    private func toggleFavorite(for trackID: String) {
+        guard let index = albumTracks.firstIndex(where: { $0.id == trackID }) else { return }
+        let originalTrack = albumTracks[index]
+        let updatedFavoriteValue = !originalTrack.isFavorite
+
+        withAnimation(.spring(response: 0.3)) {
+            albumTracks[index].isFavorite = updatedFavoriteValue
+        }
+
+        Task {
+            do {
+                if updatedFavoriteValue {
+                    try await jellyfinService.markFavorite(itemId: trackID)
+                } else {
+                    try await jellyfinService.unmarkFavorite(itemId: trackID)
+                }
+                FavoriteMutationCenter.shared.publish(
+                    .track(originalTrack, isFavorite: updatedFavoriteValue)
+                )
+            } catch {
+                guard let currentIndex = albumTracks.firstIndex(where: { $0.id == trackID }),
+                      albumTracks[currentIndex].isFavorite == updatedFavoriteValue else { return }
+                withAnimation(.spring(response: 0.3)) {
+                    albumTracks[currentIndex].isFavorite = originalTrack.isFavorite
+                }
+            }
+        }
+    }
+
     // MARK: - Download Management
     private func toggleDownload() {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -597,14 +626,13 @@ struct AlbumDetailView: View {
                         ) {
                             // Play from this track
                             playerManager.play(tracks: albumTracks, startingAt: index)
+                        } onToggleFavorite: {
+                            toggleFavorite(for: track.id)
                         } onAddToPlaylist: {
                             // Add track to playlist
                             selectedTrackIds = [track.id]
                             showAddToPlaylist = true
                         }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Track \(index + 1): \(track.name), \(track.durationFormatted)")
-                        .accessibilityHint("Double tap to play track")
                         .accessibilityIdentifier("album-track-\(track.id)")
                         .padding(.horizontal, 20)
 
@@ -669,58 +697,73 @@ struct AlbumTrackRow: View {
     let isCurrentlyPlaying: Bool
     let isPlaying: Bool
     let action: () -> Void
+    let onToggleFavorite: () -> Void
     var onAddToPlaylist: (() -> Void)? = nil
 
     var body: some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: 16) {
+        HStack(spacing: 8) {
+            Button {
+                action()
+            } label: {
+                HStack(spacing: 16) {
                 // Track number or waveform indicator
-                if isCurrentlyPlaying {
-                    Image(systemName: "waveform")
-                        .font(.body.weight(.bold))
+                    if isCurrentlyPlaying {
+                        Image(systemName: "waveform")
+                            .font(.body.weight(.bold))
+                            .foregroundColor(.appAccent)
+                            .symbolEffect(.variableColor.iterative, isActive: isPlaying)
+                            .frame(width: 28, alignment: .trailing)
+                    } else {
+                        Text("\(trackNumber)")
+                            .font(.system(.body, design: .monospaced).weight(.bold))
+                            .foregroundColor(.appAccent)
+                            .frame(width: 28, alignment: .trailing)
+                    }
+
+                    // Track info
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(track.name)
+                            .font(.appBody)
+                            .foregroundColor(isCurrentlyPlaying ? .appAccent : Color.appText)
+                            // Album metadata can include a filename-style artist prefix. Keep a
+                            // second line available so the actual song title remains readable.
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+
+                        Text(track.durationFormatted)
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: "play.circle.fill")
+                        .font(.title2)
                         .foregroundColor(.appAccent)
-                        .symbolEffect(.variableColor.iterative, isActive: isPlaying)
-                        .frame(width: 28, alignment: .trailing)
-                } else {
-                    Text("\(trackNumber)")
-                        .font(.system(.body, design: .monospaced).weight(.bold))
-                        .foregroundColor(.appAccent)
-                        .frame(width: 28, alignment: .trailing)
                 }
-
-                // Track info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(track.name)
-                        .font(.appBody)
-                        .foregroundColor(isCurrentlyPlaying ? .appAccent : Color.appText)
-                        // Album metadata can include a filename-style artist prefix. Keep a
-                        // second line available so the actual song title remains readable.
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
-                    Text(track.durationFormatted)
-                        .font(.appCaption)
-                        .foregroundColor(.appTextSecondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Play button
-                Image(systemName: "play.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.appAccent)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 12)
-            .background(
-                isCurrentlyPlaying ?
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.appAccent.opacity(0.08))
-                        .padding(.horizontal, -8)
-                    : nil
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Track \(trackNumber): \(track.name), \(track.durationFormatted)")
+            .accessibilityHint("Play track")
+
+            Button(action: onToggleFavorite) {
+                Image(systemName: track.isFavorite ? "heart.fill" : "heart")
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(track.isFavorite ? .appSecondary : .appTextMuted)
+                    .frame(width: 36, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(track.isFavorite ? "Remove \(track.name) from favorites" : "Add \(track.name) to favorites")
         }
+        .padding(.vertical, 12)
+        .background(
+            isCurrentlyPlaying ?
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.appAccent.opacity(0.08))
+                    .padding(.horizontal, -8)
+                : nil
+        )
         .contextMenu {
             TrackContextMenu(track: track, onAddToPlaylist: onAddToPlaylist, offersGoToAlbum: false)
         }
