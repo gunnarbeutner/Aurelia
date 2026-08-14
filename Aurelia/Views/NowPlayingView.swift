@@ -16,8 +16,11 @@ enum NowPlayingLayout {
     static let standardPlayerChromeHeight: CGFloat = 350
 
     static func airPlayTrailingPadding(usesTwoColumns: Bool) -> CGFloat {
-        let contentPadding = usesTwoColumns ? regularHorizontalPadding : horizontalPadding
-        return contentPadding + 44
+        // NowPlayingView leaves a 44-point clear slot at the trailing edge of
+        // its top bar when Catalyst supplies the route picker as an overlay.
+        // Anchor the overlay in that slot. Adding another button width moves
+        // it one slot left, directly over the overflow menu.
+        usesTwoColumns ? regularHorizontalPadding : horizontalPadding
     }
 
     static func contentWidth(for screenWidth: CGFloat) -> CGFloat {

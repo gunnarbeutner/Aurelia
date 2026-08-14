@@ -1722,8 +1722,8 @@ struct AureliaTests {
     }
 
     @Test @MainActor func airPlayAnchorTracksTheVisibleTopBarButton() {
-        #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: true) == 72)
-        #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: false) == 64)
+        #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: true) == 28)
+        #expect(NowPlayingLayout.airPlayTrailingPadding(usesTwoColumns: false) == 20)
     }
 
     @Test @MainActor func nowPlayingQueueSeparatesHistoryFromUpcomingTracks() {
