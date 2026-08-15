@@ -54,6 +54,10 @@ struct ServerSetupView: View {
                 }
                 .padding(.horizontal, 30)
             }
+            // The scroll view earns its place only when the keyboard is up on
+            // a short screen. Left to itself it also bounces a screenful of
+            // content that already fits, which just reads as slack.
+            .scrollBounceBehavior(.basedOnSize)
         }
         .alert("Connection Error", isPresented: $showError) {
             Button("OK", role: .cancel) { }

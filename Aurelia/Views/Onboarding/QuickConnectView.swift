@@ -112,6 +112,7 @@ struct QuickConnectView: View {
             }
             .padding(.horizontal, 30)
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     // MARK: - Icon Section

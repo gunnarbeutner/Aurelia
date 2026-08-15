@@ -20,10 +20,16 @@ struct UserSelectionView: View {
     @State private var signingInAs: String?
     @State private var errorMessage: String?
 
+    /// Offered only when the server actually supports it.
+    var isQuickConnectAvailable: Bool = false
+
     /// The chosen account still needs a password.
     let onSelect: (JellyfinService.PublicUser) -> Void
-    /// No list to show, or the account wanted is not on it.
+    /// The account wanted is not on the list.
     let onManualEntry: () -> Void
+    /// The server published nothing, so there is no choice to present.
+    let onNoUsers: () -> Void
+    let onQuickConnect: () -> Void
     let onSuccess: () -> Void
     let onBack: () -> Void
 
@@ -91,15 +97,43 @@ struct UserSelectionView: View {
                     }
                 }
                 .padding(.horizontal, 24)
+                // Keeps the first and last rows off the clip boundary, so
+                // nothing is trimmed at the edges of the scrolling area.
+                .padding(.vertical, 6)
             }
             .frame(maxHeight: 360)
+            // A handful of accounts fits without scrolling; only a long list
+            // should move.
+            .scrollBounceBehavior(.basedOnSize)
 
-            Button(action: onManualEntry) {
-                Text("Use a different account")
-                    .font(.appBody)
-                    .foregroundColor(.appAccent)
+            // Two tertiary actions in a row: spaced so neither is caught by a
+            // thumb aimed at the other, and each given a full-height target
+            // rather than only the few points its text occupies.
+            VStack(spacing: 8) {
+                Button(action: onManualEntry) {
+                    Text("Use a different account")
+                        .font(.appBody)
+                        .foregroundColor(.appAccent)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("onboarding-manual-entry")
+
+                // Identity is the question this screen asks, and Quick Connect
+                // answers it on another device — so it belongs beside the grid
+                // rather than inside it, and only when the server offers it.
+                if isQuickConnectAvailable {
+                    Button(action: onQuickConnect) {
+                        Label("Sign in with a code instead", systemImage: "qrcode")
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("onboarding-quick-connect")
+                }
             }
-            .accessibilityIdentifier("onboarding-manual-entry")
+            .padding(.horizontal, 24)
         }
     }
 
@@ -121,7 +155,11 @@ struct UserSelectionView: View {
                 .frame(width: 84, height: 84)
                 .clipShape(Circle())
                 .overlay(
-                    Circle().stroke(Color.appAccent.opacity(0.4), lineWidth: 1)
+                    // strokeBorder draws inside the shape. A plain stroke is
+                    // centred on the path, putting half its width outside the
+                    // frame — which the scroll view's clip rect then shaves off
+                    // the top row.
+                    Circle().strokeBorder(Color.appAccent.opacity(0.4), lineWidth: 1)
                 )
 
                 Text(user.Name)
@@ -188,7 +226,7 @@ struct UserSelectionView: View {
         // Nothing to choose between, so do not make the user look at an empty
         // screen and work out that they were meant to press something else.
         if published.isEmpty {
-            onManualEntry()
+            onNoUsers()
         }
     }
 
@@ -217,8 +255,11 @@ struct UserSelectionView: View {
 
 #Preview {
     UserSelectionView(
+        isQuickConnectAvailable: true,
         onSelect: { _ in },
         onManualEntry: {},
+        onNoUsers: {},
+        onQuickConnect: {},
         onSuccess: {},
         onBack: {}
     )

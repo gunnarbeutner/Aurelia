@@ -22,10 +22,34 @@ struct PasswordLoginView: View {
 
     /// Chosen on the account picker. When set, the name is already known and
     /// the keyboard opens straight on the password.
-    var prefilledUsername: String?
+    let prefilledUsername: String?
+
+    /// Offered only when the server actually supports it.
+    let isQuickConnectAvailable: Bool
+    let onQuickConnect: (() -> Void)?
 
     let onSuccess: () -> Void
     let onBack: () -> Void
+
+    /// The username is seeded here rather than in `onAppear` so the field — and
+    /// the clear button that only exists while it has text — are already in
+    /// their final state on the first frame. Filling it later inserts that
+    /// button midway through the incoming transition, where it appears fully
+    /// formed at its destination while everything around it is still sliding.
+    init(
+        prefilledUsername: String? = nil,
+        isQuickConnectAvailable: Bool = false,
+        onQuickConnect: (() -> Void)? = nil,
+        onSuccess: @escaping () -> Void,
+        onBack: @escaping () -> Void
+    ) {
+        self.prefilledUsername = prefilledUsername
+        self.isQuickConnectAvailable = isQuickConnectAvailable
+        self.onQuickConnect = onQuickConnect
+        self.onSuccess = onSuccess
+        self.onBack = onBack
+        _username = State(initialValue: prefilledUsername ?? "")
+    }
 
     var body: some View {
         ZStack {
@@ -63,9 +87,13 @@ struct PasswordLoginView: View {
                             .font(.title2.weight(.bold))
                             .foregroundColor(Color.appText)
 
-                        Text("Enter your Jellyfin credentials")
-                            .font(.body)
-                            .foregroundColor(.secondary)
+                        // Worth a line only when it says something the fields
+                        // below do not already say.
+                        if let prefilledUsername, !prefilledUsername.isEmpty {
+                            Text("Signing in as \(prefilledUsername)")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .padding(.bottom, 40)
 
@@ -187,23 +215,19 @@ struct PasswordLoginView: View {
                     .padding(.bottom, 20)
                     .accessibilityLabel(isAuthenticating ? "Signing in" : "Sign in")
 
-                    // Help text
-                    HStack(spacing: 12) {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.appSecondary.opacity(0.8))
-                            .font(.caption)
-
-                        Text("Use your Jellyfin username and password to sign in")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    // The alternative to typing a password belongs here, where
+                    // someone who cannot remember theirs is already standing.
+                    if isQuickConnectAvailable, let onQuickConnect {
+                        Button(action: onQuickConnect) {
+                            Label("Sign in with a code instead", systemImage: "qrcode")
+                                .font(.appCaption)
+                                .foregroundColor(.appTextSecondary)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .padding(.horizontal, 30)
+                        .accessibilityIdentifier("onboarding-quick-connect")
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.appSubtleFill)
-                    )
-                    .padding(.horizontal, 30)
 
                     Spacer()
                 }
@@ -215,12 +239,8 @@ struct PasswordLoginView: View {
             Text(errorMessage)
         }
         .onAppear {
-            if let prefilledUsername, !prefilledUsername.isEmpty {
-                username = prefilledUsername
-                focusedField = .password
-            } else {
-                focusedField = .username
-            }
+            // Only the keyboard is left to place; the text is already there.
+            focusedField = username.isEmpty ? .username : .password
         }
     }
 
