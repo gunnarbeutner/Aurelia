@@ -658,7 +658,7 @@ struct NowPlayingView: View {
                         placeholderArtwork(size: artSize)
                     case .success(let image):
                         image
-                            .resizable()
+                            .artworkRendering()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: artSize, height: artSize)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -732,7 +732,12 @@ struct NowPlayingView: View {
                     } label: {
                         Text(track.albumNameWithYear)
                             .font(.caption)
-                            .foregroundColor(.appTextMuted)
+                            // This sits on the artwork's own colour, not on the
+                            // app background, so its luminance is whatever the
+                            // sleeve happens to be. The muted token is mixed
+                            // for a near-black ground and disappears against a
+                            // bright cover; size carries the hierarchy here.
+                            .foregroundColor(.appTextSecondary)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                     }
@@ -749,7 +754,7 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(.title3)
-                    .foregroundColor(isFavorite ? .appSecondary : .appTextMuted)
+                    .foregroundColor(isFavorite ? .appSecondary : .appTextSecondary)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
@@ -1292,20 +1297,24 @@ private struct HistoryQueueRow: View {
     var body: some View {
         Button(action: onPlay) {
             HStack(spacing: 12) {
-                CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    default:
-                        Rectangle().fill(Color.appMidBackground)
-                            .overlay(
+                // The cell fixes the size and the artwork is cropped into it.
+                // Letting the image size itself lets it land as a fit rather
+                // than a fill for a frame whenever it is re-measured, which
+                // shows as the sleeve shrinking off its own border.
+                Color.appMidBackground
+                    .frame(width: 40, height: 40)
+                    .overlay {
+                        CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.artworkRendering().scaledToFill()
+                            default:
                                 Image(systemName: "music.note")
                                     .font(.caption)
                                     .foregroundColor(.appTextMuted)
-                            )
+                            }
+                        }
                     }
-                }
-                .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
@@ -1386,20 +1395,20 @@ private struct UpNextQueueRow: View {
 
             HStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            Rectangle().fill(Color.appMidBackground)
-                                .overlay(
+                    Color.appMidBackground
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            CachedAsyncImage(url: URL(string: track.artworkURL ?? "")) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image.artworkRendering().scaledToFill()
+                                default:
                                     Image(systemName: "music.note")
                                         .font(.caption)
                                         .foregroundColor(.appTextMuted)
-                                )
+                                }
+                            }
                         }
-                    }
-                    .frame(width: 40, height: 40)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)

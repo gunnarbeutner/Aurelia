@@ -373,7 +373,7 @@ struct AlbumDetailView: View {
                 switch phase {
                 case .success(let image):
                     image
-                        .resizable()
+                        .artworkRendering()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 260, height: 260)
                         .clipped()

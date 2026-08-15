@@ -16,7 +16,7 @@ struct ArtistListRow: View {
                     switch phase {
                     case .success(let image):
                         image
-                            .resizable()
+                            .artworkRendering()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 52, height: 52)
                             .clipShape(RoundedRectangle(cornerRadius: 8))

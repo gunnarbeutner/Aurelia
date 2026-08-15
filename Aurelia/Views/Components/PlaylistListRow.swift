@@ -13,7 +13,7 @@ struct PlaylistListRow: View {
                             placeholderArtwork
                         case .success(let image):
                             image
-                                .resizable()
+                                .artworkRendering()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 64, height: 64)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))

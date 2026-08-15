@@ -354,7 +354,7 @@ struct ArtistDetailView: View {
                                 placeholderArtistHeader
                             case .success(let image):
                                 image
-                                    .resizable()
+                                    .artworkRendering()
                                     .aspectRatio(contentMode: .fill)
                                     // Anchored to the top, not centred. Filling
                                     // a short wide header from a portrait

@@ -267,7 +267,7 @@ struct DiscoveryView: View {
                 LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(viewModel.shelves) { shelf in
                         Button {
-                            startPlayback(shelf.tracks, startingAt: 0)
+                            startPlayback(shelf.playbackTracks, startingAt: 0)
                         } label: {
                             DiscoveryMixCard(shelf: shelf)
                         }
@@ -276,7 +276,7 @@ struct DiscoveryView: View {
                         .accessibilityLabel("Play \(shelf.mixTitle)")
                         .contextMenu {
                             Button {
-                                startPlayback(shelf.tracks, startingAt: 0)
+                                startPlayback(shelf.playbackTracks, startingAt: 0)
                             } label: {
                                 Label("Play Mix", systemImage: "play.fill")
                             }
@@ -628,7 +628,7 @@ struct DiscoveryView: View {
                         CachedAsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let image):
-                                image.resizable().scaledToFill()
+                                image.artworkRendering().scaledToFill()
                             default:
                                 Color.appMidBackground
                             }
@@ -872,7 +872,7 @@ private struct DiscoveryMixCard: View {
         VStack(alignment: .leading, spacing: 8) {
             CachedAsyncImage(url: shelf.seed.artworkURL.flatMap(URL.init(string:))) { phase in
                 if let image = phase.image {
-                    image.resizable().scaledToFill()
+                    image.artworkRendering().scaledToFill()
                 } else {
                     ZStack {
                         LinearGradient(
@@ -918,7 +918,7 @@ private struct DiscoveryTrackCard: View {
         VStack(alignment: .leading, spacing: 8) {
             CachedAsyncImage(url: track.artworkURL.flatMap(URL.init(string:))) { phase in
                 if let image = phase.image {
-                    image.resizable().scaledToFill()
+                    image.artworkRendering().scaledToFill()
                 } else {
                     ZStack {
                         Color.appElevated
@@ -952,7 +952,7 @@ private struct RecentPlayCard: View {
         VStack(alignment: .leading, spacing: 8) {
             CachedAsyncImage(url: item.resumeTrack.artworkURL.flatMap(URL.init(string:))) { phase in
                 if let image = phase.image {
-                    image.resizable().scaledToFill()
+                    image.artworkRendering().scaledToFill()
                 } else {
                     ZStack {
                         Color.appElevated

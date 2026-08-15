@@ -408,7 +408,7 @@ struct SearchResultRow: View {
                             placeholderImage
                         case .success(let image):
                             image
-                                .resizable()
+                                .artworkRendering()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 60, height: 60)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))

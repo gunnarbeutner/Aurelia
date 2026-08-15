@@ -146,7 +146,7 @@ struct PlaylistDetailView: View {
                             placeholderArtwork
                         case .success(let image):
                             image
-                                .resizable()
+                                .artworkRendering()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 260, height: 260)
                                 .clipShape(RoundedRectangle(cornerRadius: 20))

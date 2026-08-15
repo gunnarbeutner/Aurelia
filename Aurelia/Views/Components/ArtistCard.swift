@@ -18,7 +18,7 @@ struct ArtistCard: View {
                         placeholderArtwork
                     case .success(let image):
                         image
-                            .resizable()
+                            .artworkRendering()
                             .aspectRatio(1, contentMode: .fill)
                             .frame(maxWidth: .infinity)
                             .clipped()

@@ -315,7 +315,7 @@ struct FavoriteTrackRow: View {
                         CachedAsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let image):
-                                image.resizable().aspectRatio(contentMode: .fill)
+                                image.artworkRendering().aspectRatio(contentMode: .fill)
                             default:
                                 placeholderArtwork
                             }

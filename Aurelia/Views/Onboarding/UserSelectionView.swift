@@ -189,7 +189,7 @@ struct UserSelectionView: View {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fill)
+                    image.artworkRendering().aspectRatio(contentMode: .fill)
                 default:
                     initialsAvatar(for: user)
                 }
