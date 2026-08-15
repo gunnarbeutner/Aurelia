@@ -464,6 +464,65 @@ class JellyfinService: ObservableObject {
         return url
     }
 
+    /// Generates a download URL honouring the user's download quality.
+    ///
+    /// Anything but `.original` goes through `/Audio/{id}/universal`, which
+    /// negotiates rather than transcodes blindly: a source already inside the
+    /// requested bitrate is served untouched, so a 192 kbps MP3 asked for at
+    /// 320 is not re-encoded into a larger, worse file.
+    func getDownloadURL(for itemId: String, quality: DownloadQuality) -> URL? {
+        guard quality != .original else {
+            return getDownloadURL(for: itemId)
+        }
+
+        guard !itemId.isEmpty else {
+            logger.error("Empty item ID provided for download URL")
+            return nil
+        }
+
+        guard let token = KeychainService.shared.getAccessToken(), !token.isEmpty else {
+            logger.error("Failed to get download URL: No access token")
+            return nil
+        }
+
+        let cleanBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanBaseURL.isEmpty else {
+            logger.error("Base URL is empty")
+            return nil
+        }
+
+        let normalizedBaseURL = cleanBaseURL.hasSuffix("/") ? String(cleanBaseURL.dropLast()) : cleanBaseURL
+        guard var components = URLComponents(string: normalizedBaseURL + "/Audio/\(itemId)/universal") else {
+            logger.error("Failed to create URL components for download: \(itemId)")
+            return nil
+        }
+
+        var queryItems = [
+            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "DeviceId", value: deviceId),
+            URLQueryItem(name: "MaxStreamingBitrate", value: "\(quality.bitrate * 1000)"),
+            // Containers this client can play back from a local file. The
+            // server direct-streams when the source already qualifies.
+            URLQueryItem(name: "Container", value: "mp3,aac,m4a,mp4"),
+            URLQueryItem(name: "AudioCodec", value: "mp3"),
+            URLQueryItem(name: "TranscodingContainer", value: "mp3"),
+            URLQueryItem(name: "TranscodingProtocol", value: "http")
+        ]
+        if let userId = KeychainService.shared.getUserID() {
+            queryItems.append(URLQueryItem(name: "UserId", value: userId))
+        }
+        components.queryItems = queryItems
+
+        guard let url = components.url else {
+            logger.error("Failed to generate final download URL")
+            return nil
+        }
+
+        logger.info("Generated download URL for item \(itemId) at \(quality.bitrate)kbps")
+        logger.info("  → Using /universal endpoint, transcoding only if the source exceeds it")
+        return url
+    }
+
     // MARK: - Playlist Management
 
     /// Create a new playlist

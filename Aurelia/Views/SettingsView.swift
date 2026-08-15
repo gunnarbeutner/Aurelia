@@ -69,6 +69,7 @@ struct SettingsView: View {
     @State private var showLibrarySyncError = false
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
+    @AppStorage(DownloadManager.qualityDefaultsKey) private var downloadQualityRaw = DownloadQuality.original.rawValue
     @State private var audioMuseAvailability: AudioMuseAvailability = .checking
     @State private var aureliaSyncState: AureliaSyncSettingsState = .checking
     /// Carried across readings so a single failed request cannot report a
@@ -80,6 +81,10 @@ struct SettingsView: View {
     }
     private func setSelectedQuality(_ quality: StreamingQuality) {
         selectedQualityRaw = quality.rawValue
+    }
+
+    private var downloadQuality: DownloadQuality {
+        DownloadQuality(rawValue: downloadQualityRaw) ?? .original
     }
 
     var body: some View {
@@ -403,6 +408,41 @@ struct SettingsView: View {
                 .settingsCard()
             }
             .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 14) {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.appAccent)
+                        .frame(width: 34)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Download Quality")
+                            .font(.appBody)
+                            .foregroundColor(.appText)
+                        Text(downloadQuality.description)
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                    }
+
+                    Spacer()
+                }
+
+                Picker("Download Quality", selection: $downloadQualityRaw) {
+                    ForEach(DownloadQuality.allCases) { quality in
+                        Text(quality.displayName).tag(quality.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("download-quality")
+
+                // Re-fetching a library because a setting moved would be a
+                // multi-gigabyte surprise, so the change is forward-looking.
+                Text("Applies to new downloads. Anything already downloaded keeps the quality it was fetched at.")
+                    .font(.appCaption)
+                    .foregroundColor(.appTextMuted)
+            }
+            .settingsCard()
 
             NavigationLink(value: SettingsDestination.favoritesOffline) {
                 HStack(spacing: 14) {

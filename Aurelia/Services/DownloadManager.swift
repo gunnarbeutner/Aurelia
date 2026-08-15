@@ -34,6 +34,64 @@ enum DownloadState: Equatable {
     }
 }
 
+/// How much of the original file to keep when downloading.
+///
+/// Deliberately separate from `StreamingQuality`: a stream is disposable and
+/// bandwidth-bound, while a download is permanent and storage-bound, and a
+/// library that fits on the device at one setting will not at the other.
+nonisolated enum DownloadQuality: String, Codable, Sendable, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+    /// The file exactly as the server holds it. The default: silently
+    /// degrading music someone already has is not a thing a default should do.
+    case original
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .low: return "Small"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .original: return "Original"
+        }
+    }
+
+    /// kbps, or zero when the file is taken as-is.
+    var bitrate: Int {
+        switch self {
+        case .low: return 128
+        case .medium: return 192
+        case .high: return 320
+        case .original: return 0
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .low: return "128 kbps — about 58 MB per hour"
+        case .medium: return "192 kbps — about 86 MB per hour"
+        case .high: return "320 kbps — about 144 MB per hour"
+        case .original: return "Exactly what is on the server, however large"
+        }
+    }
+
+    /// Bytes of file per second of audio. Known exactly for a transcode, and
+    /// only measurable for the original, whose size depends on the source.
+    var bytesPerSecond: Double? {
+        guard self != .original else { return nil }
+        return Double(bitrate) * 1000 / 8
+    }
+
+    /// Container the server is asked to transcode into. MP3 is what the
+    /// streaming path already negotiates successfully with Jellyfin, so
+    /// downloads use the same rather than introducing an untested format.
+    var fileExtension: String? {
+        self == .original ? nil : "mp3"
+    }
+}
+
 /// Metadata for a downloaded track
 nonisolated struct DownloadedTrack: Codable, Sendable, Equatable {
     let trackId: String
@@ -58,6 +116,11 @@ nonisolated struct DownloadedTrack: Codable, Sendable, Equatable {
     /// interest in it, and vice versa.
     var owners: Set<DownloadOrigin>
 
+    /// What was asked for when this file was fetched. Recorded because the
+    /// setting can change afterwards, and a library that silently mixes
+    /// qualities with no way to tell them apart is worse than either.
+    let quality: DownloadQuality
+
     init(
         trackId: String,
         fileName: String,
@@ -73,7 +136,8 @@ nonisolated struct DownloadedTrack: Codable, Sendable, Equatable {
         artistId: String?,
         productionYear: Int?,
         artworkURL: String?,
-        owners: Set<DownloadOrigin> = [.manual]
+        owners: Set<DownloadOrigin> = [.manual],
+        quality: DownloadQuality = .original
     ) {
         self.trackId = trackId
         self.fileName = fileName
@@ -90,6 +154,7 @@ nonisolated struct DownloadedTrack: Codable, Sendable, Equatable {
         self.productionYear = productionYear
         self.artworkURL = artworkURL
         self.owners = owners
+        self.quality = quality
     }
 
     init(from decoder: Decoder) throws {
@@ -112,6 +177,9 @@ nonisolated struct DownloadedTrack: Codable, Sendable, Equatable {
         // rule, so everything they describe was put on the device by hand.
         // Decoding them as unowned would let the first reconcile delete them.
         owners = try container.decodeIfPresent(Set<DownloadOrigin>.self, forKey: .owners) ?? [.manual]
+        // Everything downloaded before quality was configurable came from the
+        // /Download endpoint, which only ever served the original file.
+        quality = try container.decodeIfPresent(DownloadQuality.self, forKey: .quality) ?? .original
     }
 
     /// Convert to Track for playback
@@ -340,6 +408,12 @@ class DownloadManager: NSObject, ObservableObject {
     // Track which albums are being downloaded to send completion notifications
     private var downloadingAlbums: [String: Set<String>] = [:] // albumId -> Set of trackIds
 
+    /// The extension each in-flight download should be saved under, readable
+    /// from the session's delegate queue. The delegate has to name the file
+    /// before it can return, and `pending` is main-thread state.
+    private let metadataLock = NSLock()
+    private var expectedExtensions: [String: String] = [:]
+
     /// Progress arrives per chunk per task. Publishing each one would invalidate
     /// every download row in the UI thousands of times a second, so updates are
     /// buffered here and flushed on a timer.
@@ -480,7 +554,7 @@ class DownloadManager: NSObject, ObservableObject {
                 continue
             }
 
-            let record = PendingDownload(track: track, owners: [origin])
+            let record = PendingDownload(track: track, owners: [origin], quality: currentQuality)
             pending[track.id] = record
             store.upsertPending(record)
             downloadStates[track.id] = .downloading(progress: 0)
@@ -739,7 +813,7 @@ class DownloadManager: NSObject, ObservableObject {
     private func startTask(for trackID: String) {
         guard let record = pending[trackID] else { return }
 
-        guard let downloadURL = jellyfinService.getDownloadURL(for: trackID) else {
+        guard let downloadURL = jellyfinService.getDownloadURL(for: trackID, quality: record.quality) else {
             logger.error("Failed to get download URL for track: \(record.track.name)")
             fail(trackID, message: "Could not get download URL", permanent: true)
             return
@@ -757,6 +831,14 @@ class DownloadManager: NSObject, ObservableObject {
 
         logger.info("Starting download: \(record.track.name)")
 
+        // A transcode is served as MP3 whatever the source was called, and the
+        // server may still label the response with the original file's name.
+        if let fileExtension = record.quality.fileExtension {
+            metadataLock.lock()
+            expectedExtensions[trackID] = fileExtension
+            metadataLock.unlock()
+        }
+
         let task = urlSession.downloadTask(with: request)
         task.taskDescription = trackID // Store track ID in task for later reference
         downloadTasks[trackID] = task
@@ -768,6 +850,10 @@ class DownloadManager: NSObject, ObservableObject {
 
     /// Removes a track from the queue entirely, cancelling any work in flight.
     private func cancelPending(_ trackID: String) {
+        metadataLock.lock()
+        expectedExtensions.removeValue(forKey: trackID)
+        metadataLock.unlock()
+
         retryWorkItems.removeValue(forKey: trackID)?.cancel()
         if let task = downloadTasks.removeValue(forKey: trackID) {
             task.cancel()
@@ -947,18 +1033,35 @@ class DownloadManager: NSObject, ObservableObject {
         return formatter.string(fromByteCount: bytes)
     }
 
-    /// Average bytes per second of audio across what is already downloaded.
+    /// Key for the download quality preference. Read rather than cached so a
+    /// change applies to the next download without any plumbing.
+    static let qualityDefaultsKey = "downloadQuality"
+
+    /// The quality new downloads are fetched at.
+    var currentQuality: DownloadQuality {
+        DownloadQuality(rawValue: defaults.string(forKey: Self.qualityDefaultsKey) ?? "") ?? .original
+    }
+
+    /// Bytes of file per second of audio at a given quality.
     ///
-    /// Jellyfin's item metadata carries a duration but no file size, so the
-    /// only honest way to predict how much room a batch needs is to measure
-    /// what this library's files have actually cost so far.
-    var observedBytesPerSecond: Double {
-        let samples = downloadedTracks.filter { ($0.duration ?? 0) > 0 }
-        guard !samples.isEmpty else { return 40_000 } // ~320 kbps, until we know better
-        let bytes = samples.reduce(0.0) { $0 + Double($1.fileSize) }
+    /// A transcode is arithmetic — the bitrate was dictated, so the size is
+    /// known. The original is not: Jellyfin's item metadata carries a duration
+    /// but no file size, so the only honest way to predict it is to measure
+    /// what this library's own originals have cost.
+    func bytesPerSecond(for quality: DownloadQuality) -> Double {
+        if let known = quality.bytesPerSecond { return known }
+
+        // Only originals may be sampled. Averaging a FLAC library together with
+        // a batch of 128 kbps transcodes would describe neither.
+        let samples = downloadedTracks.filter { $0.quality == .original && ($0.duration ?? 0) > 0 }
         let seconds = samples.reduce(0.0) { $0 + ($1.duration ?? 0) }
-        guard seconds > 0 else { return 40_000 }
-        return bytes / seconds
+        guard seconds > 0 else { return 110_000 } // ~880 kbps, a middling FLAC
+        return samples.reduce(0.0) { $0 + Double($1.fileSize) } / seconds
+    }
+
+    /// Bytes per second at whatever quality downloads are being taken now.
+    var observedBytesPerSecond: Double {
+        bytesPerSecond(for: currentQuality)
     }
 
     // MARK: - Artwork Caching
@@ -1107,7 +1210,8 @@ class DownloadManager: NSObject, ObservableObject {
             artistId: track.artistId,
             productionYear: track.productionYear,
             artworkURL: track.artworkURL,
-            owners: record.owners
+            owners: record.owners,
+            quality: record.quality
         )
 
         pending.removeValue(forKey: trackID)
@@ -1185,7 +1289,13 @@ extension DownloadManager: URLSessionDownloadDelegate {
         // The temporary file is gone the moment this method returns, so the
         // move has to happen here rather than on the main thread. It touches
         // no shared state, only the filesystem.
-        let fileExtension = downloadTask.response?.suggestedFilename?.split(separator: ".").last.map(String.init) ?? "mp3"
+        metadataLock.lock()
+        let requestedExtension = expectedExtensions.removeValue(forKey: trackId)
+        metadataLock.unlock()
+
+        let fileExtension = requestedExtension
+            ?? downloadTask.response?.suggestedFilename?.split(separator: ".").last.map(String.init)
+            ?? "mp3"
         let fileName = "\(trackId).\(fileExtension)"
         let destinationURL = downloadsDirectory.appendingPathComponent(fileName)
 

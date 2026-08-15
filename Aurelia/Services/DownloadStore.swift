@@ -39,11 +39,21 @@ nonisolated struct PendingDownload: Sendable, Equatable {
     /// Same meaning as on a finished download: everyone who wants this file.
     var owners: Set<DownloadOrigin>
     var attempts: Int
+    /// Fixed when the download is first asked for, so a retry — or a resume
+    /// after the app was killed — fetches what was originally requested rather
+    /// than whatever the setting happens to say now.
+    let quality: DownloadQuality
 
-    init(track: Track, owners: Set<DownloadOrigin>, attempts: Int = 0) {
+    init(
+        track: Track,
+        owners: Set<DownloadOrigin>,
+        attempts: Int = 0,
+        quality: DownloadQuality = .original
+    ) {
         self.track = track
         self.owners = owners
         self.attempts = attempts
+        self.quality = quality
     }
 }
 
@@ -132,7 +142,8 @@ final class DownloadStore: Sendable {
                         return PendingDownload(
                             track: track,
                             owners: DownloadedTrack.decode(owners: row["owners"]),
-                            attempts: row["attempts"]
+                            attempts: row["attempts"],
+                            quality: DownloadQuality(rawValue: row["quality"] ?? "") ?? .original
                         )
                     }
             }
@@ -150,18 +161,20 @@ final class DownloadStore: Sendable {
         write { db in
             try db.execute(
                 sql: """
-                    INSERT INTO pendingDownload (trackId, owners, attempts, payload)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO pendingDownload (trackId, owners, attempts, payload, quality)
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(trackId) DO UPDATE SET
                         owners = excluded.owners,
                         attempts = excluded.attempts,
-                        payload = excluded.payload
+                        payload = excluded.payload,
+                        quality = excluded.quality
                     """,
                 arguments: [
                     pending.track.id,
                     DownloadedTrack.encode(owners: pending.owners),
                     pending.attempts,
-                    payload
+                    payload,
+                    pending.quality.rawValue
                 ]
             )
         }
@@ -225,8 +238,8 @@ final class DownloadStore: Sendable {
                 INSERT INTO downloadedTrack (
                     trackId, fileName, fileSize, downloadDate, trackName, artistName,
                     albumName, duration, albumId, trackNumber, discNumber, artistId,
-                    productionYear, artworkURL, owners
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    productionYear, artworkURL, owners, quality
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(trackId) DO UPDATE SET
                     fileName = excluded.fileName,
                     fileSize = excluded.fileSize,
@@ -241,7 +254,8 @@ final class DownloadStore: Sendable {
                     artistId = excluded.artistId,
                     productionYear = excluded.productionYear,
                     artworkURL = excluded.artworkURL,
-                    owners = excluded.owners
+                    owners = excluded.owners,
+                    quality = excluded.quality
                 """,
             arguments: [
                 track.trackId,
@@ -258,7 +272,8 @@ final class DownloadStore: Sendable {
                 track.artistId,
                 track.productionYear,
                 track.artworkURL,
-                DownloadedTrack.encode(owners: track.owners)
+                DownloadedTrack.encode(owners: track.owners),
+                track.quality.rawValue
             ]
         )
     }
@@ -304,6 +319,19 @@ final class DownloadStore: Sendable {
                 table.column("payload", .blob).notNull()
             }
         }
+
+        migrator.registerMigration("addDownloadQuality") { db in
+            // Everything already on disk came from the /Download endpoint,
+            // which only ever served the original file.
+            for table in ["downloadedTrack", "pendingDownload"] {
+                try db.alter(table: table) { alteration in
+                    alteration.add(column: "quality", .text)
+                        .notNull()
+                        .defaults(to: DownloadQuality.original.rawValue)
+                }
+            }
+        }
+
         return migrator
     }
 }
@@ -327,7 +355,8 @@ extension DownloadedTrack {
             artistId: row["artistId"],
             productionYear: row["productionYear"],
             artworkURL: row["artworkURL"],
-            owners: DownloadedTrack.decode(owners: row["owners"])
+            owners: DownloadedTrack.decode(owners: row["owners"]),
+            quality: DownloadQuality(rawValue: row["quality"] ?? "") ?? .original
         )
     }
 

@@ -9,6 +9,7 @@
 
 import Testing
 import Foundation
+import GRDB
 @testable import Aurelia
 
 struct FavoritesOfflineTests {
@@ -32,7 +33,8 @@ struct FavoritesOfflineTests {
         owners: Set<DownloadOrigin>,
         album: String = "album",
         fileSize: Int64 = 1_000_000,
-        duration: TimeInterval? = 200
+        duration: TimeInterval? = 200,
+        quality: DownloadQuality = .original
     ) -> DownloadedTrack {
         DownloadedTrack(
             trackId: id,
@@ -49,7 +51,8 @@ struct FavoritesOfflineTests {
             artistId: "artist",
             productionYear: 2026,
             artworkURL: nil,
-            owners: owners
+            owners: owners,
+            quality: quality
         )
     }
 
@@ -269,7 +272,132 @@ struct FavoritesOfflineTests {
         #expect(reopened.loadDownloads().count == 1)
     }
 
+    // MARK: - Download quality
+
+    @Test func transcodedSizesAreArithmeticAndOriginalsAreMeasured() {
+        let manager = DownloadManager(store: try! Self.makeStore(), defaults: Self.emptyDefaults())
+
+        // A dictated bitrate needs no measuring: 192 kbps is 24,000 bytes/s.
+        #expect(manager.bytesPerSecond(for: .medium) == 24_000)
+        #expect(manager.bytesPerSecond(for: .low) == 16_000)
+        #expect(manager.bytesPerSecond(for: .high) == 40_000)
+
+        // With no originals downloaded, the original falls back to an estimate
+        // rather than claiming to know.
+        #expect(manager.bytesPerSecond(for: .original) == 110_000)
+
+        // One 200-second, 20 MB original: 100,000 bytes per second.
+        manager.downloadedTracks = [
+            Self.downloaded("flac", owners: [.manual], fileSize: 20_000_000, duration: 200, quality: .original)
+        ]
+        #expect(manager.bytesPerSecond(for: .original) == 100_000)
+
+        // Transcodes must not pollute the original's measurement — averaging a
+        // FLAC library with 128 kbps files would describe neither.
+        manager.downloadedTracks.append(
+            Self.downloaded("small", owners: [.manual], fileSize: 3_200_000, duration: 200, quality: .low)
+        )
+        #expect(manager.bytesPerSecond(for: .original) == 100_000)
+    }
+
+    @Test func qualitySurvivesTheStoreAndDefaultsToOriginal() throws {
+        let store = try Self.makeStore()
+
+        store.upsert(Self.downloaded("a", owners: [.manual], quality: .medium))
+        #expect(store.loadDownloads().first?.quality == .medium)
+
+        let pending = PendingDownload(
+            track: Self.track("p"),
+            owners: [.favoritesRule],
+            attempts: 0,
+            quality: .high
+        )
+        store.upsertPending(pending)
+        // A retry, or a resume after the app was killed, must fetch what was
+        // originally asked for rather than today's setting.
+        #expect(store.loadPending().first?.quality == .high)
+    }
+
+    @Test func downloadsWrittenBeforeQualityExistedDecodeAsOriginal() throws {
+        let legacy = """
+        {
+            "trackId": "legacy", "fileName": "legacy.mp3", "fileSize": 5000,
+            "downloadDate": 0, "trackName": "Legacy", "artistName": "Artist",
+            "albumName": "Album", "albumId": "album"
+        }
+        """
+        let decoded = try JSONDecoder().decode(DownloadedTrack.self, from: Data(legacy.utf8))
+        // The old /Download endpoint only ever served the original file.
+        #expect(decoded.quality == .original)
+    }
+
+    @Test func aPopulatedDatabaseFromBeforeQualityUpgradesInPlace() throws {
+        // The devices this shipped to already hold a v1 database with real
+        // rows, so the upgrade runs against data, not an empty file. Build that
+        // exact starting point — v1 schema plus GRDB's own migration record —
+        // and open the current store on top of it.
+        let databaseURL = Self.temporaryDatabaseURL()
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let v1 = try DatabaseQueue(path: databaseURL.path)
+        try v1.write { db in
+            try db.execute(sql: """
+                CREATE TABLE downloadedTrack (
+                    trackId TEXT PRIMARY KEY, fileName TEXT NOT NULL, fileSize INTEGER NOT NULL,
+                    downloadDate DATETIME NOT NULL, trackName TEXT NOT NULL, artistName TEXT NOT NULL,
+                    albumName TEXT NOT NULL, duration DOUBLE, albumId TEXT NOT NULL,
+                    trackNumber INTEGER, discNumber INTEGER, artistId TEXT,
+                    productionYear INTEGER, artworkURL TEXT, owners TEXT NOT NULL)
+                """)
+            try db.execute(sql: """
+                CREATE TABLE pendingDownload (
+                    trackId TEXT PRIMARY KEY, owners TEXT NOT NULL,
+                    attempts INTEGER NOT NULL, payload BLOB NOT NULL)
+                """)
+            try db.execute(sql: "CREATE TABLE grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)")
+            try db.execute(sql: "INSERT INTO grdb_migrations (identifier) VALUES ('createDownloadIndex')")
+            try db.execute(sql: """
+                INSERT INTO downloadedTrack VALUES
+                ('kept', 'kept.flac', 30000000, 0, 'Kept', 'Artist', 'Album', 240, 'album',
+                 1, 1, 'artist', 2024, NULL, 'manual,favoritesRule')
+                """)
+        }
+        try v1.close()
+
+        let defaults = Self.emptyDefaults()
+        defaults.set(true, forKey: "downloadStoreMigratedFromDefaults")
+        let store = try DownloadStore(databaseURL: databaseURL, defaults: defaults)
+
+        let rows = store.loadDownloads()
+        #expect(rows.count == 1)
+        // The row survives, keeps its owners, and gains the only quality it
+        // could have had — deleting or mislabelling it would lose real music.
+        #expect(rows[0].trackId == "kept")
+        #expect(rows[0].owners == [.manual, .favoritesRule])
+        #expect(rows[0].quality == .original)
+        #expect(rows[0].fileSize == 30_000_000)
+
+        // And the upgraded schema accepts new writes at other qualities.
+        store.upsert(Self.downloaded("new", owners: [.manual], quality: .medium))
+        #expect(store.loadDownloads().count == 2)
+        #expect(store.loadDownloads().first { $0.trackId == "new" }?.quality == .medium)
+    }
+
+    @Test func onlyTranscodesDeclareAFileExtension() {
+        #expect(DownloadQuality.original.fileExtension == nil)
+        #expect(DownloadQuality.medium.fileExtension == "mp3")
+        #expect(DownloadQuality.original.bytesPerSecond == nil)
+    }
+
     // MARK: - Helpers
+
+    private static func emptyDefaults() -> UserDefaults {
+        let suiteName = "favorites-offline-tests-\(UUID().uuidString)"
+        return UserDefaults(suiteName: suiteName)!
+    }
 
     private static func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory
