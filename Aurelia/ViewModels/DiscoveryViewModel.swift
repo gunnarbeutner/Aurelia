@@ -20,6 +20,16 @@ nonisolated struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
         title ?? "\(seed.artistName) Mix"
     }
 
+    /// What a mix plays, seed first.
+    ///
+    /// The card is the seed's artwork under the seed's name, so that is what
+    /// pressing play has promised. The recommendations behind it have recent
+    /// tracks filtered out, which usually excludes the seed itself, and
+    /// starting there opens the mix on an artist the card never mentioned.
+    var playbackTracks: [Track] {
+        [seed] + tracks.filter { $0.id != seed.id }
+    }
+
     var supportingArtistNames: [String] {
         let mainArtist = seed.artistName.trimmingCharacters(in: .whitespacesAndNewlines)
         var seen = Set<String>()

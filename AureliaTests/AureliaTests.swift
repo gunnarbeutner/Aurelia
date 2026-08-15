@@ -870,6 +870,35 @@ struct AureliaTests {
         #expect(shelf.supportingArtistNames == ["Guest A", "Guest B"])
     }
 
+    @Test func discoveryMixStartsOnTheTrackItsCardShows() {
+        let seed = Track(id: "seed", name: "Seed", artistName: "Main Band", albumName: "Album", duration: 1, artworkURL: nil)
+        let shelf = DiscoveryShelf(
+            seed: seed,
+            tracks: [
+                Track(id: "1", name: "One", artistName: "Guest A", albumName: "A", duration: 1, artworkURL: nil),
+                Track(id: "2", name: "Two", artistName: "Guest B", albumName: "B", duration: 1, artworkURL: nil)
+            ]
+        )
+
+        // The card is the seed's artwork under the seed's name, so the seed is
+        // what pressing play has promised.
+        #expect(shelf.playbackTracks.map(\.id) == ["seed", "1", "2"])
+    }
+
+    @Test func discoveryMixDoesNotPlayItsSeedTwice() {
+        let seed = Track(id: "seed", name: "Seed", artistName: "Main Band", albumName: "Album", duration: 1, artworkURL: nil)
+        let shelf = DiscoveryShelf(
+            seed: seed,
+            tracks: [
+                Track(id: "1", name: "One", artistName: "Guest A", albumName: "A", duration: 1, artworkURL: nil),
+                seed
+            ]
+        )
+
+        // Recommendations usually exclude the seed, but nothing guarantees it.
+        #expect(shelf.playbackTracks.map(\.id) == ["seed", "1"])
+    }
+
     @Test @MainActor func discoveryRequiresAudioMuseForDailyMixes() async throws {
         let api = FakeDiscoveryAPI()
         api.audioMuseAvailable = false
