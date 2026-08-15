@@ -20,6 +20,10 @@ struct PasswordLoginView: View {
         case username, password
     }
 
+    /// Chosen on the account picker. When set, the name is already known and
+    /// the keyboard opens straight on the password.
+    var prefilledUsername: String?
+
     let onSuccess: () -> Void
     let onBack: () -> Void
 
@@ -211,7 +215,12 @@ struct PasswordLoginView: View {
             Text(errorMessage)
         }
         .onAppear {
-            focusedField = .username
+            if let prefilledUsername, !prefilledUsername.isEmpty {
+                username = prefilledUsername
+                focusedField = .password
+            } else {
+                focusedField = .username
+            }
         }
     }
 

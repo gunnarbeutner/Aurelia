@@ -77,6 +77,23 @@ class JellyfinService: ObservableObject {
         let Name: String
     }
 
+    /// A user the server is willing to name on a login screen.
+    ///
+    /// Jellyfin publishes these per-user ("Hide this user from login screens"),
+    /// so an empty list is a legitimate answer meaning "make them type it".
+    struct PublicUser: Codable, Identifiable, Sendable, Equatable {
+        let Id: String
+        let Name: String
+        let PrimaryImageTag: String?
+        let HasPassword: Bool?
+
+        var id: String { Id }
+
+        /// Servers may omit the field; assume a password is needed rather than
+        /// walking someone into a failed sign-in.
+        var requiresPassword: Bool { HasPassword ?? true }
+    }
+
     struct AuthenticationResult: Codable {
         let User: User?
         let AccessToken: String?
@@ -234,6 +251,45 @@ class JellyfinService: ObservableObject {
         default:
             throw JellyfinError.invalidResponse
         }
+    }
+
+    /// Users the server advertises on its login screen, newest Jellyfin's
+    /// equivalent of the account picker.
+    ///
+    /// Returns an empty list rather than throwing: a server with every user
+    /// hidden, an older server without the endpoint, and an unreachable one all
+    /// mean the same thing to the caller — fall back to typing a name.
+    func fetchPublicUsers() async -> [PublicUser] {
+        guard let url = URL(string: "\(baseURL)/Users/Public") else { return [] }
+
+        var request = URLRequest(url: url)
+        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "X-Emby-Authorization")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                logger.info("Public users unavailable; falling back to manual entry")
+                return []
+            }
+            let users = try JSONDecoder().decode([PublicUser].self, from: data)
+            logger.info("Server published \(users.count) users for the login screen")
+            return users
+        } catch {
+            logger.info("Could not read public users: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    /// Avatar for a user on the login screen. Unauthenticated, like the list.
+    func userImageURL(userId: String, imageTag: String, size: Int = 200) -> URL? {
+        var components = URLComponents(string: "\(baseURL)/Users/\(userId)/Images/Primary")
+        components?.queryItems = [
+            URLQueryItem(name: "tag", value: imageTag),
+            URLQueryItem(name: "maxWidth", value: "\(size)"),
+            URLQueryItem(name: "maxHeight", value: "\(size)"),
+            URLQueryItem(name: "quality", value: "90")
+        ]
+        return components?.url
     }
 
     /// Check server connectivity (returns true if server is reachable)

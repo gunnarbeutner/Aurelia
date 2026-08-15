@@ -10,11 +10,15 @@ import SwiftUI
 struct OnboardingView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @State private var currentStep: OnboardingStep = .serverSetup
+    /// Chosen on the account picker, so the password screen can skip asking
+    /// for something the server already told us.
+    @State private var selectedUsername: String?
 
     enum OnboardingStep {
         case serverSetup
         case authChoice
         case quickConnect
+        case userSelection
         case passwordLogin
     }
 
@@ -40,8 +44,11 @@ struct OnboardingView: View {
                         }
                     },
                     onPasswordLogin: {
+                        selectedUsername = nil
                         withAnimation(.spring(response: 0.4)) {
-                            currentStep = .passwordLogin
+                            // The picker decides for itself whether it has
+                            // anything to show, and steps aside if not.
+                            currentStep = .userSelection
                         }
                     },
                     onBack: {
@@ -68,12 +75,41 @@ struct OnboardingView: View {
                     removal: .move(edge: .leading).combined(with: .opacity)
                 ))
 
+            case .userSelection:
+                UserSelectionView(
+                    onSelect: { user in
+                        selectedUsername = user.Name
+                        withAnimation(.spring(response: 0.4)) {
+                            currentStep = .passwordLogin
+                        }
+                    },
+                    onManualEntry: {
+                        selectedUsername = nil
+                        withAnimation(.spring(response: 0.4)) {
+                            currentStep = .passwordLogin
+                        }
+                    },
+                    onSuccess: {
+                        // JellyfinService updates isAuthenticated
+                    },
+                    onBack: {
+                        withAnimation(.spring(response: 0.4)) {
+                            currentStep = .authChoice
+                        }
+                    }
+                )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+
             case .passwordLogin:
-                PasswordLoginView {
+                PasswordLoginView(prefilledUsername: selectedUsername) {
                     // Success — JellyfinService updates isAuthenticated
                 } onBack: {
                     withAnimation(.spring(response: 0.4)) {
-                        currentStep = .authChoice
+                        // Back belongs to wherever this was reached from.
+                        currentStep = selectedUsername == nil ? .authChoice : .userSelection
                     }
                 }
                 .transition(.asymmetric(
