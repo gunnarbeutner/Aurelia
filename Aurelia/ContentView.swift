@@ -11,9 +11,14 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
-    /// Reset on every launch: a plugin can be removed or fail between runs,
-    /// and this is cheap to confirm.
-    @State private var hasConfirmedSyncPlugin = false
+    /// Set once a server has proven it can sync, and cleared on sign out.
+    ///
+    /// Checking on every launch costs a round trip before anything draws, and
+    /// blocks the app entirely when the server is unreachable — which is
+    /// exactly when downloaded music is the point. A plugin that breaks later
+    /// surfaces as a sync error, with its health and an install button in
+    /// Settings.
+    @AppStorage("hasCompletedSyncSetup") private var hasConfirmedSyncPlugin = false
 
 
     var body: some View {

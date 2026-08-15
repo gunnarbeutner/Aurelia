@@ -18,6 +18,9 @@ struct SyncSetupView: View {
     @State private var phase: Phase = .checking
     @State private var steps: [Step] = Step.plan
     @State private var failure: String?
+    /// Held back briefly so a check that passes in a couple of hundred
+    /// milliseconds never puts a screen up and takes it away again.
+    @State private var showsChecking = false
 
     /// Called once the plugin is confirmed present and healthy.
     let onReady: () -> Void
@@ -87,6 +90,11 @@ struct SyncSetupView: View {
         .task {
             await check()
         }
+        .task {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard phase == .checking else { return }
+            withAnimation(.easeOut(duration: 0.2)) { showsChecking = true }
+        }
     }
 
     // MARK: - Content
@@ -95,13 +103,16 @@ struct SyncSetupView: View {
     private var content: some View {
         switch phase {
         case .checking:
-            VStack(spacing: 16) {
-                ProgressView()
-                    .tint(.appAccent)
-                    .scaleEffect(1.3)
-                Text("Checking your server")
-                    .font(.appBody)
-                    .foregroundColor(.appTextSecondary)
+            if showsChecking {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .tint(.appAccent)
+                        .scaleEffect(1.3)
+                    Text("Checking your server")
+                        .font(.appBody)
+                        .foregroundColor(.appTextSecondary)
+                }
+                .transition(.opacity)
             }
 
         case .needsInstall:

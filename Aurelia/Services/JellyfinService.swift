@@ -416,9 +416,11 @@ class JellyfinService: ObservableObject {
     /// so nothing local exists to show until it flips. These come straight from
     /// the server instead, and are purely cosmetic: a failure returns nothing
     /// and the plain card stands on its own.
-    /// Fetches more than any one screen shows: the wall sizes itself to the
-    /// space it is given, and an iPad has considerably more of it.
-    func fetchPreviewAlbums(limit: Int = 60) async -> [Album] {
+    /// Fetches far more than any phone shows: the wall sizes itself to the
+    /// space it is given, and a Mac window can want a couple of hundred tiles
+    /// where an iPhone wants fifteen. Only what fits is ever drawn, and only a
+    /// drawn tile loads its artwork, so the surplus costs one larger response.
+    func fetchPreviewAlbums(limit: Int = 240) async -> [Album] {
         guard let token = KeychainService.shared.getAccessToken(),
               let userId = KeychainService.shared.getUserID() else {
             return []
@@ -1305,6 +1307,10 @@ class JellyfinService: ObservableObject {
         currentUser = nil
         KeychainService.shared.deleteAccessToken()
         KeychainService.shared.deleteUserID()
+        // The next server to be signed into has to prove itself in turn, and
+        // arrives with no library of its own.
+        UserDefaults.standard.set(false, forKey: "hasCompletedSyncSetup")
+        LibraryStore.hasEverSynced = false
     }
 
     // MARK: - Public Computed Properties

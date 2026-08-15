@@ -15,6 +15,7 @@ struct MainTabView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject private var libraryStore = LibraryStore.shared
     @ObservedObject private var preparation = LibraryPreparation.shared
+    @AppStorage(LibraryStore.hasEverSyncedKey) private var hasEverSynced = false
     @State private var selectedTab = 0
     @State private var showNowPlaying = false
     @State private var searchFocusRequest = 0
@@ -259,7 +260,7 @@ struct MainTabView: View {
     /// to Settings, and being unable to sign out of a server that will not sync
     /// is a corner worth not painting anyone into.
     private var hidesNavigationForPreparation: Bool {
-        (!libraryStore.hasCachedLibrary || preparation.isActive)
+        (!libraryStore.hasCachedLibrary && !hasEverSynced || preparation.isActive)
             && libraryStore.errorMessage == nil
     }
 

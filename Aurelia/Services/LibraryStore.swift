@@ -104,7 +104,22 @@ final class LibraryStore: ObservableObject {
         hasCachedLibrary = snapshot.hasCachedLibrary
         catalogRevision = snapshot.revision
         isInitialLoading = !hasCachedLibrary
+        if hasCachedLibrary { LibraryStore.hasEverSynced = true }
     }
+
+    /// Whether this install has ever finished a sync, readable before anything
+    /// has been loaded.
+    ///
+    /// `hasCachedLibrary` cannot answer at launch: it is false until the
+    /// snapshot has been read from SQLite, and treating that gap as "no library
+    /// yet" puts the first-run screen in front of a returning listener for a
+    /// frame.
+    static var hasEverSynced: Bool {
+        get { UserDefaults.standard.bool(forKey: hasEverSyncedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hasEverSyncedKey) }
+    }
+
+    static let hasEverSyncedKey = "hasSyncedLibrary"
 
     private func clear() {
         activeScope = nil

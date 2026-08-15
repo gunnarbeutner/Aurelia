@@ -26,6 +26,9 @@ struct DiscoveryView: View {
     /// drops to nothing on the way to finishing reads as a failure.
     @State private var shownProgress: Double = 0
     @State private var showsDiscoveryErrorDetails = false
+    @AppStorage(LibraryStore.hasEverSyncedKey) private var hasEverSynced = false
+    /// True while the first-run screen is actually on display.
+    @State private var isShowingPreparation = false
 
     init() {
         #if DEBUG
@@ -74,10 +77,18 @@ struct DiscoveryView: View {
         }
         .rootTabNavigationTitle("Discover")
         // Preparation owns the screen, and a tab title is chrome for a tab you
-        // cannot currently leave.
+        // cannot currently leave. Catalyst has no navigation bar here to begin
+        // with — `rootTabNavigationTitle` hides it — and asking for one back
+        // reserves space for a bar that never draws.
+        #if !targetEnvironment(macCatalyst)
         .toolbar(showsPreparationSection ? .hidden : .visible, for: .navigationBar)
-        .onAppear { LibraryPreparation.shared.isActive = showsPreparationSection }
+        #endif
+        .onAppear {
+            isShowingPreparation = showsPreparationSection
+            LibraryPreparation.shared.isActive = showsPreparationSection
+        }
         .onChange(of: showsPreparationSection) { _, isPreparing in
+            isShowingPreparation = isPreparing
             LibraryPreparation.shared.isActive = isPreparing
         }
         .onChange(of: libraryStore.syncProgress) { _, progress in
@@ -102,7 +113,12 @@ struct DiscoveryView: View {
             guard newRevision > 0, newRevision != oldRevision else { return }
             // Catalog promotion is atomic. Refresh only after its revision is
             // visible, never when a staged or failed sync merely stops.
-            isRefreshingAfterPromotion = true
+            // Reading the stored snapshot at launch also advances the revision,
+            // and that is not a promotion. The mixes phase only ever extends a
+            // takeover that is already on screen.
+            if isShowingPreparation {
+                isRefreshingAfterPromotion = true
+            }
             Task {
                 await viewModel.refresh(force: true, publishResult: true)
                 isRefreshingAfterPromotion = false
@@ -577,8 +593,11 @@ struct DiscoveryView: View {
         }
     }
 
+    /// Preparation is a first-run state, not a loading state. A returning
+    /// listener has a library on disk, and the moment before it is read is not
+    /// a reason to show them the first-run screen.
     private var showsPreparationSection: Bool {
-        !libraryStore.hasCachedLibrary || isBuildingMixes
+        (!libraryStore.hasCachedLibrary && !hasEverSynced) || isBuildingMixes
     }
 
     /// How many covers have earned their place, given how far the sync has got.
