@@ -426,9 +426,14 @@ class DownloadManager: NSObject, ObservableObject {
 
     // MARK: - Initialization
 
+    private var hasRequestedNotificationAuthorization: Bool
+
     init(store: DownloadStore = .shared, defaults: UserDefaults = .standard) {
         self.store = store
         self.defaults = defaults
+        self.hasRequestedNotificationAuthorization = defaults.bool(
+            forKey: Self.notificationRequestDefaultsKey
+        )
         super.init()
         loadDownloadedTracks()
         restoreInFlightTasks()
@@ -504,6 +509,8 @@ class DownloadManager: NSObject, ObservableObject {
     /// downloaded, queued, or in flight only picks up the new owner.
     func enqueue(_ tracks: [Track], origin: DownloadOrigin) {
         guard !tracks.isEmpty else { return }
+
+        requestNotificationAuthorizationIfNeeded()
 
         // A rule-driven batch spans many albums, and each one needs its cover
         // for the Downloads screen to have anything to show offline.
@@ -1037,6 +1044,9 @@ class DownloadManager: NSObject, ObservableObject {
     /// change applies to the next download without any plumbing.
     static let qualityDefaultsKey = "downloadQuality"
 
+    /// Survives launches so the request is made exactly once per install.
+    private static let notificationRequestDefaultsKey = "hasRequestedDownloadNotifications"
+
     /// The quality new downloads are fetched at.
     var currentQuality: DownloadQuality {
         DownloadQuality(rawValue: defaults.string(forKey: Self.qualityDefaultsKey) ?? "") ?? .original
@@ -1147,6 +1157,29 @@ class DownloadManager: NSObject, ObservableObject {
             // Update remaining tracks
             downloadingAlbums[albumId] = pendingTracks
         }
+    }
+
+    /// Asks for notifications the first time something is downloaded.
+    ///
+    /// Nothing in the app notifies about anything except a download finishing,
+    /// so this is the first moment the permission means anything — and the
+    /// request is provisional, which shows no prompt at all. Completions arrive
+    /// quietly in Notification Center, and iOS asks the listener whether to
+    /// keep them once they have seen a few. The right volume for "your album
+    /// is ready", and it never interrupts anyone to ask.
+    private func requestNotificationAuthorizationIfNeeded() {
+        guard !hasRequestedNotificationAuthorization else { return }
+        hasRequestedNotificationAuthorization = true
+        defaults.set(true, forKey: Self.notificationRequestDefaultsKey)
+
+        UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound, .provisional]) { [weak self] granted, error in
+                if let error {
+                    self?.logger.error("Notification authorization failed: \(error.localizedDescription)")
+                } else {
+                    self?.logger.info("Notification authorization granted: \(granted)")
+                }
+            }
     }
 
     /// Send local notification for album download completion

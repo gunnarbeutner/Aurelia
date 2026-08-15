@@ -7,7 +7,6 @@
 
 import SwiftUI
 import AVFoundation
-import UserNotifications
 import UIKit
 
 /// Exists for one callback: when a background download finishes while the app
@@ -49,7 +48,6 @@ struct AureliaApp: App {
         #endif
 
         // Brand kit fonts: Chakra Petch, Sora, JetBrains Mono (registered via Info.plist)
-        // Request notification permissions for download completion alerts
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-test-player-layout")
             || ProcessInfo.processInfo.arguments.contains("--ui-test-album-layout")
@@ -58,7 +56,6 @@ struct AureliaApp: App {
             return
         }
         #endif
-        requestNotificationPermissions()
 
         // Browsing marks what will not play while the server is unreachable, so
         // both the reachability signal and the downloaded-content index need to
@@ -89,16 +86,6 @@ struct AureliaApp: App {
         ImageCache.shared.cacheMemoryImage(image, for: url)
     }
     #endif
-
-    private func requestNotificationPermissions() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("✅ Notification permission granted")
-            } else if let error = error {
-                print("❌ Notification permission error: \(error.localizedDescription)")
-            }
-        }
-    }
 
     var body: some Scene {
         WindowGroup {
