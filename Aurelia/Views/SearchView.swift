@@ -156,7 +156,7 @@ struct SearchView: View {
                     } label: {
                         Text(filter.rawValue)
                             .font(.subheadline.weight(.bold))
-                            .foregroundColor(selectedFilter == filter ? .black : .appAccent)
+                            .foregroundColor(selectedFilter == filter ? .appAccentText : .appAccent)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 10)
                             .background {

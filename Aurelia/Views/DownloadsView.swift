@@ -546,7 +546,9 @@ struct DownloadedAlbumDetailView: View {
                         endPoint: .trailing
                     )
                 )
-                .foregroundColor(.white)
+                // The gradient starts at the accent, which is a bright mint in
+                // dark mode — white on it barely registers.
+                .foregroundColor(.appAccentText)
                 .cornerRadius(12)
             }
             .buttonStyle(CypherpunkButtonStyle())

@@ -144,7 +144,7 @@ struct FavoritesView: View {
                         Text(filter)
                             .font(.appCaption)
                             .fontWeight(.medium)
-                            .foregroundColor(selectedFilter == filter ? .black : .appTextSecondary)
+                            .foregroundColor(selectedFilter == filter ? .appAccentText : .appTextSecondary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background(

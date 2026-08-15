@@ -860,7 +860,10 @@ struct LibraryView: View {
                     } label: {
                         Image(systemName: mode.icon)
                             .font(.caption)
-                            .foregroundColor(viewMode == mode ? .black : .white)
+                            // Matches the same toggle in ArtistDetailView: the
+                            // unselected glyph sat on the page itself, so white
+                            // vanished against a light background.
+                            .foregroundColor(viewMode == mode ? .appAccentText : .appTextSecondary)
                             .frame(width: 36, height: 30)
                             .background(
                                 RoundedRectangle(cornerRadius: viewMode == mode ? 8 : 0)

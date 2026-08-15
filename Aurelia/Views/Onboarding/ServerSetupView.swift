@@ -151,7 +151,7 @@ struct ServerSetupView: View {
             HStack(spacing: 12) {
                 if isValidating {
                     ProgressView()
-                        .tint(.black)
+                        .tint(.appAccentText)
                 } else {
                     Image(systemName: "arrow.right")
                         .font(.title3)

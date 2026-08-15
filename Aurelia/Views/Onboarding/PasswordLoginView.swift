@@ -161,7 +161,7 @@ struct PasswordLoginView: View {
                         HStack(spacing: 12) {
                             if isAuthenticating {
                                 ProgressView()
-                                    .tint(.black)
+                                    .tint(.appAccentText)
                             } else {
                                 Image(systemName: "arrow.right")
                                     .font(.title3)

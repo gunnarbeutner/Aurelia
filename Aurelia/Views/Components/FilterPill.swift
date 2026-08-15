@@ -9,7 +9,10 @@ struct FilterPill: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
-                .foregroundColor(isSelected ? .black : .appTextSecondary)
+                // Black only reads on the accent in dark mode, where it is a
+                // bright mint. In light mode the accent is a deep green and
+                // needs white on top; `appAccentText` is that pairing.
+                .foregroundColor(isSelected ? .appAccentText : .appTextSecondary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 .frame(minHeight: 36)

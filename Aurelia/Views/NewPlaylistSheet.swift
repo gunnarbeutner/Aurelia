@@ -120,7 +120,7 @@ struct NewPlaylistSheet: View {
                         HStack(spacing: 12) {
                             if isCreating {
                                 ProgressView()
-                                    .tint(.black)
+                                    .tint(.appAccentText)
                                     .scaleEffect(0.9)
                             } else {
                                 Image(systemName: "plus.circle.fill")
