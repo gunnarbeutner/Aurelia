@@ -25,9 +25,8 @@ struct OnboardingView: View {
     /// straight to the password form, and going back must not land on a screen
     /// that would immediately forward again.
     @State private var pickerHasUsers = false
-    /// Where Quick Connect was entered from. Recorded rather than inferred:
-    /// it is reachable from two screens, and working it out afterwards from
-    /// the other state got it wrong for anyone who chose it on the picker.
+    /// Where Quick Connect was entered from. It is reachable from two screens,
+    /// and only the screen that opened it knows which one to go back to.
     @State private var quickConnectOrigin: OnboardingStep = .userSelection
 
     enum OnboardingStep {

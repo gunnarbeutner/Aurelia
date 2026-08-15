@@ -408,6 +408,81 @@ class JellyfinService: ObservableObject {
         return itemsResponse.Items
     }
 
+    // MARK: - Library preview
+
+    /// Album art to look at while the real library is being built.
+    ///
+    /// The first sync stages into a separate scope and is promoted atomically,
+    /// so nothing local exists to show until it flips. These come straight from
+    /// the server instead, and are purely cosmetic: a failure returns nothing
+    /// and the plain card stands on its own.
+    /// Fetches more than any one screen shows: the wall sizes itself to the
+    /// space it is given, and an iPad has considerably more of it.
+    func fetchPreviewAlbums(limit: Int = 60) async -> [Album] {
+        guard let token = KeychainService.shared.getAccessToken(),
+              let userId = KeychainService.shared.getUserID() else {
+            return []
+        }
+
+        guard var components = try? buildURLComponents(path: "Users/\(userId)/Items") else {
+            return []
+        }
+        components.queryItems = [
+            URLQueryItem(name: "IncludeItemTypes", value: "MusicAlbum"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Limit", value: "\(limit)"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+            URLQueryItem(name: "EnableImageTypes", value: "Primary"),
+            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio")
+        ]
+
+        guard let response = await fetchItems(from: components, token: token) else { return [] }
+        // A cover with no artwork would be a hole in the wall, so drop it.
+        return response.Items
+            .map { Album(from: $0, baseURL: baseURL) }
+            .filter { $0.artworkURL != nil }
+    }
+
+    /// An album's tracks, straight from the server.
+    ///
+    /// `LibraryRepository` cannot answer this while the first sync is still
+    /// staging, and something has to be playable before then.
+    func fetchAlbumTracks(albumId: String) async -> [Track] {
+        guard let token = KeychainService.shared.getAccessToken(),
+              let userId = KeychainService.shared.getUserID(),
+              var components = try? buildURLComponents(path: "Users/\(userId)/Items") else {
+            return []
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "ParentId", value: albumId),
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "ParentIndexNumber,IndexNumber,SortName"),
+            URLQueryItem(name: "Limit", value: "200")
+        ]
+
+        guard let response = await fetchItems(from: components, token: token) else { return [] }
+        return response.Items.map { Track(from: $0, baseURL: baseURL) }
+    }
+
+    private func fetchItems(from components: URLComponents, token: String) async -> ItemsResponse? {
+        guard let url = try? buildURL(from: components) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            return try SafeJellyfinDecoder.decode(ItemsResponse.self, from: data)
+        } catch {
+            logger.info("Library preview request failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     // MARK: - Streaming
 
     /// Generates streaming URL for audio playback

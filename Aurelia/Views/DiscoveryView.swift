@@ -13,6 +13,18 @@ struct DiscoveryView: View {
     @ObservedObject private var libraryStore = LibraryStore.shared
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @State private var attemptedAutomaticLibraryRecovery = false
+    /// Server-fetched artwork shown only while the library is being prepared.
+    /// Never read once the real catalogue lands.
+    @State private var previewAlbums: [Album] = []
+    @State private var showsCoverWall = false
+    /// The album started from the wall, so a second tap on it stops.
+    @State private var playingAlbumID: String?
+    /// True from catalogue promotion until the refresh it triggers returns.
+    @State private var isRefreshingAfterPromotion = false
+    /// What the bar actually draws. Only ever moves forward: the sync stops
+    /// reporting a figure the moment the catalogue is promoted, and a bar that
+    /// drops to nothing on the way to finishing reads as a failure.
+    @State private var shownProgress: Double = 0
     @State private var showsDiscoveryErrorDetails = false
 
     init() {
@@ -50,8 +62,8 @@ struct DiscoveryView: View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
 
-            if !libraryStore.hasCachedLibrary && !viewModel.hasContent {
-                initialLibraryView
+            if showsPreparationSection {
+                preparingView
             } else if viewModel.isLoading && !viewModel.hasContent {
                 loadingView
             } else if !viewModel.hasContent {
@@ -61,6 +73,20 @@ struct DiscoveryView: View {
             }
         }
         .rootTabNavigationTitle("Discover")
+        // Preparation owns the screen, and a tab title is chrome for a tab you
+        // cannot currently leave.
+        .toolbar(showsPreparationSection ? .hidden : .visible, for: .navigationBar)
+        .onAppear { LibraryPreparation.shared.isActive = showsPreparationSection }
+        .onChange(of: showsPreparationSection) { _, isPreparing in
+            LibraryPreparation.shared.isActive = isPreparing
+        }
+        .onChange(of: libraryStore.syncProgress) { _, progress in
+            advanceProgress(to: (progress ?? 0) * 0.9, duration: 0.3)
+        }
+        .onChange(of: isBuildingMixes) { _, isBuilding in
+            guard isBuilding else { return }
+            Task { await crawlThroughFinalStretch() }
+        }
         .task {
             await viewModel.activate()
             if libraryStore.errorMessage != nil {
@@ -76,7 +102,11 @@ struct DiscoveryView: View {
             guard newRevision > 0, newRevision != oldRevision else { return }
             // Catalog promotion is atomic. Refresh only after its revision is
             // visible, never when a staged or failed sync merely stops.
-            Task { await viewModel.refresh(force: true, publishResult: true) }
+            isRefreshingAfterPromotion = true
+            Task {
+                await viewModel.refresh(force: true, publishResult: true)
+                isRefreshingAfterPromotion = false
+            }
         }
         .onChange(of: libraryStore.errorMessage) { _, errorMessage in
             guard errorMessage != nil else { return }
@@ -96,12 +126,6 @@ struct DiscoveryView: View {
     private var discoveryContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                if !libraryStore.hasCachedLibrary {
-                    libraryPreparationCard
-                }
-
-                statusBanner
-
                 if let message = viewModel.errorMessage {
                     inlineMessage(message)
                 }
@@ -147,42 +171,6 @@ struct DiscoveryView: View {
         .refreshable {
             await viewModel.refresh()
             await viewModel.updateAudioMuseStatus()
-        }
-    }
-
-    /// Only the transient state appears here. Whether AudioMuse is installed
-    /// or reachable is a standing fact about the server and lives in Settings,
-    /// where it sits beside the thing you would go and fix; on Discover it was
-    /// a permanent notice with nothing to act on. An analysis in progress is
-    /// different: it is the answer to "why is Discover thin right now", and
-    /// that question only occurs to you while looking at Discover.
-    @ViewBuilder
-    private var statusBanner: some View {
-        if case .analyzing(let task) = viewModel.availability {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Label(
-                        "AudioMuse is analyzing your library",
-                        systemImage: "waveform.badge.magnifyingglass"
-                    )
-                    .font(.appCaption)
-                    .foregroundColor(.appTextSecondary)
-
-                    Spacer()
-
-                    if let progress = task.progressFraction {
-                        Text("\(Int(progress * 100))%")
-                            .font(.appMono)
-                            .foregroundColor(.appTextMuted)
-                    }
-                }
-
-                Text(task.message ?? "Recommendations will improve as it completes.")
-                    .font(.appCaption)
-                    .foregroundColor(.appTextMuted)
-                    .lineLimit(2)
-            }
-            .padding(.horizontal, 20)
         }
     }
 
@@ -408,43 +396,330 @@ struct DiscoveryView: View {
         .padding(.horizontal, 24)
     }
 
-    private var initialLibraryView: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                libraryPreparationCard
-                if let message = viewModel.errorMessage {
-                    inlineMessage(message)
+    /// Preparation takes the whole screen and holds it until Discover has
+    /// something real to say.
+    ///
+    /// Nothing else is on screen while this runs, and it does not scroll:
+    /// there is no shelf worth showing beside a progress bar, and no content
+    /// below to scroll to. Discover appears once, complete.
+    private var preparingView: some View {
+        VStack(spacing: 24) {
+            libraryPreparationCard
+
+            // The wall takes whatever is left and fills it: the grid is sized
+            // from the space available rather than a fixed count, so it reaches
+            // the bottom of any screen it lands on.
+            GeometryReader { proxy in
+                coverWall(in: proxy.size)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .padding(.top, 8)
+        .task {
+            await loadLibraryPreview()
+        }
+    }
+
+    /// Albums pulled straight from the server, revealed in step with the sync.
+    ///
+    /// The wall is the progress: the bar above it is a hairline, and what the
+    /// listener actually watches is their own artwork arriving. Purely
+    /// decorative — nothing here is used once the real catalogue is promoted.
+    @ViewBuilder
+    private func coverWall(in size: CGSize) -> some View {
+        if showsCoverWall, !previewAlbums.isEmpty {
+            let layout = coverWallLayout(in: size)
+            let albums = Array(previewAlbums.prefix(layout.count))
+            let revealed = revealedCoverCount(of: albums.count)
+
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.fixed(layout.tile), spacing: Self.coverWallSpacing),
+                    count: layout.columns
+                ),
+                spacing: Self.coverWallSpacing
+            ) {
+                ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
+                    coverTile(for: album, state: CoverTileState(index: index, revealed: revealed))
                 }
             }
-            .padding(.top, 24)
+            .padding(.horizontal, Self.coverWallPadding)
+            .overlay(alignment: .topLeading) { sweep(over: layout, tiles: albums.count) }
+            .transition(.opacity)
+        }
+    }
+
+    private static let coverWallSpacing: CGFloat = 8
+    private static let coverWallPadding: CGFloat = 20
+
+    /// A light travelling the wall cover by cover while the mixes are worked
+    /// out — along a row, then on to the next, in reading order.
+    ///
+    /// Drawn as one moving highlight rather than an effect on each tile, so
+    /// the covers themselves are never re-rendered and nothing shifts or
+    /// resizes underneath it.
+    @ViewBuilder
+    private func sweep(over layout: (columns: Int, tile: CGFloat, count: Int), tiles: Int) -> some View {
+        if isBuildingMixes, tiles > 0 {
+            TimelineView(.animation) { context in
+                let step = 0.16
+                let elapsed = context.date.timeIntervalSinceReferenceDate / step
+                // The cycle runs past the last cover to leave a beat before it
+                // starts again. The light is not drawn during that beat — it
+                // has no cover left to be on.
+                let position = elapsed.truncatingRemainder(dividingBy: Double(tiles) + 3)
+                let isOverWall = position < Double(tiles)
+                let column = position.truncatingRemainder(dividingBy: Double(layout.columns))
+                let row = (position / Double(layout.columns)).rounded(.down)
+                let pitch = layout.tile + Self.coverWallSpacing
+
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.appAccent.opacity(0.5))
+                    .frame(width: layout.tile, height: layout.tile)
+                    .blur(radius: layout.tile * 0.35)
+                    .position(
+                        x: column * pitch + layout.tile / 2,
+                        y: row * pitch + layout.tile / 2
+                    )
+                    .opacity(isOverWall ? 1 : 0)
+                    .blendMode(.plusLighter)
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+
+    /// The cover at the head of the queue is drawn out of focus, so the wall
+    /// reads as one arriving continuously rather than a row of things blinking
+    /// into place.
+    private enum CoverTileState {
+        case waiting
+        case arriving
+        case landed
+
+        init(index: Int, revealed: Int) {
+            if index < revealed {
+                self = .landed
+            } else if index == revealed {
+                self = .arriving
+            } else {
+                self = .waiting
+            }
+        }
+
+        var opacity: Double {
+            switch self {
+            case .waiting: return 0
+            case .arriving: return 0.45
+            case .landed: return 1
+            }
+        }
+
+        var blur: CGFloat {
+            switch self {
+            case .waiting: return 8
+            case .arriving: return 6
+            case .landed: return 0
+            }
+        }
+
+        var scale: CGFloat {
+            switch self {
+            case .waiting: return 0.9
+            case .arriving: return 0.96
+            case .landed: return 1
+            }
+        }
+    }
+
+    /// How many square tiles of what size fill the space the wall was given.
+    private func coverWallLayout(in size: CGSize) -> (columns: Int, tile: CGFloat, count: Int) {
+        let spacing = Self.coverWallSpacing
+        let width = max(size.width - Self.coverWallPadding * 2, 1)
+        let columns = max(3, Int(width / 100))
+        let tile = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+        let rows = max(1, Int((size.height + spacing) / (tile + spacing)))
+        return (columns, tile, columns * rows)
+    }
+
+    /// Promotion of the catalogue and arrival of the mixes are separate events
+    /// several seconds apart, and preparation covers both.
+    ///
+    /// The wait is for the refresh that promotion kicks off, not for shelves to
+    /// exist: daily mixes need AudioMuse's analysis, which can run for hours,
+    /// and Discover explains that shortfall itself once it is on screen.
+    private var isBuildingMixes: Bool {
+        libraryStore.hasCachedLibrary
+            && isRefreshingAfterPromotion
+            && libraryStore.errorMessage == nil
+    }
+
+    /// The sync fills the first nine tenths; the last tenth belongs to the
+    /// refresh behind it, which reports no progress of its own and so is eased
+    /// across rather than measured.
+    private var preparationProgress: Double { shownProgress }
+
+    private func advanceProgress(to value: Double, duration: Double) {
+        guard value > shownProgress else { return }
+        withAnimation(.easeOut(duration: duration)) { shownProgress = value }
+    }
+
+    /// Walks the last stretch a point at a time.
+    ///
+    /// The refresh reports nothing to measure, so the bar keeps moving on its
+    /// own — in steps rather than one long glide, so the figure beside it has
+    /// real values to show along the way. It stops short of full: reaching 100
+    /// while the screen is still up would say the wait is over when it is not.
+    private func crawlThroughFinalStretch() async {
+        while isBuildingMixes, shownProgress < 0.97 {
+            advanceProgress(to: min(0.97, shownProgress + 0.01), duration: 0.6)
+            try? await Task.sleep(nanoseconds: 700_000_000)
+        }
+    }
+
+    private var showsPreparationSection: Bool {
+        !libraryStore.hasCachedLibrary || isBuildingMixes
+    }
+
+    /// How many covers have earned their place, given how far the sync has got.
+    /// Once the catalogue is in, the wall stands complete while the mixes build.
+    private func revealedCoverCount(of total: Int) -> Int {
+        guard !libraryStore.hasCachedLibrary else { return total }
+        let progress = libraryStore.syncProgress ?? 0
+        return Int((Double(total) * progress).rounded())
+    }
+
+    private func coverTile(for album: Album, state: CoverTileState) -> some View {
+        let isPlaying = playingAlbumID == album.id
+        let hasLanded = state == .landed
+
+        return Button {
+            togglePlayback(of: album)
+        } label: {
+            // The cell decides the size and the artwork is cropped into it.
+            // Sleeves are not reliably square, and letting one size its own
+            // tile puts a hole in the grid.
+            Color.appMidBackground
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    // Artwork belongs to a cover that has arrived. The one on
+                    // its way is only a shape, which also keeps its image off
+                    // the wire until the sync has actually reached it.
+                    if hasLanded, let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
+                        CachedAsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFill()
+                            default:
+                                Color.appMidBackground
+                            }
+                        }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                // The tile is the only control there is, so the one that is
+                // playing has to be legible as such.
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.appAccent, lineWidth: isPlaying ? 2 : 0)
+                }
+                .brightness(isPlaying || !hasLanded ? 0 : -0.12)
+                .blur(radius: state.blur)
+                .opacity(state.opacity)
+                .scaleEffect(state.scale)
+        }
+        .buttonStyle(.plain)
+        .disabled(!hasLanded)
+        .accessibilityLabel(isPlaying ? "Stop \(album.name)" : "Play \(album.name)")
+        .accessibilityHidden(!hasLanded)
+        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: state)
+        .animation(.easeOut(duration: 0.2), value: isPlaying)
+    }
+
+    /// The wall doubles as something to listen to while the library builds.
+    /// Tapping a cover plays that album; tapping it again stops.
+    private func togglePlayback(of album: Album) {
+        guard playingAlbumID != album.id else {
+            playerManager.pause()
+            playingAlbumID = nil
+            return
+        }
+
+        playingAlbumID = album.id
+        Task {
+            let tracks = await JellyfinService.shared.fetchAlbumTracks(albumId: album.id)
+            // A second tap, or another cover, while the tracks were on their way.
+            guard playingAlbumID == album.id else { return }
+            guard !tracks.isEmpty else {
+                playingAlbumID = nil
+                return
+            }
+            playerManager.play(tracks: tracks)
+        }
+    }
+
+    private func loadLibraryPreview() async {
+        if previewAlbums.isEmpty {
+            let albums = await JellyfinService.shared.fetchPreviewAlbums()
+            guard !Task.isCancelled else { return }
+            previewAlbums = albums
+        }
+
+        // A wall that flashes past is worse than no wall, so it only opens
+        // while there is still a sync worth watching. Deciding that from
+        // progress rather than a timer keeps it out of the hands of task
+        // cancellation: Discover swaps branches the moment Recently Played
+        // arrives, which tears down whatever is waiting here.
+        guard !previewAlbums.isEmpty, !showsCoverWall else { return }
+        guard (libraryStore.syncProgress ?? 0) < 0.85 else { return }
+
+        withAnimation(.easeOut(duration: 0.6)) {
+            showsCoverWall = true
         }
     }
 
     private var libraryPreparationCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Preparing your library", systemImage: "sparkles")
-                .font(.appHeadline)
-                .foregroundColor(.appText)
+            // The percentage sits with the title rather than under the bar:
+            // one line saying what is happening and how far along it is.
+            // One message for the whole wait. Which internal stage is running
+            // is not something the listener has any way to care about.
+            HStack(alignment: .firstTextBaseline) {
+                Label("Preparing your library", systemImage: "sparkles")
+                    .font(.appHeadline)
+                    .foregroundColor(.appText)
 
-            Text(libraryStore.errorMessage ?? libraryStore.syncMessage ?? "Getting your music ready…")
-                .font(.appBody)
-                .foregroundColor(.appTextSecondary)
+                Spacer()
 
-            if let progress = libraryStore.syncProgress {
-                ProgressView(value: progress)
-                    .tint(.appAccent)
-                Text("\(Int(progress * 100))%")
-                    .font(.appMono)
-                    .foregroundColor(.appTextMuted)
-            } else if libraryStore.errorMessage == nil {
-                ProgressView()
-                    .tint(.appAccent)
+                if libraryStore.errorMessage == nil {
+                    Text("\(Int(preparationProgress * 100))%")
+                        .font(.appMono)
+                        .foregroundColor(.appTextMuted)
+                        .monospacedDigit()
+                        // Animating a number means blending two renderings of
+                        // the text, which comes out as ghosting. The figure
+                        // steps; only the bar glides.
+                        .animation(nil, value: shownProgress)
+                }
             }
 
-            Text("Recently Played is available now. Daily Mixes, Rediscover, and Off the Beaten Path will appear automatically when preparation finishes.")
-                .font(.appCaption)
-                .foregroundColor(.appTextSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // Only a failure is worth words. The bar already says it is
+            // working, and the name of the current stage is not something
+            // anyone can act on.
+            if let errorMessage = libraryStore.errorMessage {
+                Text(errorMessage)
+                    .font(.appBody)
+                    .foregroundColor(.appTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // One determinate bar for the whole wait. Swapping in a spinner
+            // whenever a stage has no figure to report left a gap where the
+            // bar had been.
+            if libraryStore.errorMessage == nil {
+                ProgressView(value: preparationProgress)
+                    .tint(.appAccent)
+            }
 
             if libraryStore.errorMessage != nil {
                 Button("Try Again") {

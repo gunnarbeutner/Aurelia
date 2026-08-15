@@ -13,6 +13,8 @@ enum PlayerPresentationMotion {
 
 struct MainTabView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ObservedObject private var libraryStore = LibraryStore.shared
+    @ObservedObject private var preparation = LibraryPreparation.shared
     @State private var selectedTab = 0
     @State private var showNowPlaying = false
     @State private var searchFocusRequest = 0
@@ -115,6 +117,10 @@ struct MainTabView: View {
                     DiscoveryView()
                 }
             }
+            // The first sync gets the whole screen. The other tabs have nothing
+            // to show until the catalogue is promoted anyway, so the bar would
+            // only be an invitation to go and find them empty.
+            .toolbar(hidesNavigationForPreparation ? .hidden : .visible, for: .tabBar)
             .tabItem {
                 Label("Discover", systemImage: "sparkles")
             }
@@ -163,7 +169,7 @@ struct MainTabView: View {
         .tint(.appAccent)
         #if targetEnvironment(macCatalyst)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if playerManager.currentTrack != nil {
+            if playerManager.currentTrack != nil, !hidesNavigationForPreparation {
                 MiniPlayerView(showNowPlaying: $showNowPlaying)
                     .padding(.horizontal, 8)
                     .padding(.top, 8)
@@ -175,7 +181,7 @@ struct MainTabView: View {
             // lifts a bottom overlay, and opting its content out of the
             // keyboard safe area does not help — the TabView it hangs off is
             // what shrinks — so it stands down entirely while typing.
-            if playerManager.currentTrack != nil, !keyboard.isVisible {
+            if playerManager.currentTrack != nil, !keyboard.isVisible, !hidesNavigationForPreparation {
                 MiniPlayerView(showNowPlaying: $showNowPlaying)
                     .padding(.horizontal, usesBottomTabBar ? 8 : 0)
                     .padding(.bottom, usesBottomTabBar ? MiniPlayerLayout.tabBarClearance : 0)
@@ -243,6 +249,18 @@ struct MainTabView: View {
 
     private var usesBottomTabBar: Bool {
         horizontalSizeClass == .compact
+    }
+
+    /// True while Discover owns the screen for the first sync and the refresh
+    /// that follows it. The library check stands on its own so the bar is
+    /// already gone on the first frame, before Discover has said anything.
+    ///
+    /// A failed sync brings the bar straight back: without it there is no route
+    /// to Settings, and being unable to sign out of a server that will not sync
+    /// is a corner worth not painting anyone into.
+    private var hidesNavigationForPreparation: Bool {
+        (!libraryStore.hasCachedLibrary || preparation.isActive)
+            && libraryStore.errorMessage == nil
     }
 
     #if targetEnvironment(macCatalyst)
