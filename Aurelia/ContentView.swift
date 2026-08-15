@@ -11,10 +11,19 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var jellyfinService = JellyfinService.shared
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
-    
+    /// Reset on every launch: a plugin can be removed or fail between runs,
+    /// and this is cheap to confirm.
+    @State private var hasConfirmedSyncPlugin = false
+
+
     var body: some View {
         Group {
-            if jellyfinService.isAuthenticated {
+            if jellyfinService.isAuthenticated && !hasConfirmedSyncPlugin {
+                // Signing in is not enough on its own: without the sync plugin
+                // the server has no library to give, and finding that out as a
+                // failed sync explains none of it.
+                SyncSetupView { hasConfirmedSyncPlugin = true }
+            } else if jellyfinService.isAuthenticated {
                 // User is authenticated - show main app
                 MainTabView()
                     .onAppear {

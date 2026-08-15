@@ -8,6 +8,9 @@ final class AureliaSyncClient {
     static let schemaRange = 1...1
     static let pluginGUID = "3fbf911d-ab0c-46dc-81d6-b3317bb8b176"
     static let repositoryURL = "https://gunnarbeutner.github.io/AureliaSync/manifest.json"
+    /// Where the plugin comes from, for anyone who would rather see what they
+    /// are installing on their server first — or forward it to whoever can.
+    static let repositoryPage = URL(string: "https://github.com/gunnarbeutner/AureliaSync")!
 
     private let service: JellyfinService
     private let session: URLSession
@@ -194,6 +197,38 @@ final class AureliaSyncPluginManager {
                 + (AureliaSyncClient.repositoryURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? AureliaSyncClient.repositoryURL),
             method: "POST", body: Optional<String>.none
         )
+    }
+
+    /// Restarts Jellyfin so a freshly installed plugin is loaded.
+    ///
+    /// The server drops the connection as it goes down, and a request that
+    /// never gets a reply is the expected outcome rather than a failure.
+    func restartServer() async throws {
+        do {
+            try await send(path: "System/Restart", method: "POST", body: Optional<String>.none)
+        } catch let error as URLError
+        where error.code == .networkConnectionLost || error.code == .cannotConnectToHost
+            || error.code == .timedOut {
+            return
+        }
+    }
+
+    /// Polls until the server answers again, or gives up.
+    ///
+    /// Restarting takes a moment to even begin, so this waits before the first
+    /// question — asking immediately would get an answer from a server that is
+    /// about to go down.
+    func waitForServer(timeout: TimeInterval = 120) async -> Bool {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if (try? await service.checkServerConnectivity()) == true {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        return false
     }
 
     private func get<T: Decodable>(path: String) async throws -> T {
