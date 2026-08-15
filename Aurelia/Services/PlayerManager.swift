@@ -173,6 +173,42 @@ enum StalledAdvanceRecovery {
     }
 }
 
+/// `isPlaying` records what the listener asked for; the player's
+/// `timeControlStatus` records what is actually happening. Deciding when the
+/// two have come apart is kept here, away from the timers that act on it.
+enum PlaybackReconciliation {
+    enum Action: Equatable {
+        case none
+        /// The player stopped without being asked to, so the intent is stale.
+        case clearPlayingState
+        /// The player has been trying to start rather than playing.
+        case markStalled
+        /// The player is playing something the intent had given up on.
+        case restorePlayingState
+    }
+
+    static func action(
+        status: AVPlayer.TimeControlStatus,
+        intendsToPlay: Bool,
+        isReconfiguring: Bool
+    ) -> Action {
+        // A player being torn down and rebuilt passes through every status on
+        // the way, and none of it describes what the listener wants.
+        guard !isReconfiguring else { return .none }
+
+        switch status {
+        case .playing:
+            return intendsToPlay ? .none : .restorePlayingState
+        case .waitingToPlayAtSpecifiedRate:
+            return intendsToPlay ? .markStalled : .none
+        case .paused:
+            return intendsToPlay ? .clearPlayingState : .none
+        @unknown default:
+            return .none
+        }
+    }
+}
+
 /// Manages audio playback with AVPlayer and iOS Now Playing integration
 /// Handles background audio, interruptions, and remote controls
 class PlayerManager: NSObject, ObservableObject {
@@ -196,6 +232,11 @@ class PlayerManager: NSObject, ObservableObject {
     }
     @Published var duration: Double = 0
     @Published var isBuffering = false
+    /// Playback the player is actually doing, as opposed to `isPlaying`, which
+    /// only records what the user asked for. The two disagreeing is the whole
+    /// reason this exists: a player that never starts, or that stops on its
+    /// own, used to leave the UI insisting a silent track was playing.
+    @Published private(set) var isStalled = false
     private var isSeeking = false
     @Published var errorMessage: String?
 
@@ -248,6 +289,27 @@ class PlayerManager: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var playerItemCancellables = Set<AnyCancellable>() // Separate for player item observers
     private let jellyfinService = JellyfinService.shared
+
+    // MARK: - Playback reconciliation
+
+    private var stallWorkItem: DispatchWorkItem?
+    private var pausedReconcileWorkItem: DispatchWorkItem?
+    /// Raised while the player is being torn down and rebuilt, when the
+    /// `.paused` status it reports on the way through says nothing about what
+    /// the user actually wants.
+    private var isReconfiguringPlayer = false
+    /// The current item should be taken back to 0:00 once it is ready to be
+    /// seeked. Seeking an item that is not `readyToPlay` does nothing, and the
+    /// item is routinely still `.unknown` a second after playback is asked for.
+    private var pendingStartAtZero = false
+
+    /// Waiting this long to start is worth showing to the user.
+    private let stallNoticeDelay: TimeInterval = 8
+    /// Waiting this long means it is not going to start on its own.
+    private let stallFailureDelay: TimeInterval = 30
+    /// An intentional pause during a track change resolves well inside this;
+    /// anything still paused afterwards stopped without being asked to.
+    private let pausedReconcileDelay: TimeInterval = 0.75
 
     /// Get playback URL respecting user's streaming quality preference
     private func playbackURL(for track: Track) -> URL? {
@@ -1022,9 +1084,22 @@ class PlayerManager: NSObject, ObservableObject {
 
         // Clear any previous error
         errorMessage = nil
+        isStalled = false
+
+        // Tearing the player down and building a new one runs it through
+        // `.paused` on the way. That is expected here and must not be mistaken
+        // for the player stopping on its own.
+        isReconfiguringPlayer = true
+        defer { isReconfiguringPlayer = false }
 
         // Clean up previous player
         cleanupPlayer()
+
+        // Streaming items can start mid-buffer if previously buffered, so a
+        // fresh track is taken back to the beginning once its item is ready to
+        // be seeked. Set before the observers attach: a local file can be ready
+        // the moment it is observed, and would otherwise miss this entirely.
+        pendingStartAtZero = true
 
         // Setup AVQueuePlayer with current + next 2 tracks for gapless playback
         setupGaplessQueue(startingAt: currentIndex)
@@ -1067,11 +1142,6 @@ class PlayerManager: NSObject, ObservableObject {
         // Report playback start to Jellyfin
         startProgressReporting(for: track)
 
-        // Seek first item to zero — streaming items can start mid-buffer if previously buffered
-        if let firstItem = player?.currentItem {
-            let zero = CMTime(seconds: 0, preferredTimescale: 600)
-            firstItem.seek(to: zero, toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
-        }
 
         // Apply pending seek ONLY for state-restore resume (pendingSeekTime is set by restorePlaybackState).
         // play(_ track:) and play(tracks:) clear this to 0 so fresh taps always start from beginning.
@@ -1451,6 +1521,15 @@ class PlayerManager: NSObject, ObservableObject {
         // Clear only player item observers (not notification observers)
         playerItemCancellables.removeAll()
 
+        // The player's own view of whether audio is coming out. Everything else
+        // here describes an item; this describes playback.
+        player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                self?.timeControlStatusChanged(status)
+            }
+            .store(in: &playerItemCancellables)
+
         // Observe playback time - tracks current item automatically
         let interval = CMTime(seconds: 0.5, preferredTimescale: 1000)
         var lastValidTime: Double = 0.0
@@ -1546,6 +1625,17 @@ class PlayerManager: NSObject, ObservableObject {
                         if playerItem == self.player?.currentItem {
                             self.logger.info("✅ Player item ready to play (duration from track metadata: \(self.duration)s)")
                             self.isBuffering = false
+                            // Streaming items can start mid-buffer, so a fresh
+                            // track is taken back to the beginning — but only
+                            // now, because a seek before this point is dropped.
+                            if self.pendingStartAtZero {
+                                self.pendingStartAtZero = false
+                                playerItem.seek(
+                                    to: CMTime(seconds: 0, preferredTimescale: 600),
+                                    toleranceBefore: .zero,
+                                    toleranceAfter: .zero
+                                ) { _ in }
+                            }
                         } else {
                             self.logger.info("✅ Preloaded item \(index) ready")
                         }
@@ -1617,6 +1707,12 @@ class PlayerManager: NSObject, ObservableObject {
         player?.pause()
         player = nil
         playerItemCancellables.removeAll()
+
+        // These describe a player that no longer exists.
+        cancelStallWatch()
+        pausedReconcileWorkItem?.cancel()
+        pausedReconcileWorkItem = nil
+        pendingStartAtZero = false
     }
 
     // MARK: - Playback Reporting
@@ -1762,10 +1858,120 @@ class PlayerManager: NSObject, ObservableObject {
 
     // MARK: - Error Handling
 
+    // MARK: - Reconciling intent with the player
+
+    /// The player is the authority on whether audio is coming out. `isPlaying`
+    /// is only ever what was asked for, and nothing used to notice when the two
+    /// came apart — a player that never started, or that stopped on its own,
+    /// left the UI showing a pause button over silence and kept reporting
+    /// progress to Jellyfin for the length of the track.
+    private func timeControlStatusChanged(_ status: AVPlayer.TimeControlStatus) {
+        // Timer bookkeeping follows the status itself; what to *do* about the
+        // status is `PlaybackReconciliation`'s call.
+        switch status {
+        case .playing:
+            cancelStallWatch()
+            cancelPausedReconcile()
+            if isStalled { isStalled = false }
+        case .waitingToPlayAtSpecifiedRate:
+            cancelPausedReconcile()
+        case .paused:
+            cancelStallWatch()
+        @unknown default:
+            break
+        }
+
+        switch reconciliationAction(for: status) {
+        case .none:
+            break
+        case .restorePlayingState:
+            isPlaying = true
+        case .markStalled:
+            scheduleStallWatch()
+        case .clearPlayingState:
+            schedulePausedReconcile()
+        }
+    }
+
+    /// Re-asked at every timer deadline, because the player may have moved on
+    /// while the timer was waiting.
+    private func reconciliationAction(
+        for status: AVPlayer.TimeControlStatus? = nil
+    ) -> PlaybackReconciliation.Action {
+        guard let status = status ?? player?.timeControlStatus else { return .none }
+        return PlaybackReconciliation.action(
+            status: status,
+            intendsToPlay: isPlaying,
+            isReconfiguring: isReconfiguringPlayer
+        )
+    }
+
+    /// A player that has been waiting to start for a while is reported as
+    /// stalled, and one still waiting long after that is treated as failed.
+    private func scheduleStallWatch() {
+        guard stallWorkItem == nil else { return }
+
+        let notice = DispatchWorkItem { [weak self] in
+            guard let self, self.reconciliationAction() == .markStalled else { return }
+            if !self.isStalled { self.isStalled = true }
+            self.logger.warning("⏳ Playback has been waiting to start for \(Int(self.stallNoticeDelay))s")
+        }
+        stallWorkItem = notice
+        DispatchQueue.main.asyncAfter(deadline: .now() + stallNoticeDelay, execute: notice)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + stallFailureDelay) { [weak self] in
+            guard let self, self.reconciliationAction() == .markStalled else { return }
+            self.logger.error("❌ Playback never started after \(Int(self.stallFailureDelay))s; giving up")
+            self.isStalled = false
+            self.handlePlaybackError(
+                NSError(
+                    domain: "PlayerManager",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "Playback could not start. Check your connection and try again."]
+                )
+            )
+        }
+    }
+
+    private func cancelStallWatch() {
+        stallWorkItem?.cancel()
+        stallWorkItem = nil
+    }
+
+    private func cancelPausedReconcile() {
+        pausedReconcileWorkItem?.cancel()
+        pausedReconcileWorkItem = nil
+    }
+
+    /// Every deliberate pause — the pause button, a track change, teardown —
+    /// also drives the status to `.paused`, so this waits to see whether the
+    /// player is still stopped once the transition has had time to finish.
+    private func schedulePausedReconcile() {
+        cancelPausedReconcile()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pausedReconcileWorkItem = nil
+            guard self.reconciliationAction() == .clearPlayingState else { return }
+
+            self.logger.warning("⚠️ Player stopped on its own — clearing the playing state")
+            self.isPlaying = false
+            self.isStalled = false
+            // Jellyfin was being told this track was playing; it is not.
+            self.stopProgressReporting(reportStopped: true)
+            self.updateNowPlayingInfo()
+        }
+        pausedReconcileWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + pausedReconcileDelay, execute: item)
+    }
+
     private func handlePlaybackError(_ error: Error?) {
         let errorDescription = error?.localizedDescription ?? "Playback failed"
         errorMessage = errorDescription
         isPlaying = false
+        isStalled = false
+        cancelStallWatch()
+        // Nothing is playing, so Jellyfin should stop being told otherwise.
+        stopProgressReporting(reportStopped: true)
 
         logger.error("Playback Error: \(errorDescription)")
         if let error = error {
