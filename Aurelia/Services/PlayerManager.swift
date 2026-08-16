@@ -105,6 +105,35 @@ enum QueueAdvance {
     }
 }
 
+/// What a seek should do about the medium it is aimed at.
+///
+/// Three cases that look alike from the outside and are not: nothing is loaded
+/// yet, so the position is remembered for when it is; the medium answers byte
+/// ranges, so the player can move within it; or it is a transcode produced as
+/// it is sent, which has no position to move to and must be re-requested from
+/// where playback should resume.
+nonisolated enum SeekPlan: Equatable {
+    /// No length is known, so there is nothing to seek within.
+    case unavailable
+    /// Nothing is loaded; begin here once something is.
+    case remember(TimeInterval)
+    case direct(TimeInterval)
+    case restartStream(TimeInterval)
+
+    static func resolve(
+        requested: TimeInterval,
+        duration: TimeInterval,
+        isLoaded: Bool,
+        isSeekable: Bool
+    ) -> SeekPlan {
+        guard duration > 0 else { return .unavailable }
+
+        let target = max(0, min(requested, duration))
+        guard isLoaded else { return .remember(target) }
+        return isSeekable ? .direct(target) : .restartStream(target)
+    }
+}
+
 /// What pressing Previous should do.
 ///
 /// Well into a song it means "start this again"; at its beginning it means the
@@ -902,24 +931,28 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Seeks to specific time
     func seek(to time: Double) {
-        // Duration comes from track metadata, so it is known before anything is
-        // loaded — a restored track can be scrubbed while still paused.
-        guard duration > 0 else {
-            logger.error("❌ Cannot seek - duration is 0 (track metadata issue)")
-            return
-        }
-
         // Log seeks to beginning to help debug restarts
         if time == 0 {
             logger.info("🔄 Seeking to beginning of track: \(self.currentTrack?.name ?? "unknown")")
         }
 
-        // Nothing is loaded yet: after a restart the queue is restored but no
-        // player is built until playback starts. Remember where to begin rather
-        // than dropping the request, so the scrubber works on a paused player.
-        guard let player, let currentItem = player.currentItem,
-              currentItem.status == .readyToPlay else {
-            let target = max(0, min(time, duration))
+        let plan = SeekPlan.resolve(
+            requested: time,
+            duration: duration,
+            isLoaded: player?.currentItem?.status == .readyToPlay,
+            isSeekable: currentItemIsSeekable
+        )
+
+        let clampedTime: TimeInterval
+        switch plan {
+        case .unavailable:
+            logger.error("❌ Cannot seek - duration is 0 (track metadata issue)")
+            return
+
+        case .remember(let target):
+            // After a restart the queue is restored but no player exists until
+            // playback starts, so the request is kept rather than dropped and
+            // the scrubber works on a paused player.
             logger.info("⏳ Nothing loaded yet; starting at \(target)s when play begins")
             if let trackID = currentTrack?.id {
                 pendingStart = PendingStart(trackID: trackID, time: target)
@@ -927,18 +960,19 @@ class PlayerManager: NSObject, ObservableObject {
             currentTime = target
             lastValidPlaybackTime = target
             return
+
+        case .restartStream(let target):
+            restartStream(at: target)
+            return
+
+        case .direct(let target):
+            clampedTime = target
         }
 
-        // Clamp time to valid range
-        let clampedTime = max(0, min(time, duration))
+        guard let player, let currentItem = player.currentItem else { return }
         let cmTime = CMTime(seconds: clampedTime, preferredTimescale: 600)
 
         logger.info("🔍 Seeking to \(clampedTime)s (duration: \(self.duration)s)")
-
-        guard currentItemIsSeekable else {
-            restartStream(at: clampedTime)
-            return
-        }
 
         // Mark seeking so the time observer/restart detector don't fight us
         isSeeking = true

@@ -67,6 +67,34 @@ private struct Transport {
 
 struct PlaybackScenarioTests {
 
+    @Test func aSeekIsPlannedByWhatItIsAimedAt() {
+        // Three cases that look alike from the outside. Confusing them is how a
+        // seek came to move the clock without moving the audio: a transcode was
+        // seeked as though it answered byte ranges, which it does not.
+        #expect(SeekPlan.resolve(requested: 60, duration: 200, isLoaded: true, isSeekable: true)
+                == .direct(60))
+        #expect(SeekPlan.resolve(requested: 60, duration: 200, isLoaded: true, isSeekable: false)
+                == .restartStream(60))
+        #expect(SeekPlan.resolve(requested: 60, duration: 200, isLoaded: false, isSeekable: true)
+                == .remember(60))
+
+        // Nothing is known about a track with no length, so there is nowhere to aim.
+        #expect(SeekPlan.resolve(requested: 60, duration: 0, isLoaded: true, isSeekable: true)
+                == .unavailable)
+    }
+
+    @Test func aSeekStaysInsideTheTrack() {
+        #expect(SeekPlan.resolve(requested: -5, duration: 200, isLoaded: true, isSeekable: true)
+                == .direct(0))
+        #expect(SeekPlan.resolve(requested: 5_000, duration: 200, isLoaded: true, isSeekable: true)
+                == .direct(200))
+
+        // Clamped before it is remembered, so a paused player cannot store a
+        // position its track does not have.
+        #expect(SeekPlan.resolve(requested: 5_000, duration: 200, isLoaded: false, isSeekable: true)
+                == .remember(200))
+    }
+
     @Test func seekingWhilePausedThenSkippingOpensTheNextTrackAtItsStart() {
         // Reported after a restart: scrub the restored track, press next, and
         // the new song opened partway through, because the remembered position
