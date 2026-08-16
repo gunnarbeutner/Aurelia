@@ -346,7 +346,22 @@ class PlayerManager: NSObject, ObservableObject {
     private let pausedReconcileDelay: TimeInterval = 0.75
 
     /// Get playback URL respecting user's streaming quality preference
-    private func playbackURL(for track: Track) -> URL? {
+    /// Builds an item that knows where its own timestamps are.
+    ///
+    /// Without precise timing, AVFoundation reads a FLAC's seek table and, when
+    /// there isn't one, estimates — reporting the position asked for while
+    /// playing from wherever the estimate landed. About one FLAC in ten here has
+    /// no seek table, and VLC plays those correctly, so the file is not at fault.
+    /// Precise timing makes it parse instead of guess.
+    private func makePlayerItem(url: URL) -> AVPlayerItem {
+        let asset = AVURLAsset(
+            url: url,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+        )
+        return AVPlayerItem(asset: asset)
+    }
+
+    private func playbackURL(for track: Track, startingAt offset: TimeInterval = 0) -> URL? {
         // Check offline first
         if let localURL = downloadManager.getLocalURL(for: track.id) {
             return localURL
@@ -356,7 +371,68 @@ class PlayerManager: NSObject, ObservableObject {
         if quality == .original {
             return jellyfinService.getDownloadURL(for: track.id)
         } else {
-            return jellyfinService.getStreamingURL(for: track.id, bitrate: quality.bitrate)
+            return jellyfinService.getStreamingURL(
+                for: track.id, bitrate: quality.bitrate, startingAt: offset
+            )
+        }
+    }
+
+    /// Whether what is playing can be moved around in.
+    ///
+    /// A local file and the original-quality endpoint are ordinary media that
+    /// answer byte ranges. A transcode is produced as it is sent: it carries no
+    /// length and refuses ranges, so there is no position in it to move to.
+    private var currentItemIsSeekable: Bool {
+        guard let asset = player?.currentItem?.asset as? AVURLAsset else { return true }
+        if asset.url.isFileURL { return true }
+        return !asset.url.path.hasSuffix("/universal")
+    }
+
+    /// Where the current stream begins within the track.
+    ///
+    /// Zero for anything seekable. A transcode asked to start partway through is
+    /// a stream of only the remainder and its clock starts at nothing, so the
+    /// position it reports is read relative to where it was cut.
+    private var streamStartOffset: TimeInterval = 0
+
+    /// Moves within a transcode by fetching one that begins where we are going.
+    ///
+    /// Only the item being played is exchanged, so whatever was preloaded behind
+    /// it still follows on.
+    private func restartStream(at time: TimeInterval) {
+        guard let player, let track = currentTrack,
+              let url = playbackURL(for: track, startingAt: time) else {
+            logger.error("❌ Cannot restart stream at \(time)s")
+            return
+        }
+
+        logger.info("🔁 Restarting stream at \(time)s for '\(track.name)'")
+
+        let wasPlaying = isPlaying
+        isSeeking = true
+        streamStartOffset = time
+        currentTime = time
+        lastValidPlaybackTime = time
+        // The clock is about to jump legitimately; the detector would otherwise
+        // read the new stream's fresh start as one that restarted by itself.
+        restartRecoveryAttempts.removeAll()
+
+        let item = makePlayerItem(url: url)
+        item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+        item.preferredForwardBufferDuration = 15
+        player.replaceCurrentItem(with: item)
+        if playerItems.isEmpty {
+            playerItems = [item]
+        } else {
+            playerItems[0] = item
+        }
+        observePlayerItem(item)
+
+        if wasPlaying { player.play() }
+        updateNowPlayingInfo()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + pausedReconcileDelay) { [weak self] in
+            self?.isSeeking = false
         }
     }
     private let downloadManager = DownloadManager.shared
@@ -1016,7 +1092,7 @@ class PlayerManager: NSObject, ObservableObject {
                     continue
                 }
 
-                let playerItem = AVPlayerItem(url: url)
+                let playerItem = makePlayerItem(url: url)
                 playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
                 playerItem.preferredForwardBufferDuration = 15.0
 
@@ -1308,7 +1384,7 @@ class PlayerManager: NSObject, ObservableObject {
             let nextIndex = currentIndex + playerItems.count
             guard queue.indices.contains(nextIndex),
                   let url = playbackURL(for: queue[nextIndex]) else { break }
-            let item = AVPlayerItem(url: url)
+            let item = makePlayerItem(url: url)
             item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
             item.preferredForwardBufferDuration = 15
             player?.insert(item, after: nil)
@@ -1377,7 +1453,7 @@ class PlayerManager: NSObject, ObservableObject {
 
             logger.info("  [\(offset)] \(isOffline ? "Offline" : "Streaming"): \(track.name)")
 
-            let playerItem = AVPlayerItem(url: url)
+            let playerItem = makePlayerItem(url: url)
 
             // Configure for reliable streaming playback
             if !isOffline {
@@ -1536,7 +1612,7 @@ class PlayerManager: NSObject, ObservableObject {
                 return
             }
 
-            let playerItem = AVPlayerItem(url: url)
+            let playerItem = makePlayerItem(url: url)
             playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
             playerItem.preferredForwardBufferDuration = 15.0
 
