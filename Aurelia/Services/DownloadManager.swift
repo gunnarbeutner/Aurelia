@@ -442,12 +442,19 @@ class DownloadManager: NSObject, ObservableObject {
     /// Starts listening for the signals that unblock a held queue. Called once
     /// at launch, after `NetworkMonitor` is running.
     func start() {
-        NetworkMonitor.shared.$isExpensive
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.pumpQueue()
-            }
-            .store(in: &cancellables)
+        // Both, because a rule-driven download is held by either one. Watching
+        // only the expensive flag leaves a queue held by Low Data Mode stuck
+        // after that clears, until something unrelated happens to pump it.
+        Publishers.CombineLatest(
+            NetworkMonitor.shared.$isExpensive,
+            NetworkMonitor.shared.$isConstrained
+        )
+        .map { expensive, constrained in expensive || constrained }
+        .removeDuplicates()
+        .sink { [weak self] _ in
+            self?.pumpQueue()
+        }
+        .store(in: &cancellables)
     }
 
     // MARK: - Download Directory
