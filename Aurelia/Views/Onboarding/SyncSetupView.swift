@@ -16,7 +16,7 @@ struct SyncSetupView: View {
     @ObservedObject private var jellyfinService = JellyfinService.shared
 
     @State private var phase: Phase = .checking
-    @State private var steps: [Step] = Step.plan
+    @State private var steps: [Step] = Step.plan(update: false)
     @State private var failure: String?
     /// Held back briefly so a check that passes in a couple of hundred
     /// milliseconds never puts a screen up and takes it away again.
@@ -29,10 +29,10 @@ struct SyncSetupView: View {
         case checking
         /// Installed but not usable, or the check itself failed.
         case blocked(String)
-        /// Missing, and this account can do something about it.
-        case needsInstall
-        /// Missing, and it needs someone with the keys to the server.
-        case needsAdministrator
+        /// Missing or too old, and this account can do something about it.
+        case needsInstall(update: Bool)
+        /// Missing or too old, and it needs someone with the keys to the server.
+        case needsAdministrator(update: Bool)
         case working
     }
 
@@ -50,12 +50,16 @@ struct SyncSetupView: View {
         let title: String
         var state: State = .pending
 
-        static let plan: [Step] = [
-            Step(id: "install", title: "Install the Aurelia Sync plugin"),
-            Step(id: "restart", title: "Restart your Jellyfin server"),
-            Step(id: "wait", title: "Wait for the server to come back"),
-            Step(id: "verify", title: "Check that syncing is available")
-        ]
+        static func plan(update: Bool) -> [Step] {
+            [
+                Step(id: "install", title: update
+                    ? "Update the Aurelia Sync plugin"
+                    : "Install the Aurelia Sync plugin"),
+                Step(id: "restart", title: "Restart your Jellyfin server"),
+                Step(id: "wait", title: "Wait for the server to come back"),
+                Step(id: "verify", title: "Check that syncing is available")
+            ]
+        }
     }
 
     var body: some View {
@@ -115,14 +119,16 @@ struct SyncSetupView: View {
                 .transition(.opacity)
             }
 
-        case .needsInstall:
+        case .needsInstall(let update):
             VStack(spacing: 24) {
                 heading(
-                    "One thing to set up",
-                    detail: "Aurelia keeps your library in step through a small Jellyfin plugin. Here is what will happen:"
+                    update ? "Your server needs an update" : "One thing to set up",
+                    detail: update
+                        ? "This version of Aurelia needs a newer Aurelia Sync than the one on your server. Here is what will happen:"
+                        : "Aurelia keeps your library in step through a small Jellyfin plugin. Here is what will happen:"
                 )
                 checklist
-                primaryButton("Install and Restart") {
+                primaryButton(update ? "Update and Restart" : "Install and Restart") {
                     Task { await runSetup() }
                 }
                 repositoryLink
@@ -143,11 +149,13 @@ struct SyncSetupView: View {
                 }
             }
 
-        case .needsAdministrator:
+        case .needsAdministrator(let update):
             VStack(spacing: 24) {
                 heading(
                     "Ask your server administrator",
-                    detail: "Aurelia needs the Aurelia Sync plugin on this Jellyfin server, and installing it takes an administrator account. Until it is installed there is no library to show."
+                    detail: update
+                        ? "This server's Aurelia Sync plugin is older than this version of Aurelia needs, and updating it takes an administrator account. Until it is updated there is no library to show."
+                        : "Aurelia needs the Aurelia Sync plugin on this Jellyfin server, and installing it takes an administrator account. Until it is installed there is no library to show."
                 )
                 primaryButton("Check Again") {
                     Task { await check() }
@@ -293,19 +301,38 @@ struct SyncSetupView: View {
                 phase = .blocked(status.healthDetail ?? "The plugin is installed but not running.")
                 return
             }
+            guard status.isCompatible else {
+                // A version mismatch is as disqualifying as a missing plugin,
+                // and saying so here beats letting the first sync fail with
+                // nothing but "no common protocol or schema version".
+                guard status.isOlderThanClient else {
+                    phase = .blocked(
+                        "This server runs Aurelia Sync \(status.pluginVersion), which is newer than "
+                        + "this version of Aurelia understands. Update the app to continue."
+                    )
+                    return
+                }
+                await requestSetup(update: true)
+                return
+            }
             onReady()
         } catch AureliaSyncError.required {
-            steps = Step.plan
-            do {
-                phase = try await AureliaSyncPluginManager.shared.currentUserIsAdministrator()
-                    ? .needsInstall
-                    : .needsAdministrator
-            } catch {
-                // A check that cannot complete is not permission to carry on:
-                // the library would fail later with less to go on than here.
-                phase = .blocked(error.localizedDescription)
-            }
+            await requestSetup(update: false)
         } catch {
+            phase = .blocked(error.localizedDescription)
+        }
+    }
+
+    /// Offers the install, or explains who has to do it.
+    private func requestSetup(update: Bool) async {
+        steps = Step.plan(update: update)
+        do {
+            phase = try await AureliaSyncPluginManager.shared.currentUserIsAdministrator()
+                ? .needsInstall(update: update)
+                : .needsAdministrator(update: update)
+        } catch {
+            // A check that cannot complete is not permission to carry on: the
+            // library would fail later with less to go on than here.
             phase = .blocked(error.localizedDescription)
         }
     }
@@ -313,7 +340,13 @@ struct SyncSetupView: View {
     private func runSetup() async {
         phase = .working
         failure = nil
-        steps = Step.plan
+        // Reset the ticks without rewriting the titles, which already say
+        // whether this is an install or an update.
+        steps = steps.map { step in
+            var reset = step
+            reset.state = .pending
+            return reset
+        }
 
         guard await perform("install", { try await AureliaSyncPluginManager.shared.install() }) else { return }
         guard await perform("restart", { try await AureliaSyncPluginManager.shared.restartServer() }) else { return }

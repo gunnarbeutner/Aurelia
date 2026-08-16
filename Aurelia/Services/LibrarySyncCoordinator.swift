@@ -89,10 +89,7 @@ final class LibrarySyncCoordinator: ObservableObject {
             let pluginStatus = try await client.status()
             guard pluginStatus.enabled else { throw AureliaSyncError.disabled(pluginStatus.healthDetail) }
             guard pluginStatus.healthy else { throw AureliaSyncError.disabled(pluginStatus.healthDetail ?? "Aurelia Sync is unhealthy.") }
-            guard pluginStatus.protocolVersions.min <= AureliaSyncClient.protocolRange.upperBound,
-                  pluginStatus.protocolVersions.max >= AureliaSyncClient.protocolRange.lowerBound,
-                  pluginStatus.wireSchemaVersions.min <= AureliaSyncClient.schemaRange.upperBound,
-                  pluginStatus.wireSchemaVersions.max >= AureliaSyncClient.schemaRange.lowerBound else {
+            guard pluginStatus.isCompatible else {
                 throw AureliaSyncError.incompatible("no common protocol or schema version")
             }
 

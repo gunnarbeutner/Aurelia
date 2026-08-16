@@ -652,28 +652,16 @@ struct NowPlayingView: View {
             if let track = playerManager.currentTrack,
                let artworkURLString = track.artworkURL,
                let artworkURL = URL(string: artworkURLString) {
-                CachedAsyncImage(url: artworkURL) { phase in
-                    switch phase {
-                    case .empty:
-                        placeholderArtwork(size: artSize)
-                    case .success(let image):
-                        image
-                            .artworkRendering()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: artSize, height: artSize)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.appControlFill, lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
-                    case .failure:
-                        placeholderArtwork(size: artSize)
-                    @unknown default:
-                        placeholderArtwork(size: artSize)
-                    }
+                AnimatedArtworkView(url: artworkURL) {
+                    placeholderArtwork(size: artSize)
                 }
                 .frame(width: artSize, height: artSize)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.appControlFill, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
             } else {
                 placeholderArtwork(size: artSize)
             }

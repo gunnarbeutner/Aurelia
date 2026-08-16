@@ -123,6 +123,51 @@ actor ImageCache {
         return img
     }
 
+    /// Artwork prepared for display, animated or not.
+    ///
+    /// The still case carries a decoded frame, since that is the common one and
+    /// decoding it here keeps it off the main thread. The animated case carries
+    /// the encoded bytes, because animation only exists while the data is still
+    /// encoded — `UIImage` keeps the first frame and discards the rest.
+    enum Artwork: Sendable {
+        case still(UIImage)
+        case animated(Data)
+    }
+
+    func artwork(from url: URL) async throws -> Artwork {
+        let data = try await imageData(from: url)
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 1 else {
+            guard let image = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
+            return .still(image)
+        }
+
+        return .animated(data)
+    }
+
+    /// The encoded bytes for a URL, rather than a decoded image.
+    func imageData(from url: URL) async throws -> Data {
+        let key = Self.cacheKey(for: url)
+        let filePath = diskCacheURL.appendingPathComponent(key)
+
+        if let data = try? Data(contentsOf: filePath), !data.isEmpty {
+            return data
+        }
+
+        let (data, response) = try await session.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        try? data.write(to: filePath)
+        if let image = UIImage(data: data) {
+            cacheMemoryImage(image, for: url, cost: data.count)
+        }
+        return data
+    }
+
     // MARK: - Helpers
 
     nonisolated private static func cacheKey(for url: URL) -> String {

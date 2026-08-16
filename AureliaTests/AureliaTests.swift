@@ -30,10 +30,10 @@ struct AureliaTests {
         }
     }
 
-    @Test func aureliaSyncDecodesCompleteSegmentAndBuildsArtworkLocally() async throws {
+    @Test func aureliaSyncTrackNamesItsAlbumWithoutCopyingIt() async throws {
         let bytes = Self.byteStream("""
         {"kind":"segment.begin"}\n
-        {"cursor":"c1","sequence":1,"kind":"item.upsert","entityType":"track","entityId":"track","payload":{"id":"track","name":"Song","artistName":"Artist","albumName":"Album","albumId":"album","duration":12.5,"imageTag":"track-tag","albumImageTag":"album-tag"}}\n
+        {"cursor":"c1","sequence":1,"kind":"item.upsert","entityType":"track","entityId":"track","payload":{"id":"track","name":"Song","artistName":"Artist","albumId":"album","duration":12.5,"imageTag":"track-tag"}}\n
         {"kind":"segment.end","cursor":"c1","caughtUp":true,"aggregateChecksum":"sha256:ignored-for-backward-compatibility"}\n
         """)
         let decoded = try await AureliaSyncNDJSON.decode(bytes: bytes)
@@ -41,7 +41,56 @@ struct AureliaTests {
         #expect(decoded.records.count == 1)
         let payload = try #require(decoded.records.first?.payload)
         let track = try payload.track(baseURL: "https://music.example/")
-        #expect(track.artworkURL == "https://music.example/Items/album/Images/Primary?maxWidth=300&tag=album-tag")
+
+        // The album owns its name and its artwork; the store reads both from the
+        // album's own row, so nothing about them arrives on the track.
+        #expect(track.albumId == "album")
+        #expect(track.artworkURL == nil)
+    }
+
+    @Test func storedTrackShowsItsAlbumsCurrentArtwork() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let track = Track(
+            id: "track", name: "Song", artistName: "Artist", albumName: "",
+            duration: 12.5, artworkURL: nil, albumId: "album"
+        )
+        func album(artwork: String) -> Album {
+            Album(
+                id: "album", name: "Record", artistName: "Artist", artistId: nil,
+                year: 2026, artworkURL: artwork
+            )
+        }
+
+        let watermark = Date(timeIntervalSince1970: 1)
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                albums: [album(artwork: "https://music.example/art?tag=first")],
+                tracks: [track],
+                metadataWatermark: watermark,
+                userDataWatermark: watermark
+            ),
+            in: scope
+        )
+        let first = try await repository.tracks(inAlbum: "album", in: scope)
+        #expect(first.first?.artworkURL == "https://music.example/art?tag=first")
+        #expect(first.first?.albumName == "Record")
+
+        // The album changes and its tracks do not. Nothing re-sends them, so a
+        // copy on the track would still be showing the old artwork here.
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                albums: [album(artwork: "https://music.example/art?tag=second")],
+                metadataWatermark: watermark,
+                userDataWatermark: watermark
+            ),
+            in: scope
+        )
+        let second = try await repository.tracks(inAlbum: "album", in: scope)
+        #expect(second.first?.artworkURL == "https://music.example/art?tag=second")
     }
 
     @Test func aureliaSyncFinalSnapshotSegmentIsPublishedAtomically() async throws {
@@ -183,9 +232,13 @@ struct AureliaTests {
 
         let stored = try await repository.librarySnapshot(in: firstScope)
         let otherUser = try await repository.librarySnapshot(in: secondScope)
-        #expect(stored.albums == [album])
+        // Counts describe the rows the client actually holds, so they come back
+        // as what was stored alongside them rather than what was handed in.
+        #expect(stored.albums.map(\.trackCount) == [0])
+        #expect(stored.albums.map(\.name) == ["Stored Album"])
         #expect(stored.artists == [artist])
-        #expect(stored.playlists == [playlist])
+        #expect(stored.playlists.map(\.trackCount) == [0])
+        #expect(stored.playlists.map(\.name) == ["Stored Playlist"])
         #expect(stored.lastSyncedAt == Date(timeIntervalSince1970: 456))
         #expect(!otherUser.hasCachedLibrary)
         #expect(otherUser.albums.isEmpty)

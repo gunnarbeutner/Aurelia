@@ -870,20 +870,16 @@ private struct DiscoveryMixCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            CachedAsyncImage(url: shelf.seed.artworkURL.flatMap(URL.init(string:))) { phase in
-                if let image = phase.image {
-                    image.artworkRendering().scaledToFill()
-                } else {
-                    ZStack {
-                        LinearGradient(
-                            colors: [Color.appAccent.opacity(0.35), Color.appSecondary.opacity(0.3)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        Image(systemName: "waveform")
-                            .font(.system(size: 38, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.75))
-                    }
+            AnimatedArtworkView(url: shelf.seed.artworkURL.flatMap(URL.init(string:))) {
+                ZStack {
+                    LinearGradient(
+                        colors: [Color.appAccent.opacity(0.35), Color.appSecondary.opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "waveform")
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.75))
                 }
             }
             .frame(width: 170, height: 170)
@@ -916,16 +912,12 @@ private struct DiscoveryTrackCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            CachedAsyncImage(url: track.artworkURL.flatMap(URL.init(string:))) { phase in
-                if let image = phase.image {
-                    image.artworkRendering().scaledToFill()
-                } else {
-                    ZStack {
-                        Color.appElevated
-                        Image(systemName: "music.note")
-                            .font(.title)
-                            .foregroundColor(.appTextMuted)
-                    }
+            AnimatedArtworkView(url: track.artworkURL.flatMap(URL.init(string:))) {
+                ZStack {
+                    Color.appElevated
+                    Image(systemName: "music.note")
+                        .font(.title)
+                        .foregroundColor(.appTextMuted)
                 }
             }
             .frame(width: 150, height: 150)
@@ -950,16 +942,12 @@ private struct RecentPlayCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            CachedAsyncImage(url: item.resumeTrack.artworkURL.flatMap(URL.init(string:))) { phase in
-                if let image = phase.image {
-                    image.artworkRendering().scaledToFill()
-                } else {
-                    ZStack {
-                        Color.appElevated
-                        Image(systemName: item.isAlbumSession ? "square.stack" : "music.note")
-                            .font(.title)
-                            .foregroundColor(.appTextMuted)
-                    }
+            AnimatedArtworkView(url: item.resumeTrack.artworkURL.flatMap(URL.init(string:))) {
+                ZStack {
+                    Color.appElevated
+                    Image(systemName: item.isAlbumSession ? "square.stack" : "music.note")
+                        .font(.title)
+                        .foregroundColor(.appTextMuted)
                 }
             }
             .frame(width: 150, height: 150)

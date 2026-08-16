@@ -17,6 +17,27 @@ nonisolated struct AureliaSyncStatus: Decodable, Sendable {
     let healthDetail: String?
 
     var healthy: Bool { health == "ok" }
+
+    /// Whether this build and this plugin have a protocol and wire schema
+    /// version in common.
+    var isCompatible: Bool {
+        overlaps(protocolVersions, AureliaSyncClient.protocolRange)
+            && overlaps(wireSchemaVersions, AureliaSyncClient.schemaRange)
+    }
+
+    /// Whether the plugin is the older of the two, and so the one to update.
+    ///
+    /// The mismatch runs both ways, and the answer decides who is asked to do
+    /// something: an out-of-date server is a plugin to update, an out-of-date
+    /// app is not something the server can fix.
+    var isOlderThanClient: Bool {
+        protocolVersions.max < AureliaSyncClient.protocolRange.lowerBound
+            || wireSchemaVersions.max < AureliaSyncClient.schemaRange.lowerBound
+    }
+
+    private func overlaps(_ server: AureliaSyncVersionRange, _ client: ClosedRange<Int>) -> Bool {
+        server.min <= client.upperBound && server.max >= client.lowerBound
+    }
 }
 
 nonisolated struct AureliaSyncVersionRange: Decodable, Sendable { let min: Int; let max: Int }
@@ -80,17 +101,13 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
     let artistName: String?
     let artistId: String?
     let artistIDs: [String]?
-    let albumName: String?
     let albumId: String?
     let productionYear: Int?
     let duration: Double?
     let imageTag: String?
-    let albumImageTag: String?
     let isAlbumArtist: Bool?
     let indexNumber: Int?
     let parentIndexNumber: Int?
-    let trackCount: Int?
-    let albumCount: Int?
     let biography: String?
     let dateCreated: Date?
     let genreIDs: [String]?
@@ -102,18 +119,15 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
     let playCount: Int?
     let playbackPositionTicks: Int64?
 
+    /// A track names its album by identifier only; the album record owns the
+    /// name and the artwork, and the store fills both in when a track is read.
     func track(fallbackID: String? = nil, baseURL: String) throws -> Track {
         guard let id = id ?? fallbackID, let name else { throw AureliaSyncError.invalidPayload }
-        let artworkURL = Self.artworkURL(
-            itemID: albumId ?? id,
-            imageTag: albumImageTag ?? imageTag,
-            baseURL: baseURL
-        )
         return Track(
             id: id, name: name, sortName: sortName,
             artistName: artistName ?? "Unknown Artist",
-            albumName: albumName ?? "Unknown Album",
-            duration: duration ?? 0, artworkURL: artworkURL,
+            albumName: "",
+            duration: duration ?? 0, artworkURL: nil,
             isFavorite: isFavorite ?? false, indexNumber: indexNumber,
             parentIndexNumber: parentIndexNumber, albumId: albumId,
             artistId: artistId ?? artistIDs?.first, artistIDs: artistIDs,
@@ -127,7 +141,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
         return Album(
             id: id, name: name, sortName: sortName,
             artistName: artistName ?? "Unknown Artist", artistId: artistId,
-            year: productionYear, trackCount: trackCount,
+            year: productionYear, trackCount: nil,
             artworkURL: Self.artworkURL(itemID: id, imageTag: imageTag, baseURL: baseURL),
             genreIDs: genreIDs, isFavorite: isFavorite ?? false
         )
@@ -137,7 +151,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
         guard let id = id ?? fallbackID, let name else { throw AureliaSyncError.invalidPayload }
         return Artist(
             id: id, name: name, sortName: sortName, bio: biography,
-            albumCount: albumCount ?? 0,
+            albumCount: 0,
             artworkURL: Self.artworkURL(itemID: id, imageTag: imageTag, baseURL: baseURL),
             isFavorite: isFavorite ?? false
         )
@@ -147,7 +161,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
         guard let id = id ?? fallbackID, let name else { throw AureliaSyncError.invalidPayload }
         return Playlist(
             id: id, name: name, sortName: sortName,
-            trackCount: trackCount ?? 0,
+            trackCount: 0,
             artworkURL: Self.artworkURL(itemID: id, imageTag: imageTag, baseURL: baseURL),
             dateCreated: dateCreated, isFavorite: isFavorite ?? false
         )
@@ -155,7 +169,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
 
     func genre(fallbackID: String? = nil) throws -> Genre {
         guard let id = id ?? fallbackID, let name else { throw AureliaSyncError.invalidPayload }
-        return Genre(id: id, name: name, albumCount: albumCount)
+        return Genre(id: id, name: name, albumCount: nil)
     }
 
     private static func artworkURL(itemID: String, imageTag: String?, baseURL: String) -> String? {

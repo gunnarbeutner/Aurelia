@@ -1140,7 +1140,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         return try LibraryItemRecord.fetchAll(
             db,
             sql: """
-                SELECT item.* FROM libraryItem AS item
+                SELECT item.* FROM resolvedItem AS item
                 JOIN albumArtist AS marker
                   ON marker.serverKey = item.serverKey
                  AND marker.userID = item.userID
@@ -1242,7 +1242,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
     nonisolated func tracks(inAlbum albumID: String, in scope: LibraryScope) async throws -> [Track] {
         try await readTracks(
             sql: """
-                SELECT item.* FROM libraryItem AS item
+                SELECT item.* FROM resolvedItem AS item
                 WHERE item.serverKey = ? AND item.userID = ?
                   AND item.itemType = ? AND item.albumID = ?
                 ORDER BY COALESCE(item.parentIndexNumber, 0),
@@ -1256,7 +1256,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
     nonisolated func tracks(forArtist artistID: String, in scope: LibraryScope) async throws -> [Track] {
         try await readTracks(
             sql: """
-                SELECT item.* FROM libraryItem AS item
+                SELECT item.* FROM resolvedItem AS item
                 JOIN itemArtist AS relation
                   ON relation.serverKey = item.serverKey
                  AND relation.userID = item.userID
@@ -1280,7 +1280,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 return try LibraryItemRecord.fetchAll(
                     db,
                     sql: """
-                        SELECT DISTINCT item.* FROM libraryItem AS item
+                        SELECT DISTINCT item.* FROM resolvedItem AS item
                         LEFT JOIN itemArtist AS relation
                           ON relation.serverKey = item.serverKey
                          AND relation.userID = item.userID
@@ -1305,7 +1305,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
             return try LibraryItemRecord.fetchAll(
                 db,
                 sql: """
-                    SELECT item.* FROM libraryItem AS item
+                    SELECT item.* FROM resolvedItem AS item
                     JOIN itemGenre AS relation
                       ON relation.serverKey = item.serverKey
                      AND relation.userID = item.userID
@@ -1323,7 +1323,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         try await readTracks(
             sql: """
                 SELECT item.* FROM playlistEntry AS entry
-                JOIN libraryItem AS item
+                JOIN resolvedItem AS item
                   ON item.serverKey = entry.serverKey
                  AND item.userID = entry.userID
                  AND item.itemID = entry.itemID
@@ -1381,7 +1381,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 sql: """
                     SELECT item.*
                     FROM libraryItemFTS
-                    JOIN libraryItem AS item
+                    JOIN resolvedItem AS item
                       ON item.serverKey = libraryItemFTS.serverKey
                      AND item.userID = libraryItemFTS.userID
                      AND item.itemID = libraryItemFTS.itemID
@@ -1430,7 +1430,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     sql: """
                         SELECT item.*
                         FROM userItemState AS state
-                        JOIN libraryItem AS item
+                        JOIN resolvedItem AS item
                           ON item.serverKey = state.serverKey
                          AND item.userID = state.userID
                          AND item.itemID = state.itemID
@@ -1584,7 +1584,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     sql: """
                         SELECT item.*, state.lastPlayedAt, state.playCount, state.isFavorite,
                                GROUP_CONCAT(DISTINCT genre.genreID) AS discoveryGenreIDs
-                        FROM libraryItem AS item
+                        FROM resolvedItem AS item
                         LEFT JOIN userItemState AS state
                           ON state.serverKey = item.serverKey
                          AND state.userID = item.userID
@@ -1630,7 +1630,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     sql: """
                         SELECT item.*
                         FROM userItemState AS state
-                        JOIN libraryItem AS item
+                        JOIN resolvedItem AS item
                           ON item.serverKey = state.serverKey
                          AND item.userID = state.userID
                          AND item.itemID = state.itemID
@@ -2039,8 +2039,82 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 table.add(column: "publishedSnapshotGeneration", .text)
             }
         }
+        migrator.registerMigration("deriveAlbumFieldsAndCounts") { db in
+            // A track's album name and artwork belong to the album, and the four
+            // counts belong to whoever can see the whole set. Stored copies drift
+            // as soon as the thing they describe changes without them, so they are
+            // read through this view and never written.
+            try db.execute(sql: """
+                UPDATE libraryItem
+                   SET albumName = NULL, artworkURL = NULL
+                 WHERE itemType = 'track' AND albumID IS NOT NULL
+                """)
+            try db.execute(sql: """
+                UPDATE libraryItem SET trackCount = NULL, albumCount = NULL
+                """)
+            try db.execute(sql: Self.resolvedItemViewSQL)
+        }
         return migrator
     }
+
+    /// Every item, with the fields no row owns filled in from the rows that do.
+    ///
+    /// Reads go through this rather than `libraryItem` so a track shows its
+    /// album's current name and artwork, and a count matches the list it labels.
+    /// The counts sit behind `CASE` so the subquery runs only for the one item
+    /// type it applies to — reading 30,000 tracks costs none of them.
+    static let resolvedItemViewSQL = """
+        CREATE VIEW resolvedItem AS
+        SELECT item.serverKey, item.userID, item.itemID, item.itemType,
+               item.name, item.sortName, item.artistName, item.artistID,
+               COALESCE(album.name, item.albumName) AS albumName,
+               item.albumID, item.productionYear, item.duration,
+               COALESCE(album.artworkURL, item.artworkURL) AS artworkURL,
+               item.indexNumber, item.parentIndexNumber,
+               CASE item.itemType
+                   WHEN 'album' THEN (
+                       SELECT COUNT(*) FROM libraryItem AS track
+                        WHERE track.serverKey = item.serverKey
+                          AND track.userID = item.userID
+                          AND track.itemType = 'track'
+                          AND track.albumID = item.itemID)
+                   WHEN 'playlist' THEN (
+                       SELECT COUNT(*) FROM playlistEntry AS entry
+                        WHERE entry.serverKey = item.serverKey
+                          AND entry.userID = item.userID
+                          AND entry.playlistID = item.itemID)
+               END AS trackCount,
+               CASE item.itemType
+                   WHEN 'artist' THEN (
+                       SELECT COUNT(*) FROM itemArtist AS credit
+                        JOIN libraryItem AS credited
+                          ON credited.serverKey = credit.serverKey
+                         AND credited.userID = credit.userID
+                         AND credited.itemID = credit.itemID
+                       WHERE credit.serverKey = item.serverKey
+                         AND credit.userID = item.userID
+                         AND credit.artistID = item.itemID
+                         AND credited.itemType = 'album')
+                   WHEN 'genre' THEN (
+                       SELECT COUNT(*) FROM itemGenre AS tag
+                        JOIN libraryItem AS tagged
+                          ON tagged.serverKey = tag.serverKey
+                         AND tagged.userID = tag.userID
+                         AND tagged.itemID = tag.itemID
+                       WHERE tag.serverKey = item.serverKey
+                         AND tag.userID = item.userID
+                         AND tag.genreID = item.itemID
+                         AND tagged.itemType = 'album')
+               END AS albumCount,
+               item.biography, item.dateCreated, item.parentID,
+               item.imageTag, item.albumImageTag, item.updatedAt
+          FROM libraryItem AS item
+          LEFT JOIN libraryItem AS album
+            ON album.serverKey = item.serverKey
+           AND album.userID = item.userID
+           AND album.itemID = item.albumID
+           AND album.itemType = 'album'
+        """
 
     private static func items(
         _ db: Database,
@@ -2050,7 +2124,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         try LibraryItemRecord.fetchAll(
             db,
             sql: """
-                SELECT * FROM libraryItem
+                SELECT * FROM resolvedItem
                 WHERE serverKey = ? AND userID = ? AND itemType = ?
                 ORDER BY COALESCE(sortName, name) COLLATE NOCASE, itemID
                 """,
@@ -2197,6 +2271,9 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
 
     private static func save(album: Album, db: Database, scope: LibraryScope) throws {
         try LibraryItemRecord(album: album, scope: scope).save(db)
+        // An artist's album count is read back from these links, so a path that
+        // stored albums without them would report every artist as having none.
+        try replaceRelations(for: album, db: db, scope: scope)
         try updateUserState(db, scope: scope, itemID: album.id, isFavorite: album.isFavorite)
     }
 
@@ -2265,7 +2342,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 )
                 SELECT serverKey, userID, itemID, itemType,
                        name, COALESCE(sortName, name), artistName, albumName
-                FROM libraryItem
+                FROM resolvedItem
                 WHERE serverKey = ? AND userID = ?
                 """,
             arguments: [scope.serverKey, scope.userID]
@@ -2290,7 +2367,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                     )
                     SELECT serverKey, userID, itemID, itemType,
                            name, COALESCE(sortName, name), artistName, albumName
-                    FROM libraryItem
+                    FROM resolvedItem
                     WHERE serverKey = ? AND userID = ? AND itemID = ?
                     """,
                 arguments: [scope.serverKey, scope.userID, itemID]
@@ -2379,11 +2456,14 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         sortName = track.sortName
         artistName = track.artistName
         artistID = track.artistId
-        albumName = track.albumName
+        // The album owns both, so they are read through `resolvedItem` rather
+        // than copied here, where they would keep whatever they were when this
+        // track was last written.
+        albumName = nil
         albumID = track.albumId
         productionYear = track.productionYear
         duration = track.duration
-        artworkURL = track.artworkURL
+        artworkURL = nil
         indexNumber = track.indexNumber
         parentIndexNumber = track.parentIndexNumber
         trackCount = nil
@@ -2412,7 +2492,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         artworkURL = album.artworkURL
         indexNumber = nil
         parentIndexNumber = nil
-        trackCount = album.trackCount
+        trackCount = nil
         albumCount = nil
         biography = nil
         dateCreated = nil
@@ -2439,7 +2519,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         indexNumber = nil
         parentIndexNumber = nil
         trackCount = nil
-        albumCount = artist.albumCount
+        albumCount = nil
         biography = artist.bio
         dateCreated = nil
         parentID = nil
@@ -2464,7 +2544,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         artworkURL = playlist.artworkURL
         indexNumber = nil
         parentIndexNumber = nil
-        trackCount = playlist.trackCount
+        trackCount = nil
         albumCount = nil
         biography = nil
         dateCreated = playlist.dateCreated
@@ -2490,7 +2570,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         artworkURL = nil
         indexNumber = nil
         parentIndexNumber = nil
-        trackCount = genre.albumCount
+        trackCount = nil
         albumCount = nil
         biography = nil
         dateCreated = nil
@@ -2559,6 +2639,6 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
     }
 
     func genre() -> Genre {
-        Genre(id: itemID, name: name, albumCount: trackCount)
+        Genre(id: itemID, name: name, albumCount: albumCount)
     }
 }

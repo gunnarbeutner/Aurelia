@@ -369,22 +369,13 @@ struct AlbumDetailView: View {
                 .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
                 .accessibilityIdentifier("album-detail-artwork")
         } else if let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
-            CachedAsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .artworkRendering()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 260, height: 260)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
-                default:
-                    placeholderArtwork
-                }
+            AnimatedArtworkView(url: url) {
+                placeholderArtwork
             }
             .frame(width: 260, height: 260)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
             .accessibilityIdentifier("album-detail-artwork")
         } else {
             placeholderArtwork
