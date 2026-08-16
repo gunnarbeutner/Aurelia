@@ -136,6 +136,10 @@ nonisolated struct LibraryDelta: Sendable {
     var removedItemIDs = Set<String>()
     var replacementArtists: [Artist]?
     var replacementGenres: [Genre]?
+    /// Everything that still exists, by wire entity type, when the server has
+    /// sent a repair. A deletion leaves nothing to find it by, so this says
+    /// what survived and whatever is missing from it is removed.
+    var survivingItemIDs: [String: Set<String>]?
     var metadataWatermark: Date
     var userDataWatermark: Date
     var reconciledAt: Date?
@@ -154,7 +158,8 @@ nonisolated struct LibraryDelta: Sendable {
         replacementGenres: [Genre]? = nil,
         metadataWatermark: Date,
         userDataWatermark: Date,
-        reconciledAt: Date? = nil
+        reconciledAt: Date? = nil,
+        survivingItemIDs: [String: Set<String>]? = nil
     ) {
         self.albums = albums
         self.artists = artists
@@ -170,12 +175,14 @@ nonisolated struct LibraryDelta: Sendable {
         self.metadataWatermark = metadataWatermark
         self.userDataWatermark = userDataWatermark
         self.reconciledAt = reconciledAt
+        self.survivingItemIDs = survivingItemIDs
     }
 
     var changeCount: Int {
         albums.count + artists.count + tracks.count + playlists.count + genres.count
             + userData.count + removedItemIDs.count + refreshedPlaylistIDs.count
             + (replacementArtists?.count ?? 0) + (replacementGenres?.count ?? 0)
+            + (survivingItemIDs?.count ?? 0)
     }
 }
 
@@ -845,6 +852,11 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
             if let replacementGenres = delta.replacementGenres {
                 let current = try Self.itemIDs(db, scope: scope, type: .genre)
                 removed.formUnion(current.subtracting(replacementGenres.map(\.id)))
+            }
+            for (entityType, surviving) in delta.survivingItemIDs ?? [:] {
+                guard let type = LibraryItemType(rawValue: entityType) else { continue }
+                let current = try Self.itemIDs(db, scope: scope, type: type)
+                removed.formUnion(current.subtracting(surviving))
             }
             let changed = delta.changeCount > 0
                 || !removed.isEmpty

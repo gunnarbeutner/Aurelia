@@ -3,6 +3,10 @@ import Foundation
 nonisolated enum AureliaSyncMode: String, Codable, Sendable {
     case snapshot
     case changes
+    /// A snapshot of only what changed, plus a manifest of everything that
+    /// survives. Offered when a client that was fully synced falls behind the
+    /// journal, so it can be brought current without resending the library.
+    case repair
 }
 
 nonisolated struct AureliaSyncStatus: Decodable, Sendable {
@@ -81,6 +85,12 @@ nonisolated struct AureliaSyncSegment: Sendable {
     let records: [AureliaSyncRecord]
     let cursor: String
     let caughtUp: Bool
+    /// Whether the server has journalled more than this session can deliver.
+    ///
+    /// A session's upper bound is fixed when it opens, so `caughtUp` means
+    /// caught up to that bound. During a library scan the journal runs ahead of
+    /// it, and this is the only way to tell that more is already waiting.
+    let hasMoreBeyondSession: Bool
 }
 
 nonisolated struct AureliaSyncRecord: Decodable, Sendable {
@@ -111,6 +121,8 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
     let biography: String?
     let dateCreated: Date?
     let genreIDs: [String]?
+    /// Identifiers a `catalog.manifest` record says still exist.
+    let ids: [String]?
     let playlistEntryID: String?
     let playlistID: String?
     let position: Int?
@@ -222,6 +234,8 @@ nonisolated enum AureliaSyncNDJSON {
         let kind: String
         let cursor: String?
         let caughtUp: Bool?
+        let journalHead: Int64?
+        let sessionUpperBound: Int64?
         let code: String?
         let message: String?
         let correlationId: String?
@@ -280,7 +294,11 @@ nonisolated enum AureliaSyncNDJSON {
         return AureliaSyncSegment(
             records: records,
             cursor: cursor,
-            caughtUp: end.caughtUp ?? false
+            caughtUp: end.caughtUp ?? false,
+            hasMoreBeyondSession: {
+                guard let head = end.journalHead, let bound = end.sessionUpperBound else { return false }
+                return head > bound
+            }()
         )
     }
 }

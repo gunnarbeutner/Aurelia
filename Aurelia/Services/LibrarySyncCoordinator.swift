@@ -140,6 +140,7 @@ final class LibrarySyncCoordinator: ObservableObject {
 
             var cursor = session.cursor
             var segments = 0
+            var manifest: [String: Set<String>] = [:]
             let clock = ContinuousClock()
             var lastRecordAt = clock.now
             while true {
@@ -195,8 +196,20 @@ final class LibrarySyncCoordinator: ObservableObject {
                         )
                     }
                 } else {
+                    var delta = changes.delta
+                    if session.mode == .repair {
+                        for (entityType, ids) in changes.manifest {
+                            manifest[entityType, default: []].formUnion(ids)
+                        }
+                        // Pruning waits for the last segment: the manifest is
+                        // chunked, and acting on half of it would delete
+                        // everything the other half still vouches for.
+                        if segment.caughtUp {
+                            delta.survivingItemIDs = manifest
+                        }
+                    }
                     _ = try await repository.applyDelta(
-                        changes.delta, in: scope, aureliaSync: session,
+                        delta, in: scope, aureliaSync: session,
                         acknowledgement: acknowledgement, sequence: maximumSequence
                     )
                 }
@@ -205,7 +218,15 @@ final class LibrarySyncCoordinator: ObservableObject {
                 try await repository.markAureliaSyncAcknowledged(acknowledgement, checkpointToken: token, in: scope)
                 cursor = segment.cursor
                 segments += 1
-                if segment.caughtUp { break }
+                if segment.caughtUp {
+                    if segment.hasMoreBeyondSession {
+                        Self.logger.info(
+                            "Aurelia Sync reached this session's bound with more already journalled; reopening"
+                        )
+                        try await self.sync(trigger: trigger)
+                    }
+                    break
+                }
                 if !segment.records.isEmpty {
                     lastRecordAt = clock.now
                 }
@@ -230,12 +251,17 @@ final class LibrarySyncCoordinator: ObservableObject {
     nonisolated private struct Changes: Sendable {
         var catalog = LibraryCatalog(albums: [], artists: [], tracks: [], playlists: [], genres: [], playlistEntries: [])
         var delta: LibraryDelta
+        /// Item identifiers a repair says still exist, by entity type. Chunked
+        /// across records and often across segments, so these accumulate until
+        /// the repair completes and only then say what is missing.
+        var manifest: [String: Set<String>] = [:]
     }
 
     nonisolated private static func changes(from records: [AureliaSyncRecord], baseURL: String) throws -> Changes {
         var albums: [Album] = []; var artists: [Artist] = []; var tracks: [Track] = []
         var playlists: [Playlist] = []; var genres: [Genre] = []; var entries: [LibraryPlaylistEntry] = []
         var albumArtistIDs = Set<String>()
+        var manifest: [String: Set<String>] = [:]
         var userData: [LibraryUserDataChange] = []; var removed = Set<String>(); var refreshed = Set<String>()
         for record in records {
             switch record.kind {
@@ -266,6 +292,10 @@ final class LibrarySyncCoordinator: ObservableObject {
             case "userData.upsert":
                 guard let payload = record.payload, let itemID = payload.id ?? record.entityId else { throw AureliaSyncError.invalidPayload }
                 userData.append(.init(itemID: itemID, isFavorite: payload.isFavorite, lastPlayedAt: payload.lastPlayedAt, playCount: payload.playCount, playbackPositionTicks: payload.playbackPositionTicks))
+            case "catalog.manifest":
+                guard let payload = record.payload, let entityType = record.entityType,
+                      let ids = payload.ids else { throw AureliaSyncError.invalidPayload }
+                manifest[entityType, default: []].formUnion(ids)
             case "relationship.replace", "control.reconcile": break
             default: throw AureliaSyncError.invalidPayload
             }
@@ -273,6 +303,6 @@ final class LibrarySyncCoordinator: ObservableObject {
         let now = Date()
         let catalog = LibraryCatalog(albums: albums, artists: artists, tracks: tracks, playlists: playlists, genres: genres, playlistEntries: entries, userData: userData, albumArtistIDs: albumArtistIDs)
         let delta = LibraryDelta(albums: albums, artists: artists, tracks: tracks, playlists: playlists, genres: genres, userData: userData, refreshedPlaylistIDs: refreshed, playlistEntries: entries, removedItemIDs: removed, metadataWatermark: now, userDataWatermark: now)
-        return Changes(catalog: catalog, delta: delta)
+        return Changes(catalog: catalog, delta: delta, manifest: manifest)
     }
 }

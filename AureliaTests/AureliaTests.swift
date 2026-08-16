@@ -48,6 +48,58 @@ struct AureliaTests {
         #expect(track.artworkURL == nil)
     }
 
+    @Test func aureliaSyncAcceptsARepairSessionAndItsManifest() async throws {
+        // A repair is the server's answer to a client that fell behind the journal but was
+        // otherwise complete. Refusing to decode it strands that client permanently, because
+        // every reopen takes the same branch.
+        #expect(AureliaSyncMode(rawValue: "repair") == .repair)
+
+        let bytes = Self.byteStream("""
+        {"kind":"segment.begin"}\n
+        {"cursor":"c1","sequence":1,"kind":"catalog.manifest","entityType":"album","entityId":"manifest-0","payload":{"id":"manifest-0","entityType":"album","ids":["keep"]}}\n
+        {"kind":"segment.end","cursor":"c1","caughtUp":true,"journalHead":9,"sessionUpperBound":4}\n
+        """)
+        let decoded = try await AureliaSyncNDJSON.decode(bytes: bytes)
+
+        #expect(decoded.records.count == 1)
+        #expect(decoded.records.first?.payload?.ids == ["keep"])
+
+        // The session's bound is fixed when it opens, so caught up to it is not caught up.
+        #expect(decoded.caughtUp)
+        #expect(decoded.hasMoreBeyondSession)
+    }
+
+    @Test func aRepairManifestRemovesWhatItDoesNotList() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Library.sqlite")
+        let repository = try LibraryRepository(databaseURL: databaseURL)
+        let scope = try #require(LibraryScope(baseURL: "https://music.example", userID: "listener"))
+        let watermark = Date(timeIntervalSince1970: 1)
+        func album(_ id: String) -> Album {
+            Album(id: id, name: id, artistName: "Artist", artistId: nil, year: 2026, artworkURL: nil)
+        }
+
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                albums: [album("keep"), album("gone")],
+                metadataWatermark: watermark, userDataWatermark: watermark
+            ),
+            in: scope
+        )
+        #expect(try await repository.librarySnapshot(in: scope).albums.count == 2)
+
+        // A deletion leaves no timestamp to find it by, so a repair says what survived.
+        _ = try await repository.applyDelta(
+            LibraryDelta(
+                metadataWatermark: watermark, userDataWatermark: watermark,
+                survivingItemIDs: ["album": ["keep"]]
+            ),
+            in: scope
+        )
+        #expect(try await repository.librarySnapshot(in: scope).albums.map(\.id) == ["keep"])
+    }
+
     @Test func storedTrackShowsItsAlbumsCurrentArtwork() async throws {
         let databaseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
