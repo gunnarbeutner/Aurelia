@@ -105,6 +105,23 @@ enum QueueAdvance {
     }
 }
 
+/// What pressing Previous should do.
+///
+/// Well into a song it means "start this again"; at its beginning it means the
+/// song before. The threshold is what makes a double press reach the previous
+/// track rather than restarting twice.
+nonisolated enum PreviousAction: Equatable {
+    case restart
+    case step(to: Int)
+
+    static let restartThreshold: TimeInterval = 3
+
+    static func resolve(currentTime: TimeInterval, currentIndex: Int) -> PreviousAction {
+        if currentTime > restartThreshold { return .restart }
+        return currentIndex > 0 ? .step(to: currentIndex - 1) : .restart
+    }
+}
+
 enum PlaybackRestartRecovery {
     static func synchronizedPreviousTime(
         observerTime: Double,
@@ -806,17 +823,14 @@ class PlayerManager: NSObject, ObservableObject {
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
 
-        // If more than 3 seconds into track, restart it
-        if currentTime > 3 {
+        switch PreviousAction.resolve(currentTime: currentTime, currentIndex: currentIndex) {
+        case .restart:
             seek(to: 0)
-        } else if currentIndex > 0 {
-            currentIndex -= 1
+        case .step(let index):
+            currentIndex = index
             // Rebuild gapless queue from new position
             player?.pause()
             playCurrentTrack()
-        } else {
-            // At beginning, just restart current track
-            seek(to: 0)
         }
     }
 
