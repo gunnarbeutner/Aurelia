@@ -275,7 +275,8 @@ class DownloadManager: NSObject, ObservableObject {
     /// How many files may be in flight at once. A favorites sync can ask for
     /// thousands; handing all of them to URLSession at once buys nothing and
     /// makes progress reporting a firehose.
-    private let maxConcurrentDownloads = 4
+    /// How many downloads run against the server at once.
+    static let maxConcurrentTransfers = 4
 
     /// Give up after this many tries and park the track in `failedDownloads`,
     /// where the UI can offer a retry.
@@ -390,6 +391,10 @@ class DownloadManager: NSObject, ObservableObject {
         let config = URLSessionConfiguration.background(withIdentifier: "de.beutner.Aurelia.downloads")
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
+        // How many run at once, which is the only number the server feels. It
+        // belongs here rather than in the queue below: the system honours it
+        // while the app is suspended, which is when most of this happens.
+        config.httpMaximumConnectionsPerHost = Self.maxConcurrentTransfers
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
 
@@ -637,7 +642,7 @@ class DownloadManager: NSObject, ObservableObject {
                 inFlight.remove(trackID)
                 appendToQueue(trackID, priority: false)
             }
-            activeDownloads = inFlight.count
+            publishCounts()
         }
         pumpQueue()
     }
@@ -792,11 +797,19 @@ class DownloadManager: NSObject, ObservableObject {
     }
 
     /// Starts as many queued downloads as the concurrency limit allows.
+    /// Hands every eligible download to the system, rather than a few at a time.
+    ///
+    /// A background session works through what it has been given while the app
+    /// is suspended, but it cannot ask for more. Keeping the queue in the app
+    /// meant the session ran dry seconds after each launch, and nothing further
+    /// happened until iOS next chose to wake us — measured at twenty minutes and
+    /// upwards, so a phone left locked made almost no progress. What limits the
+    /// load on the server is `httpMaximumConnectionsPerHost`, not this.
     private func pumpQueue() {
         guard !isPaused else { return }
 
         var held = false
-        while inFlight.count < maxConcurrentDownloads {
+        while true {
             guard let index = waiting.firstIndex(where: { trackID in
                 guard let record = pending[trackID] else { return false }
                 if canStart(record) { return true }
@@ -810,9 +823,16 @@ class DownloadManager: NSObject, ObservableObject {
             startTask(for: trackID)
         }
 
-        queuedDownloads = waiting.count
-        activeDownloads = inFlight.count
+        publishCounts()
         isWaitingForWiFi = held && inFlight.isEmpty
+    }
+
+    /// Everything handed to the session counts as in flight, but only so many
+    /// of them are moving at once, and the rest are waiting their turn.
+    private func publishCounts() {
+        let transferring = min(inFlight.count, Self.maxConcurrentTransfers)
+        activeDownloads = transferring
+        queuedDownloads = waiting.count + (inFlight.count - transferring)
     }
 
     /// A rule-driven download waits for a cheaper connection unless the user
@@ -858,7 +878,7 @@ class DownloadManager: NSObject, ObservableObject {
         downloadTasks[trackID] = task
         inFlight.insert(trackID)
         downloadStates[trackID] = .downloading(progress: 0)
-        activeDownloads = inFlight.count
+        publishCounts()
         task.resume()
     }
 
@@ -882,14 +902,13 @@ class DownloadManager: NSObject, ObservableObject {
             downloadStates[trackID] = .notDownloaded
         }
 
-        activeDownloads = inFlight.count
-        queuedDownloads = waiting.count
+        publishCounts()
     }
 
     private func fail(_ trackID: String, message: String, permanent: Bool) {
         inFlight.remove(trackID)
         downloadTasks.removeValue(forKey: trackID)
-        activeDownloads = inFlight.count
+        publishCounts()
 
         guard var record = pending[trackID] else {
             downloadStates[trackID] = .failed(error: message)
@@ -1032,7 +1051,7 @@ class DownloadManager: NSObject, ObservableObject {
                     self.appendToQueue(trackID, priority: false)
                 }
 
-                self.activeDownloads = self.inFlight.count
+                self.publishCounts()
                 self.logger.info("Reattached to \(self.inFlight.count) background downloads")
                 self.pumpQueue()
             }
@@ -1222,7 +1241,7 @@ class DownloadManager: NSObject, ObservableObject {
             try? fileManager.removeItem(at: downloadsDirectory.appendingPathComponent(fileName))
             inFlight.remove(trackID)
             downloadTasks.removeValue(forKey: trackID)
-            activeDownloads = inFlight.count
+            publishCounts()
             pumpQueue()
             return
         }
@@ -1269,7 +1288,7 @@ class DownloadManager: NSObject, ObservableObject {
         }
         totalStorageUsed += fileSize
         downloadStates[trackID] = .downloaded
-        activeDownloads = inFlight.count
+        publishCounts()
         store.upsert(downloadedTrack)
 
         NotificationCenter.default.post(
