@@ -1030,52 +1030,6 @@ class DownloadManager: NSObject, ObservableObject {
 
         logger.info("Loaded \(self.downloadedTracks.count) downloads, \(self.pending.count) pending")
 
-        verifyDownloads()
-    }
-
-    /// Checks over what is already on disk, in the background.
-    ///
-    /// Files written before downloads were verified can be truncated, and a
-    /// truncated file is worse than a missing one: it is offered as playable
-    /// and stops the rule ever fetching that track again. Asked of each file
-    /// rather than judged by its size, so this agrees with the check a fresh
-    /// download goes through and there is only one rule to be wrong about.
-    private func verifyDownloads() {
-        let candidates = downloadedTracks.compactMap { track -> (String, URL, TimeInterval)? in
-            guard let duration = track.duration, duration > 0 else { return nil }
-            return (
-                track.trackId,
-                downloadsDirectory.appendingPathComponent(track.fileName),
-                duration
-            )
-        }
-        guard !candidates.isEmpty else { return }
-
-        Task { [weak self] in
-            var discarded: [String] = []
-            for (trackID, url, duration) in candidates {
-                if await Self.holdsWholeTrack(at: url, expecting: duration) { continue }
-                discarded.append(trackID)
-            }
-            guard !discarded.isEmpty else { return }
-
-            await MainActor.run {
-                guard let self else { return }
-                self.logger.warning("Discarding \(discarded.count) incomplete download(s) to be fetched again")
-                for trackID in discarded {
-                    if let track = self.downloadedTracks.first(where: { $0.trackId == trackID }) {
-                        try? self.fileManager.removeItem(
-                            at: self.downloadsDirectory.appendingPathComponent(track.fileName)
-                        )
-                        self.totalStorageUsed = max(0, self.totalStorageUsed - track.fileSize)
-                    }
-                    self.store.remove(trackID: trackID)
-                    self.downloadStates[trackID] = .notDownloaded
-                }
-                let removed = Set(discarded)
-                self.downloadedTracks.removeAll { removed.contains($0.trackId) }
-            }
-        }
     }
 
     /// Reattaches to whatever the background session was still doing while the
@@ -1303,6 +1257,10 @@ class DownloadManager: NSObject, ObservableObject {
     static func holdsWholeTrack(at url: URL, expecting duration: TimeInterval) async -> Bool {
         guard duration > 0 else { return true }
 
+        // Asked only of a file that has just arrived, so an unreadable one is
+        // rejected and fetched again rather than kept on the chance it is fine.
+        // Nothing is lost by being wrong here; the same doubt about a file that
+        // has been on disk for a month would cost the user their music.
         let asset = AVURLAsset(url: url)
         guard let assetDuration = try? await asset.load(.duration) else { return false }
 
@@ -1338,8 +1296,12 @@ class DownloadManager: NSObject, ObservableObject {
         // file knows: a truncated download is short. Asked before the track is
         // recorded, because a short file recorded as complete is offered as
         // playable and stops the rule ever fetching the track again.
+        // Only a transcode needs this. It is streamed with no length to check
+        // against, which is what lets a server stop partway unnoticed; an
+        // original is a file transfer, and a short one is an error the session
+        // reports rather than a download that looks finished.
         let fileURL = downloadsDirectory.appendingPathComponent(fileName)
-        let expected = track.duration
+        let expected = record.quality == .original ? 0 : track.duration
         Task { [weak self] in
             let whole = await Self.holdsWholeTrack(at: fileURL, expecting: expected)
             await MainActor.run {
