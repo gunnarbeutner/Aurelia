@@ -494,9 +494,13 @@ class JellyfinService: ObservableObject {
         return getStreamingURL(for: itemId, bitrate: 128)
     }
 
-    /// Generates streaming URL with HTTP transcoding support (matches JellyJam's proven approach)
-    /// Uses /stream endpoint with transcoding parameters for maximum compatibility
-    func getStreamingURL(for itemId: String, bitrate: Int) -> URL? {
+    /// The URL for streaming a track at the chosen quality.
+    ///
+    /// `/universal` rather than `/stream?static=true`: static means "send the
+    /// original file", which overrides the bitrate entirely, so every quality
+    /// setting fetched the same lossless file. The cost is that a transcode is
+    /// produced as it is sent and cannot be seeked — see `startingAt`.
+    func getStreamingURL(for itemId: String, bitrate: Int, startingAt offset: TimeInterval = 0) -> URL? {
         // Validate item ID
         guard !itemId.isEmpty else {
             logger.error("Empty item ID provided for streaming URL")
@@ -515,10 +519,8 @@ class JellyfinService: ObservableObject {
             return nil
         }
 
-        // Use /stream endpoint with transcoding parameters (same as JellyJam)
-        // This allows the server to transcode when needed while still being reliable
         let normalizedBaseURL = cleanBaseURL.hasSuffix("/") ? String(cleanBaseURL.dropLast()) : cleanBaseURL
-        let streamPath = "/Audio/\(itemId)/stream"
+        let streamPath = "/Audio/\(itemId)/universal"
         let fullURLString = normalizedBaseURL + streamPath
 
         guard var components = URLComponents(string: fullURLString) else {
@@ -526,17 +528,28 @@ class JellyfinService: ObservableObject {
             return nil
         }
 
-        // Build query items with proper encoding (matches JellyJam parameters)
         components.queryItems = [
-            URLQueryItem(name: "static", value: "true"),
             URLQueryItem(name: "mediaSourceId", value: itemId),
             URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "DeviceId", value: deviceId),
             URLQueryItem(name: "MaxStreamingBitrate", value: "\(bitrate * 1000)"), // Convert kbps to bps
             URLQueryItem(name: "AudioCodec", value: "mp3"),
-            URLQueryItem(name: "Container", value: "mp3,aac"),
+            // Containers this client can play directly, so a source that already
+            // fits the ceiling is sent as it is rather than re-encoded.
+            URLQueryItem(name: "Container", value: "mp3,aac,m4a"),
             URLQueryItem(name: "TranscodingContainer", value: "mp3"),
             URLQueryItem(name: "TranscodingProtocol", value: "http")
         ]
+        if let userId = KeychainService.shared.getUserID() {
+            components.queryItems?.append(URLQueryItem(name: "UserId", value: userId))
+        }
+
+        // A transcode carries no byte ranges, so the only way to reach a
+        // position is to ask the server to begin there.
+        if offset > 0 {
+            let ticks = Int64(offset * 10_000_000)
+            components.queryItems?.append(URLQueryItem(name: "StartTimeTicks", value: "\(ticks)"))
+        }
 
         // Ensure percent encoding is applied
         components.percentEncodedQuery = components.percentEncodedQuery

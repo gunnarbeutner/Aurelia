@@ -900,6 +900,11 @@ class PlayerManager: NSObject, ObservableObject {
 
         logger.info("🔍 Seeking to \(clampedTime)s (duration: \(self.duration)s)")
 
+        guard currentItemIsSeekable else {
+            restartStream(at: clampedTime)
+            return
+        }
+
         // Mark seeking so the time observer/restart detector don't fight us
         isSeeking = true
         // Update currentTime immediately to prevent UI snapping back
@@ -913,6 +918,7 @@ class PlayerManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 if completed {
                     self.logger.info("✅ Seek completed to \(clampedTime)s")
+
                     self.currentTime = clampedTime
                     // Update lastValidPlaybackTime so the restart detector doesn't
                     // misread the backward jump as a stream restart
@@ -1580,6 +1586,7 @@ class PlayerManager: NSObject, ObservableObject {
             self.currentTrack = newTrack
             self.currentTime = 0
             self.lastValidPlaybackTime = 0
+            self.streamStartOffset = 0
 
             // Seek next item to beginning — AVQueuePlayer preloads items and they
             // can start mid-buffer if the previous item was transcoded/streaming
@@ -1688,6 +1695,7 @@ class PlayerManager: NSObject, ObservableObject {
             guard let self = self else { return }
             guard time.isValid && time.isNumeric else { return }
 
+
             // Don't update time during an active seek — let the seek completion handle it
             guard !self.isSeeking else { return }
 
@@ -1762,9 +1770,10 @@ class PlayerManager: NSObject, ObservableObject {
             self.lastValidPlaybackTime = newTime
 
             // Ensure duration matches current track (safeguard against race conditions)
-            if let currentTrack = self.currentTrack, self.duration != currentTrack.duration {
-                self.duration = currentTrack.duration
-                self.logger.info("📏 Duration sync: Updated to \(currentTrack.duration)s for '\(currentTrack.name)'")
+            let expectedDuration = self.currentTrack?.duration
+            if let expectedDuration, self.duration != expectedDuration {
+                self.duration = expectedDuration
+                self.logger.info("📏 Duration sync: Updated to \(expectedDuration)s")
             }
 
             // Duration comes from Track metadata, not from stream
@@ -1773,6 +1782,14 @@ class PlayerManager: NSObject, ObservableObject {
 
         // Observe ALL player items in the queue
         for (index, playerItem) in playerItems.enumerated() {
+            observePlayerItem(playerItem, index: index)
+        }
+    }
+
+    /// Watches one item's readiness, buffering and failures, so an item swapped
+    /// in later is looked after exactly like one built with the queue.
+    private func observePlayerItem(_ playerItem: AVPlayerItem, index: Int = 0) {
+        do {
             // Observe status
             playerItem.publisher(for: \.status)
                 .receive(on: DispatchQueue.main)
