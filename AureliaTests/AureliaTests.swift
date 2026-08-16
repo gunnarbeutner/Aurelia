@@ -1564,6 +1564,25 @@ struct AureliaTests {
         withExtendedLifetime((playerManagerObservation, progressObservation)) {}
     }
 
+    @Test func aRememberedPositionOnlyOpensTheTrackItWasSetFor() {
+        // Restoring state and scrubbing a paused player both remember where to
+        // begin. Held as a bare number it applied to whatever played next, so
+        // seeking and then pressing next opened the new song partway through.
+        let pending = PendingStart(trackID: "restored", time: 90)
+
+        #expect(PendingStart.startTime(pending, playing: "restored") == 90)
+        #expect(PendingStart.startTime(pending, playing: "the-next-song") == nil)
+        #expect(PendingStart.startTime(nil, playing: "restored") == nil)
+    }
+
+    @Test func aFreshTapOpensAtTheBeginning() {
+        // Anything at or under the threshold is the beginning, and reopening
+        // there is what a fresh tap means.
+        #expect(PendingStart.startTime(PendingStart(trackID: "t", time: 0), playing: "t") == nil)
+        #expect(PendingStart.startTime(PendingStart(trackID: "t", time: 0.5), playing: "t") == nil)
+        #expect(PendingStart.startTime(PendingStart(trackID: "t", time: 1.5), playing: "t") == 1.5)
+    }
+
     @Test func explicitSeekToZeroDoesNotTriggerRestartRecovery() {
         let synchronizedTime = PlaybackRestartRecovery.synchronizedPreviousTime(
             observerTime: 177,

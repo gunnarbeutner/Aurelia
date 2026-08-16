@@ -186,6 +186,27 @@ enum TrackCompletion {
 
 /// The queue player advancing on its own is normal for a beat; staying ahead of
 /// the queue we track is not, and leaves the listener looking at the wrong song.
+/// A position remembered for a track that is not playing yet.
+///
+/// Restoring state and scrubbing a paused player both want playback to begin
+/// somewhere other than the start. Holding that as a bare number meant it
+/// applied to whatever played next: seek, press next, and the new song opened
+/// partway through.
+nonisolated struct PendingStart: Equatable {
+    let trackID: String
+    let time: TimeInterval
+
+    /// Only the beginning is worth nothing to remember, and a fresh tap should
+    /// always open at 0:00.
+    static let minimum: TimeInterval = 1.0
+
+    /// Where this track should begin, if this is the track the position was for.
+    static func startTime(_ pending: PendingStart?, playing trackID: String) -> TimeInterval? {
+        guard let pending, pending.trackID == trackID, pending.time > minimum else { return nil }
+        return pending.time
+    }
+}
+
 enum StalledAdvanceRecovery {
     /// Time observer samples (half a second apart) to tolerate before forcing
     /// the queue back into step with what is actually playing.
@@ -560,7 +581,7 @@ class PlayerManager: NSObject, ObservableObject {
         }
 
         // Store the saved time so we can seek when user hits play
-        pendingSeekTime = savedTime
+        pendingStart = PendingStart(trackID: savedQueue[savedIndex].id, time: savedTime)
 
         // The track is known, so its length and where it was left off are known
         // too. Without these the player shows 0:00 of 0:00 until playback
@@ -574,7 +595,7 @@ class PlayerManager: NSObject, ObservableObject {
     }
 
     /// Pending seek time — applied when playback starts after state restore
-    private var pendingSeekTime: Double = 0
+    private var pendingStart: PendingStart?
 
     private func addToRecentTracks(_ track: Track) {
         recentPlayRevision &+= 1
@@ -652,7 +673,7 @@ class PlayerManager: NSObject, ObservableObject {
         }
 
         cancelAutoplaySuggestions(removeUpcoming: true)
-        pendingSeekTime = 0  // Fresh tap — always start from beginning
+        pendingStart = nil  // Fresh tap — always start from beginning
         queue = [track]
         currentIndex = 0
         playCurrentTrack()
@@ -682,7 +703,7 @@ class PlayerManager: NSObject, ObservableObject {
         }
 
         cancelAutoplaySuggestions(removeUpcoming: true)
-        pendingSeekTime = 0  // Fresh tap — always start from beginning
+        pendingStart = nil  // Fresh tap — always start from beginning
         originalQueue = validTracks
         originalIndex = min(index, validTracks.count - 1)
 
@@ -867,13 +888,10 @@ class PlayerManager: NSObject, ObservableObject {
 
     /// Seeks to specific time
     func seek(to time: Double) {
-        guard let player = player else {
-            logger.error("❌ Cannot seek - player is nil")
-            return
-        }
-
-        guard let currentItem = player.currentItem else {
-            logger.error("❌ Cannot seek - no current item")
+        // Duration comes from track metadata, so it is known before anything is
+        // loaded — a restored track can be scrubbed while still paused.
+        guard duration > 0 else {
+            logger.error("❌ Cannot seek - duration is 0 (track metadata issue)")
             return
         }
 
@@ -882,15 +900,18 @@ class PlayerManager: NSObject, ObservableObject {
             logger.info("🔄 Seeking to beginning of track: \(self.currentTrack?.name ?? "unknown")")
         }
 
-        // Check if current item is ready to seek
-        guard currentItem.status == .readyToPlay else {
-            logger.warning("⚠️ Cannot seek - item not ready (status: \(currentItem.status.rawValue))")
-            return
-        }
-
-        // Duration comes from track metadata (set when track starts playing)
-        guard duration > 0 else {
-            logger.error("❌ Cannot seek - duration is 0 (track metadata issue)")
+        // Nothing is loaded yet: after a restart the queue is restored but no
+        // player is built until playback starts. Remember where to begin rather
+        // than dropping the request, so the scrubber works on a paused player.
+        guard let player, let currentItem = player.currentItem,
+              currentItem.status == .readyToPlay else {
+            let target = max(0, min(time, duration))
+            logger.info("⏳ Nothing loaded yet; starting at \(target)s when play begins")
+            if let trackID = currentTrack?.id {
+                pendingStart = PendingStart(trackID: trackID, time: target)
+            }
+            currentTime = target
+            lastValidPlaybackTime = target
             return
         }
 
@@ -1270,14 +1291,15 @@ class PlayerManager: NSObject, ObservableObject {
         startProgressReporting(for: track)
 
 
-        // Apply pending seek ONLY for state-restore resume (pendingSeekTime is set by restorePlaybackState).
-        // play(_ track:) and play(tracks:) clear this to 0 so fresh taps always start from beginning.
-        if pendingSeekTime > 1.0 {
-            let seekTo = pendingSeekTime
-            pendingSeekTime = 0
+        // A position is only honoured for the track it was remembered for, so
+        // advancing to the next song opens it at its own beginning.
+        if let seekTo = PendingStart.startTime(pendingStart, playing: track.id) {
+            pendingStart = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.seek(to: seekTo)
             }
+        } else {
+            pendingStart = nil
         }
 
         // Update Now Playing
@@ -1541,7 +1563,7 @@ class PlayerManager: NSObject, ObservableObject {
             // AVQueuePlayer may already have advanced past (and removed) the
             // finished item by the time this notification arrives. Rebuild the
             // current stream so repeat-one always starts from the real 0:00.
-            pendingSeekTime = 0
+            pendingStart = nil
             playCurrentTrack()
             return
         }
