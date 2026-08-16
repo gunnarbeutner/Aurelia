@@ -9,6 +9,35 @@ import Foundation
 import Combine
 import OSLog
 
+/// Decides which mixes lead the row.
+nonisolated enum MixShelfOrdering {
+    /// How many cards are in view before the row is scrolled.
+    static let leadingCount = 3
+
+    /// Moves mixes that have a cover to the front.
+    ///
+    /// A seed without artwork draws a waveform on a gradient. That is fine
+    /// further along the row, but a screen that opens on three of them looks
+    /// like the library failed to load rather than like a page of mixes.
+    /// Order is otherwise left alone: these are recommendations, and shuffling
+    /// them for looks would change what is being recommended.
+    static func artworkFirst(_ shelves: [DiscoveryShelf]) -> [DiscoveryShelf] {
+        var leading: [DiscoveryShelf] = []
+        var rest: [DiscoveryShelf] = []
+
+        for shelf in shelves {
+            let hasArtwork = shelf.seed.artworkURL?.isEmpty == false
+            if hasArtwork, leading.count < leadingCount {
+                leading.append(shelf)
+            } else {
+                rest.append(shelf)
+            }
+        }
+
+        return leading + rest
+    }
+}
+
 nonisolated struct DiscoveryShelf: Identifiable, Codable, Equatable, Sendable {
     let seed: Track
     let tracks: [Track]
@@ -647,9 +676,11 @@ final class DiscoveryViewModel: ObservableObject {
                 !DailyMixRecommendations.select(from: $0.tracks).isEmpty
             }
             let generatedSeedIDs = Set(newShelves.map(\.seed.id))
-            let resolvedShelves = Array((newShelves + reusablePreviousShelves.filter {
-                !generatedSeedIDs.contains($0.seed.id)
-            }).prefix(Self.maximumMixShelfCount))
+            let resolvedShelves = MixShelfOrdering.artworkFirst(
+                Array((newShelves + reusablePreviousShelves.filter {
+                    !generatedSeedIDs.contains($0.seed.id)
+                }).prefix(Self.maximumMixShelfCount))
+            )
             let resolvedRediscoverTracks = discoveryCandidates.isEmpty
                 ? self.rediscoverTracks
                 : rediscoverTracks

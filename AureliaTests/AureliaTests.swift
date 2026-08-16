@@ -1587,6 +1587,50 @@ struct AureliaTests {
         ))
     }
 
+    @Test func mixesWithCoversLeadTheRow() {
+        func shelf(_ id: String, artwork: String?) -> DiscoveryShelf {
+            DiscoveryShelf(
+                seed: Track(
+                    id: id, name: id, artistName: "Artist", albumName: "Album",
+                    duration: 200, artworkURL: artwork
+                ),
+                tracks: []
+            )
+        }
+
+        let ordered = MixShelfOrdering.artworkFirst([
+            shelf("a", artwork: nil),
+            shelf("b", artwork: "art-b"),
+            shelf("c", artwork: nil),
+            shelf("d", artwork: "art-d"),
+            shelf("e", artwork: ""),
+            shelf("f", artwork: "art-f"),
+            shelf("g", artwork: "art-g")
+        ])
+
+        // The three cards in view before the row scrolls all have covers.
+        #expect(ordered.prefix(3).map(\.id) == ["b", "d", "f"])
+
+        // Everything else keeps the order it had, including the fourth cover:
+        // this is a recommendation list, not a gallery, so only the head moves.
+        #expect(ordered.map(\.id) == ["b", "d", "f", "a", "c", "e", "g"])
+    }
+
+    @Test func aRowWithNoCoversIsLeftAlone() {
+        func shelf(_ id: String) -> DiscoveryShelf {
+            DiscoveryShelf(
+                seed: Track(
+                    id: id, name: id, artistName: "Artist", albumName: "Album",
+                    duration: 200, artworkURL: nil
+                ),
+                tracks: []
+            )
+        }
+
+        let ordered = MixShelfOrdering.artworkFirst([shelf("a"), shelf("b"), shelf("c")])
+        #expect(ordered.map(\.id) == ["a", "b", "c"])
+    }
+
     @Test func recoveringAStreamThatKeepsRestartingGivesUp() {
         // Seeking a transcoded stream is what restarts it, so recovering from
         // that restart seeks again and the song plays the same half second for
