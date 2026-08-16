@@ -486,6 +486,13 @@ class PlayerManager: NSObject, ObservableObject {
         // Store the saved time so we can seek when user hits play
         pendingSeekTime = savedTime
 
+        // The track is known, so its length and where it was left off are known
+        // too. Without these the player shows 0:00 of 0:00 until playback
+        // starts, which reads as an empty player rather than a paused one.
+        duration = savedQueue[savedIndex].duration
+        currentTime = min(savedTime, savedQueue[savedIndex].duration)
+        lastValidPlaybackTime = currentTime
+
         logger.info("▶️ Restored state: \(self.currentTrack?.name ?? "none") @ \(savedTime)s (queue: \(savedQueue.count) tracks)")
         return true
     }
