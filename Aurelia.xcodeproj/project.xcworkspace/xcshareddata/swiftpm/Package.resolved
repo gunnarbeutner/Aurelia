@@ -1,5 +1,5 @@
 {
-  "originHash" : "2df6280486a953f9a24c0168cd748e29d7eb8ce422bcacebb5e9e2b4367d9654",
+  "originHash" : "76609cfd189874ffdafe9ba6c5bb3e09e8a6a99d7e16d6bfe12482afceb4cc89",
   "pins" : [
     {
       "identity" : "grdb.swift",
@@ -8,6 +8,42 @@
       "state" : {
         "revision" : "b83108d10f42680d78f23fe4d4d80fc88dab3212",
         "version" : "7.11.1"
+      }
+    },
+    {
+      "identity" : "libwebp-xcode",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SDWebImage/libwebp-Xcode.git",
+      "state" : {
+        "revision" : "2b5256c29ff4e20f2a0d5ee863b62b1a22144434",
+        "version" : "1.6.0"
+      }
+    },
+    {
+      "identity" : "sdwebimage",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SDWebImage/SDWebImage.git",
+      "state" : {
+        "revision" : "2de3a496eaf6df9a1312862adcfd54acd73c39c0",
+        "version" : "5.21.7"
+      }
+    },
+    {
+      "identity" : "sdwebimageswiftui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SDWebImage/SDWebImageSwiftUI.git",
+      "state" : {
+        "revision" : "0e331457ca9af2f0b08bcaa138a91ffb907b004f",
+        "version" : "3.1.4"
+      }
+    },
+    {
+      "identity" : "sdwebimagewebpcoder",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SDWebImage/SDWebImageWebPCoder.git",
+      "state" : {
+        "revision" : "12d83edbcc795fb7b5c0c3cb74d739108d3357d2",
+        "version" : "0.15.0"
       }
     }
   ],

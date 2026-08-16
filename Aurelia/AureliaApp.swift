@@ -7,6 +7,8 @@
 
 import SwiftUI
 import AVFoundation
+import SDWebImage
+import SDWebImageWebPCoder
 import UIKit
 
 /// Exists for one callback: when a background download finishes while the app
@@ -38,6 +40,11 @@ struct AureliaApp: App {
     private let watchConnectivity = PhoneConnectivityManager.shared
 
     init() {
+        // libwebp rather than ImageIO. Apple's animated-WebP decoder charges a
+        // full decode per frame — measured at 211ms against libwebp's 14ms on
+        // the same sleeve — which is a whole core spent on one moving cover.
+        SDImageCodersManager.shared.addCoder(SDImageWebPCoder.shared)
+
         // Catalyst draws an AppKit-style focus halo around every bridged text
         // field, which fights the custom field chrome. SwiftUI's
         // .focusEffectDisabled() does not reach the UITextField underneath, so

@@ -8,6 +8,29 @@
 import UIKit
 import os.log
 
+/// Whether a URL's bytes hold more than one frame, once anything has looked.
+///
+/// Kept off the actor so a view can answer "this is an ordinary still I already
+/// have" without suspending: a shelf of covers scrolling into view would
+/// otherwise queue a disk read and a decode each, behind a single actor.
+private final class AnimationVerdicts: @unchecked Sendable {
+    nonisolated(unsafe) private let verdicts: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 4000
+        return cache
+    }()
+
+    nonisolated init() {}
+
+    nonisolated func isAnimated(_ key: String) -> Bool? {
+        verdicts.object(forKey: key as NSString)?.boolValue
+    }
+
+    nonisolated func record(_ animated: Bool, for key: String) {
+        verdicts.setObject(NSNumber(value: animated), forKey: key as NSString)
+    }
+}
+
 private final class MemoryImageCache: @unchecked Sendable {
     nonisolated(unsafe) private let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
@@ -34,6 +57,7 @@ actor ImageCache {
 
     // MARK: - Memory Cache
     nonisolated private let memoryCache = MemoryImageCache()
+    nonisolated private let animationVerdicts = AnimationVerdicts()
 
     // MARK: - Disk Cache
     private let diskCacheURL: URL = {
@@ -135,15 +159,32 @@ actor ImageCache {
     }
 
     func artwork(from url: URL) async throws -> Artwork {
+        let key = Self.cacheKey(for: url)
+        if let image = stillImageIfKnown(for: url) {
+            return .still(image)
+        }
+
         let data = try await imageData(from: url)
 
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 1 else {
             guard let image = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
+            animationVerdicts.record(false, for: key)
+            cacheMemoryImage(image, for: url, cost: data.count)
             return .still(image)
         }
 
+        animationVerdicts.record(true, for: key)
         return .animated(data)
+    }
+
+    /// A decoded image for a URL already known to hold a single frame, if it is
+    /// still in memory. Answers without suspending, so a view can take the
+    /// ordinary path without touching the disk or this actor.
+    nonisolated func stillImageIfKnown(for url: URL) -> UIImage? {
+        let key = Self.cacheKey(for: url)
+        guard animationVerdicts.isAnimated(key) == false else { return nil }
+        return memoryCache.image(for: key)
     }
 
     /// The encoded bytes for a URL, rather than a decoded image.
