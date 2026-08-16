@@ -1587,6 +1587,34 @@ struct AureliaTests {
         ))
     }
 
+    @Test func recoveringAStreamThatKeepsRestartingGivesUp() {
+        // Seeking a transcoded stream is what restarts it, so recovering from
+        // that restart seeks again and the song plays the same half second for
+        // as long as anyone listens. Observed on a device: one restart, one
+        // seek, one restart, once a second, indefinitely.
+        let now = Date()
+        func recovers(after attempts: [Date]) -> Bool {
+            PlaybackRestartRecovery.shouldRecover(
+                newTime: 0.5,
+                previousTime: 119,
+                trackedTrackID: "track",
+                currentTrackID: "track",
+                isSeeking: false,
+                recentAttempts: attempts,
+                now: now
+            )
+        }
+
+        #expect(recovers(after: []))
+        #expect(recovers(after: [now.addingTimeInterval(-1)]))
+        #expect(!recovers(after: [now.addingTimeInterval(-2), now.addingTimeInterval(-1)]))
+
+        // Attempts age out, so a track that misbehaves once in a while is still
+        // pulled back rather than written off for good.
+        let stale = now.addingTimeInterval(-PlaybackRestartRecovery.attemptWindow - 1)
+        #expect(recovers(after: [stale, stale]))
+    }
+
     @Test func trackEndSurvivesTheQueuePlayerAdvancingFirst() {
         // The observed time already belongs to the next song, but the finished
         // item played all the way through, so the queue must move with it.

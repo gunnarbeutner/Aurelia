@@ -116,17 +116,40 @@ enum PlaybackRestartRecovery {
             : observerTime
     }
 
+    /// How many times a single track may be pulled back before it is left alone.
+    static let maximumAttempts = 2
+
+    /// Attempts older than this are forgotten, so a track that misbehaves once
+    /// an hour is still recovered rather than written off for good.
+    static let attemptWindow: TimeInterval = 30
+
     static func shouldRecover(
         newTime: Double,
         previousTime: Double,
         trackedTrackID: String?,
         currentTrackID: String?,
-        isSeeking: Bool
+        isSeeking: Bool,
+        recentAttempts: [Date] = [],
+        now: Date = Date()
     ) -> Bool {
-        !isSeeking
-            && newTime < previousTime - 30
-            && previousTime > 60
-            && trackedTrackID == currentTrackID
+        guard !isSeeking,
+              newTime < previousTime - 30,
+              previousTime > 60,
+              trackedTrackID == currentTrackID else {
+            return false
+        }
+
+        // Seeking a transcoded stream is what restarts it: the server has no
+        // position to resume from and begins again, which reads here as another
+        // unexpected restart. Recovering from that restart seeks again, and the
+        // song plays the same half second for as long as anyone listens. After
+        // a couple of tries the position is a lost cause and the audio is not.
+        return recentWithin(recentAttempts, window: attemptWindow, now: now) < maximumAttempts
+    }
+
+    /// How many of these happened recently enough to still count.
+    static func recentWithin(_ attempts: [Date], window: TimeInterval, now: Date) -> Int {
+        attempts.filter { now.timeIntervalSince($0) < window }.count
     }
 }
 
@@ -326,6 +349,8 @@ class PlayerManager: NSObject, ObservableObject {
         }
     }
     private let downloadManager = DownloadManager.shared
+    /// When this track was last pulled back to where it had got to.
+    private var restartRecoveryAttempts: [Date] = []
     private var originalQueue: [Track] = []
     private var originalIndex: Int = 0
     private var lastValidPlaybackTime: Double = 0.0  // Track last known position to detect unexpected restarts
@@ -1566,6 +1591,8 @@ class PlayerManager: NSObject, ObservableObject {
                 self.logger.info("🔄 Track changed in time observer, resetting time tracking (was: \(lastTrackedTrackId ?? "nil"), now: \(currentTrackId))")
                 lastValidTime = 0.0
                 lastTrackedTrackId = currentTrackId
+                // A new song is owed its own attempts, whatever the last one did.
+                self.restartRecoveryAttempts.removeAll()
             }
 
             // Sync local tracker with any external seek (e.g. user seeking backward)
@@ -1584,7 +1611,8 @@ class PlayerManager: NSObject, ObservableObject {
                 previousTime: lastValidTime,
                 trackedTrackID: lastTrackedTrackId,
                 currentTrackID: self.currentTrack?.id,
-                isSeeking: self.isSeeking
+                isSeeking: self.isSeeking,
+                recentAttempts: self.restartRecoveryAttempts
             ) {
                 self.logger.error("🚨 UNEXPECTED RESTART DETECTED: Time jumped from \(lastValidTime)s to \(newTime)s")
                 self.logger.error("   Track: '\(self.currentTrack?.name ?? "unknown")'")
@@ -1593,6 +1621,7 @@ class PlayerManager: NSObject, ObservableObject {
                 // Attempt recovery: seek back to where we were
                 if self.isPlaying {
                     self.logger.info("🔧 Attempting to recover playback position...")
+                    self.restartRecoveryAttempts.append(Date())
                     self.seek(to: lastValidTime)
                 }
             }
