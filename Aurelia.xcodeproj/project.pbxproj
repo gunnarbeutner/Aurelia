@@ -7,15 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		7A1C00012F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
-		7A1C00122F40000100DB0001 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00112F40000100DB0001 /* SDWebImageSwiftUI */; };
-		7A1C00222F40000100DB0001 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00212F40000100DB0001 /* SDWebImageWebPCoder */; };
-		7A1C00042F40000100DB0001 /* GRDB in Frameworks (Watch) */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
-		7A1C00052F40000100DB0001 /* GRDB in Frameworks (Watch Tests) */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
-		7A1C00082F40000100DB0001 /* Aurelia Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		14353ED73031C4920041F986 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
 		6D1D0D042F3A7AA100995579 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D032F3A7AA100995579 /* WidgetKit.framework */; };
 		6D1D0D062F3A7AA100995579 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D1D0D052F3A7AA100995579 /* SwiftUI.framework */; };
 		6D1D0D112F3A7AA200995579 /* AureliaComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A1C00012F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		7A1C00042F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		7A1C00052F40000100DB0001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00032F40000100DB0001 /* GRDB */; };
+		7A1C00082F40000100DB0001 /* Aurelia Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A1C00122F40000100DB0001 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00112F40000100DB0001 /* SDWebImageSwiftUI */; };
+		7A1C00222F40000100DB0001 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00212F40000100DB0001 /* SDWebImageWebPCoder */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -206,6 +207,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				14353ED73031C4920041F986 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -234,7 +236,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7A1C00042F40000100DB0001 /* GRDB in Frameworks (Watch) */,
+				7A1C00042F40000100DB0001 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,7 +244,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7A1C00052F40000100DB0001 /* GRDB in Frameworks (Watch Tests) */,
+				7A1C00052F40000100DB0001 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -589,13 +591,13 @@
 			);
 			mainGroup = 4BEDE76A2EA2B830001E8050;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = 4BEDE7742EA2B830001E8050 /* Products */;
 			packageReferences = (
 				7A1C00022F40000100DB0001 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 				7A1C00102F40000100DB0001 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */,
 				7A1C00202F40000100DB0001 /* XCRemoteSwiftPackageReference "SDWebImageWebPCoder" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4BEDE7742EA2B830001E8050 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -918,22 +920,22 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Aurelia/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MACCATALYST_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				MACCATALYST_DEPLOYMENT_TARGET = 14.0;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -961,22 +963,22 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Aurelia/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MACCATALYST_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				MACCATALYST_DEPLOYMENT_TARGET = 14.0;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;

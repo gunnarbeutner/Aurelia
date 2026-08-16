@@ -830,6 +830,7 @@ class DownloadManager: NSObject, ObservableObject {
 
         publishCounts()
         isWaitingForWiFi = held && inFlight.isEmpty
+        DownloadBackgroundTask.schedule()
     }
 
     /// Everything handed to the session counts as in flight, but only so many
@@ -1256,6 +1257,15 @@ class DownloadManager: NSObject, ObservableObject {
                 self.logger.error("Failed to send notification: \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Whether anything is still waiting to be downloaded.
+    var hasPendingWork: Bool { !pending.isEmpty }
+
+    /// Tops the session back up. Called on a schedule while the app is not in
+    /// use, so a long run keeps moving without anyone opening it.
+    func resumePendingWork() {
+        pumpQueue()
     }
 
     /// Whether a finished file is long enough to be the track it claims to be.

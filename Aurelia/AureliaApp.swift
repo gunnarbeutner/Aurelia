@@ -45,6 +45,10 @@ struct AureliaApp: App {
         // the same sleeve — which is a whole core spent on one moving cover.
         SDImageCodersManager.shared.addCoder(SDImageWebPCoder.shared)
 
+        // Has to happen before launching finishes, or the system will not hand
+        // the task over when it later decides to run it.
+        DownloadBackgroundTask.register()
+
         // Catalyst draws an AppKit-style focus halo around every bridged text
         // field, which fights the custom field chrome. SwiftUI's
         // .focusEffectDisabled() does not reach the UITextField underneath, so
