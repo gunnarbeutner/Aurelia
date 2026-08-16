@@ -351,6 +351,8 @@ class PlayerManager: NSObject, ObservableObject {
     private let downloadManager = DownloadManager.shared
     /// When this track was last pulled back to where it had got to.
     private var restartRecoveryAttempts: [Date] = []
+    /// The lock screen's artwork, and the track it belongs to.
+    private var nowPlayingArtwork: (trackID: String, artwork: MPMediaItemArtwork)?
     private var originalQueue: [Track] = []
     private var originalIndex: Int = 0
     private var lastValidPlaybackTime: Double = 0.0  // Track last known position to detect unexpected restarts
@@ -1856,33 +1858,52 @@ class PlayerManager: NSObject, ObservableObject {
         // Add media type
         info[MPMediaItemPropertyMediaType] = MPMediaType.music.rawValue
 
-        // Set Now Playing info immediately
+        let url = track.artworkURL.flatMap(URL.init(string:))
+
+        // Carried across the update rather than left out and filled in after.
+        // This runs on every play, pause, seek and position report, and the
+        // lock screen draws whatever it is handed the moment it is handed it —
+        // so omitting the artwork here is a grey card until the next write.
+        if let artwork = artwork(for: track, url: url) {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
 
         logger.info("🎵 Now Playing updated: \(track.name)")
 
-        // Add artwork if available
-        if let artworkURL = track.artworkURL,
-           let url = URL(string: artworkURL) {
-            Task {
-                do {
-                    let (data, _) = try await URLSession.shared.data(from: url)
-                    if let image = UIImage(data: data) {
-                        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        guard info[MPMediaItemPropertyArtwork] == nil, let url else { return }
 
-                        await MainActor.run {
-                            if var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo,
-                               currentInfo[MPMediaItemPropertyTitle] as? String == track.name {
-                                currentInfo[MPMediaItemPropertyArtwork] = artwork
-                                MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
-                            }
-                        }
-                    }
-                } catch {
-                    logger.error("Failed to load artwork: \(error)")
+        Task {
+            guard let image = try? await ImageCache.shared.loadImage(from: url) else { return }
+            await MainActor.run {
+                guard self.currentTrack?.id == track.id else { return }
+                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                self.nowPlayingArtwork = (track.id, artwork)
+
+                if var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    currentInfo[MPMediaItemPropertyArtwork] = artwork
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
                 }
             }
         }
+    }
+
+    /// The lock screen's artwork for this track, if it can be had without
+    /// waiting. Held onto because building it decodes the image, and this is
+    /// asked several times a second while a song plays.
+    private func artwork(for track: Track, url: URL?) -> MPMediaItemArtwork? {
+        if let held = nowPlayingArtwork, held.trackID == track.id {
+            return held.artwork
+        }
+
+        guard let url, let image = ImageCache.shared.cachedMemoryImage(for: url) else {
+            return nil
+        }
+
+        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        nowPlayingArtwork = (track.id, artwork)
+        return artwork
     }
 
     // MARK: - Error Handling
