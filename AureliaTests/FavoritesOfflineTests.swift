@@ -14,6 +14,37 @@ import GRDB
 
 struct FavoritesOfflineTests {
 
+    @Test func aTruncatedTranscodeIsNotMistakenForAFinishedOne() {
+        // Jellyfin streams a transcode with no length the client can check, so
+        // a server that stops early looks exactly like a download that finished.
+        let fourMinutes: TimeInterval = 240
+        let whole: Int64 = Int64(fourMinutes * 320_000 / 8)
+
+        #expect(DownloadManager.isPlausiblySized(bytes: whole, duration: fourMinutes, quality: .high))
+        #expect(!DownloadManager.isPlausiblySized(bytes: 0, duration: fourMinutes, quality: .high))
+        #expect(!DownloadManager.isPlausiblySized(bytes: 40_000, duration: fourMinutes, quality: .high))
+
+        // Encoders undershoot the ceiling they are given — the observed files
+        // came back at 256kbps against a 320 request — so the bar sits low
+        // enough that an honest file is never thrown away.
+        let atMeasuredRate = Int64(fourMinutes * 256_000 / 8)
+        #expect(DownloadManager.isPlausiblySized(bytes: atMeasuredRate, duration: fourMinutes, quality: .high))
+    }
+
+    @Test func anOriginalFileIsOnlyCheckedForBeingNearlyEmpty() {
+        // An original can be a small MP3 or a large FLAC, so there is no rate to
+        // hold it to; only something close to empty is a real signal.
+        let fourMinutes: TimeInterval = 240
+
+        #expect(DownloadManager.isPlausiblySized(bytes: 5_000_000, duration: fourMinutes, quality: .original))
+        #expect(DownloadManager.isPlausiblySized(bytes: 3_000_000, duration: fourMinutes, quality: .original))
+        #expect(!DownloadManager.isPlausiblySized(bytes: 1_000, duration: fourMinutes, quality: .original))
+
+        // A jingle is too short to judge by rate at all.
+        #expect(DownloadManager.isPlausiblySized(bytes: 4_000, duration: 5, quality: .high))
+    }
+
+
     // MARK: - Fixtures
 
     private static func track(_ id: String, album: String = "album", duration: TimeInterval = 200) -> Track {

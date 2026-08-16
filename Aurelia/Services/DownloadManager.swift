@@ -278,6 +278,9 @@ class DownloadManager: NSObject, ObservableObject {
     /// How many downloads run against the server at once.
     static let maxConcurrentTransfers = 4
 
+    /// How many the session is given, so it keeps working while the app sleeps.
+    static let maxEnqueuedDownloads = 12
+
     /// Give up after this many tries and park the track in `failedDownloads`,
     /// where the UI can offer a retry.
     private let maxAttempts = 3
@@ -797,19 +800,21 @@ class DownloadManager: NSObject, ObservableObject {
     }
 
     /// Starts as many queued downloads as the concurrency limit allows.
-    /// Hands every eligible download to the system, rather than a few at a time.
+    /// Hands the system a backlog, but a bounded one.
     ///
     /// A background session works through what it has been given while the app
-    /// is suspended, but it cannot ask for more. Keeping the queue in the app
-    /// meant the session ran dry seconds after each launch, and nothing further
-    /// happened until iOS next chose to wake us — measured at twenty minutes and
-    /// upwards, so a phone left locked made almost no progress. What limits the
-    /// load on the server is `httpMaximumConnectionsPerHost`, not this.
+    /// is suspended and cannot ask for more, so a queue kept in the app runs dry
+    /// seconds after each launch and waits — twenty minutes and upwards — for
+    /// iOS to wake us. Handing over everything fixes that and is unusable: the
+    /// server transcodes each track on demand, and `httpMaximumConnectionsPerHost`
+    /// does not bound it, because a connection carries many requests at once.
+    /// So the ceiling has to be here, high enough to survive a wake-up and low
+    /// enough that the server is not asked for hundreds of transcodes at once.
     private func pumpQueue() {
         guard !isPaused else { return }
 
         var held = false
-        while true {
+        while inFlight.count < Self.maxEnqueuedDownloads {
             guard let index = waiting.firstIndex(where: { trackID in
                 guard let record = pending[trackID] else { return false }
                 if canStart(record) { return true }
@@ -1010,6 +1015,30 @@ class DownloadManager: NSObject, ObservableObject {
         #endif
 
         downloadedTracks = store.loadDownloads()
+
+        // Files recorded before short downloads were rejected can be truncated,
+        // and a truncated file is worse than a missing one: it is offered as
+        // playable and stops the rule from ever fetching the track again.
+        let truncated = downloadedTracks.filter { track in
+            // No duration recorded means nothing to weigh it against, so it is
+            // left alone rather than thrown away on a guess.
+            guard let duration = track.duration else { return false }
+            return !Self.isPlausiblySized(
+                bytes: track.fileSize, duration: duration, quality: track.quality
+            )
+        }
+        if !truncated.isEmpty {
+            logger.warning("Discarding \(truncated.count) truncated download(s) to be fetched again")
+            for track in truncated {
+                try? fileManager.removeItem(
+                    at: downloadsDirectory.appendingPathComponent(track.fileName)
+                )
+                store.remove(trackID: track.trackId)
+            }
+            let discarded = Set(truncated.map { $0.trackId })
+            downloadedTracks.removeAll { discarded.contains($0.trackId) }
+        }
+
         for track in downloadedTracks {
             downloadStates[track.trackId] = .downloaded
         }
@@ -1229,6 +1258,22 @@ class DownloadManager: NSObject, ObservableObject {
         }
     }
 
+    /// Whether a finished file is long enough to be the track it claims to be.
+    ///
+    /// Deliberately generous: the point is to catch a truncated or empty file,
+    /// not to audit the encoder. A transcode is compared against the bitrate it
+    /// was asked for; an original can be anything from a small MP3 to a large
+    /// FLAC, so it is only checked for being implausibly close to empty.
+    static func isPlausiblySized(bytes: Int64, duration: TimeInterval, quality: DownloadQuality) -> Bool {
+        guard bytes > 0 else { return false }
+
+        // Too short to judge by rate, and the fixed overheads dominate.
+        guard duration > 30 else { return true }
+
+        let floorKilobits = quality == .original ? 48 : Double(quality.bitrate) * 0.6
+        return Double(bytes) >= duration * floorKilobits * 1000 / 8
+    }
+
     // MARK: - Completion
 
     /// Main-thread half of a finished download: the file is already in place,
@@ -1247,6 +1292,20 @@ class DownloadManager: NSObject, ObservableObject {
         }
 
         let track = record.track
+
+        // A transcode arrives without a length this end can check, so a server
+        // that stops early is indistinguishable from a download that finished.
+        // Weighing the bytes against the track tells the two apart.
+        guard Self.isPlausiblySized(
+            bytes: fileSize, duration: track.duration, quality: record.quality
+        ) else {
+            logger.warning("Discarding short download for \(track.name): \(fileSize) bytes")
+            try? fileManager.removeItem(at: downloadsDirectory.appendingPathComponent(fileName))
+            fail(trackID, message: "The server sent an incomplete file", permanent: false)
+            pumpQueue()
+            return
+        }
+
         guard let albumId = track.albumId else {
             logger.error("Cannot store download without albumId: \(track.name)")
             cancelPending(trackID)
