@@ -357,11 +357,11 @@ struct FavoritesOfflineView: View {
             guard count > 0 else { return "Like some music and it will appear here." }
             return "\(count) \(count == 1 ? "track" : "tracks") available offline"
         case .syncing(let completed, let total):
-            return "\(completed) of \(total) tracks"
+            return "\(completed) of \(total) downloaded"
         case .waitingForWiFi(let remaining):
             return "\(remaining) \(remaining == 1 ? "track" : "tracks") remaining. Turn on cellular downloads to continue now."
         case .paused(let completed, let total):
-            return "\(completed) of \(total) tracks"
+            return "\(completed) of \(total) downloaded"
         case .failed(let completed, _, let failures):
             return "\(completed) downloaded · \(failures) failed"
         }
