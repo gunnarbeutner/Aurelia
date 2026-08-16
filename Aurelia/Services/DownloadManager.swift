@@ -6,6 +6,7 @@
 //  Stores audio files locally for offline playback
 //
 
+import AVFoundation
 import Foundation
 import Combine
 import os.log
@@ -1017,29 +1018,6 @@ class DownloadManager: NSObject, ObservableObject {
 
         downloadedTracks = store.loadDownloads()
 
-        // Files recorded before short downloads were rejected can be truncated,
-        // and a truncated file is worse than a missing one: it is offered as
-        // playable and stops the rule from ever fetching the track again.
-        let truncated = downloadedTracks.filter { track in
-            // No duration recorded means nothing to weigh it against, so it is
-            // left alone rather than thrown away on a guess.
-            guard let duration = track.duration else { return false }
-            return !Self.isPlausiblySized(
-                bytes: track.fileSize, duration: duration, quality: track.quality
-            )
-        }
-        if !truncated.isEmpty {
-            logger.warning("Discarding \(truncated.count) truncated download(s) to be fetched again")
-            for track in truncated {
-                try? fileManager.removeItem(
-                    at: downloadsDirectory.appendingPathComponent(track.fileName)
-                )
-                store.remove(trackID: track.trackId)
-            }
-            let discarded = Set(truncated.map { $0.trackId })
-            downloadedTracks.removeAll { discarded.contains($0.trackId) }
-        }
-
         for track in downloadedTracks {
             downloadStates[track.trackId] = .downloaded
         }
@@ -1051,6 +1029,53 @@ class DownloadManager: NSObject, ObservableObject {
         }
 
         logger.info("Loaded \(self.downloadedTracks.count) downloads, \(self.pending.count) pending")
+
+        verifyDownloads()
+    }
+
+    /// Checks over what is already on disk, in the background.
+    ///
+    /// Files written before downloads were verified can be truncated, and a
+    /// truncated file is worse than a missing one: it is offered as playable
+    /// and stops the rule ever fetching that track again. Asked of each file
+    /// rather than judged by its size, so this agrees with the check a fresh
+    /// download goes through and there is only one rule to be wrong about.
+    private func verifyDownloads() {
+        let candidates = downloadedTracks.compactMap { track -> (String, URL, TimeInterval)? in
+            guard let duration = track.duration, duration > 0 else { return nil }
+            return (
+                track.trackId,
+                downloadsDirectory.appendingPathComponent(track.fileName),
+                duration
+            )
+        }
+        guard !candidates.isEmpty else { return }
+
+        Task { [weak self] in
+            var discarded: [String] = []
+            for (trackID, url, duration) in candidates {
+                if await Self.holdsWholeTrack(at: url, expecting: duration) { continue }
+                discarded.append(trackID)
+            }
+            guard !discarded.isEmpty else { return }
+
+            await MainActor.run {
+                guard let self else { return }
+                self.logger.warning("Discarding \(discarded.count) incomplete download(s) to be fetched again")
+                for trackID in discarded {
+                    if let track = self.downloadedTracks.first(where: { $0.trackId == trackID }) {
+                        try? self.fileManager.removeItem(
+                            at: self.downloadsDirectory.appendingPathComponent(track.fileName)
+                        )
+                        self.totalStorageUsed = max(0, self.totalStorageUsed - track.fileSize)
+                    }
+                    self.store.remove(trackID: trackID)
+                    self.downloadStates[trackID] = .notDownloaded
+                }
+                let removed = Set(discarded)
+                self.downloadedTracks.removeAll { removed.contains($0.trackId) }
+            }
+        }
     }
 
     /// Reattaches to whatever the background session was still doing while the
@@ -1268,20 +1293,25 @@ class DownloadManager: NSObject, ObservableObject {
         pumpQueue()
     }
 
-    /// Whether a finished file is long enough to be the track it claims to be.
+    /// Whether a finished file holds the whole track.
     ///
-    /// Deliberately generous: the point is to catch a truncated or empty file,
-    /// not to audit the encoder. A transcode is compared against the bitrate it
-    /// was asked for; an original can be anything from a small MP3 to a large
-    /// FLAC, so it is only checked for being implausibly close to empty.
-    static func isPlausiblySized(bytes: Int64, duration: TimeInterval, quality: DownloadQuality) -> Bool {
-        guard bytes > 0 else { return false }
+    /// Asked of the file rather than inferred from its size. A truncated
+    /// download is short, and how short a given number of bytes is depends on
+    /// the source, the codec and what the server decided to send — guessing at
+    /// that from a bitrate means a threshold that has to be right for every
+    /// encode anyone owns, and being wrong about it deletes their music.
+    static func holdsWholeTrack(at url: URL, expecting duration: TimeInterval) async -> Bool {
+        guard duration > 0 else { return true }
 
-        // Too short to judge by rate, and the fixed overheads dominate.
-        guard duration > 30 else { return true }
+        let asset = AVURLAsset(url: url)
+        guard let assetDuration = try? await asset.load(.duration) else { return false }
 
-        let floorKilobits = quality == .original ? 48 : Double(quality.bitrate) * 0.6
-        return Double(bytes) >= duration * floorKilobits * 1000 / 8
+        let seconds = CMTimeGetSeconds(assetDuration)
+        guard seconds.isFinite, seconds > 0 else { return false }
+
+        // A tenth is far more slack than a container's own rounding needs, and
+        // far less than any truncation worth catching.
+        return seconds >= duration * 0.9
     }
 
     // MARK: - Completion
@@ -1304,18 +1334,32 @@ class DownloadManager: NSObject, ObservableObject {
         let track = record.track
 
         // A transcode arrives without a length this end can check, so a server
-        // that stops early is indistinguishable from a download that finished.
-        // Weighing the bytes against the track tells the two apart.
-        guard Self.isPlausiblySized(
-            bytes: fileSize, duration: track.duration, quality: record.quality
-        ) else {
-            logger.warning("Discarding short download for \(track.name): \(fileSize) bytes")
-            try? fileManager.removeItem(at: downloadsDirectory.appendingPathComponent(fileName))
-            fail(trackID, message: "The server sent an incomplete file", permanent: false)
-            pumpQueue()
-            return
+        // that stops partway is indistinguishable from one that finished. The
+        // file knows: a truncated download is short. Asked before the track is
+        // recorded, because a short file recorded as complete is offered as
+        // playable and stops the rule ever fetching the track again.
+        let fileURL = downloadsDirectory.appendingPathComponent(fileName)
+        let expected = track.duration
+        Task { [weak self] in
+            let whole = await Self.holdsWholeTrack(at: fileURL, expecting: expected)
+            await MainActor.run {
+                guard let self else { return }
+                guard whole else {
+                    self.logger.warning("Discarding short download for \(track.name)")
+                    try? self.fileManager.removeItem(at: fileURL)
+                    self.fail(trackID, message: "The server sent an incomplete file", permanent: false)
+                    self.pumpQueue()
+                    return
+                }
+                self.record(track: track, trackID: trackID, fileName: fileName, fileSize: fileSize, record: record)
+            }
         }
+    }
 
+    /// Stores a download that has been checked over.
+    private func record(
+        track: Track, trackID: String, fileName: String, fileSize: Int64, record: PendingDownload
+    ) {
         guard let albumId = track.albumId else {
             logger.error("Cannot store download without albumId: \(track.name)")
             cancelPending(trackID)

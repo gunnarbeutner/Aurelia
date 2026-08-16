@@ -14,38 +14,53 @@ import GRDB
 
 struct FavoritesOfflineTests {
 
-    @Test func aTruncatedTranscodeIsNotMistakenForAFinishedOne() {
-        // Jellyfin streams a transcode with no length the client can check, so
-        // a server that stops early looks exactly like a download that finished.
-        let fourMinutes: TimeInterval = 240
-        let whole: Int64 = Int64(fourMinutes * 320_000 / 8)
+    @Test func aTruncatedFileIsRecognisedByBeingShort() async throws {
+        // The server streams a transcode with no length this end can check, so
+        // a download cut short looks exactly like one that finished. The file
+        // is asked instead of its size being second-guessed: bytes depend on
+        // the source, the codec and what the server chose to send, and a
+        // threshold that has to be right for every encode anyone owns is a
+        // threshold that eventually deletes somebody's music.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        #expect(DownloadManager.isPlausiblySized(bytes: whole, duration: fourMinutes, quality: .high))
-        #expect(!DownloadManager.isPlausiblySized(bytes: 0, duration: fourMinutes, quality: .high))
-        #expect(!DownloadManager.isPlausiblySized(bytes: 40_000, duration: fourMinutes, quality: .high))
+        let silence = directory.appendingPathComponent("tone.wav")
+        try Self.wav(seconds: 4).write(to: silence)
 
-        // Encoders undershoot the ceiling they are given — the observed files
-        // came back at 256kbps against a 320 request — so the bar sits low
-        // enough that an honest file is never thrown away.
-        let atMeasuredRate = Int64(fourMinutes * 256_000 / 8)
-        #expect(DownloadManager.isPlausiblySized(bytes: atMeasuredRate, duration: fourMinutes, quality: .high))
+        #expect(await DownloadManager.holdsWholeTrack(at: silence, expecting: 4))
+        #expect(await DownloadManager.holdsWholeTrack(at: silence, expecting: 4.2))
+
+        // The same file standing in for a track four times its length.
+        #expect(!(await DownloadManager.holdsWholeTrack(at: silence, expecting: 16)))
+
+        // Nothing readable at all, which is what the worst of them were.
+        let empty = directory.appendingPathComponent("empty.mp3")
+        try Data().write(to: empty)
+        #expect(!(await DownloadManager.holdsWholeTrack(at: empty, expecting: 240)))
+
+        try? FileManager.default.removeItem(at: directory)
     }
-
-    @Test func anOriginalFileIsOnlyCheckedForBeingNearlyEmpty() {
-        // An original can be a small MP3 or a large FLAC, so there is no rate to
-        // hold it to; only something close to empty is a real signal.
-        let fourMinutes: TimeInterval = 240
-
-        #expect(DownloadManager.isPlausiblySized(bytes: 5_000_000, duration: fourMinutes, quality: .original))
-        #expect(DownloadManager.isPlausiblySized(bytes: 3_000_000, duration: fourMinutes, quality: .original))
-        #expect(!DownloadManager.isPlausiblySized(bytes: 1_000, duration: fourMinutes, quality: .original))
-
-        // A jingle is too short to judge by rate at all.
-        #expect(DownloadManager.isPlausiblySized(bytes: 4_000, duration: 5, quality: .high))
-    }
-
 
     // MARK: - Fixtures
+
+    /// A real, decodable file of a known length, so the check is exercised
+    /// rather than mocked.
+    private static func wav(seconds: Int) -> Data {
+        let rate = 8000, channels = 1, bits = 16
+        let samples = rate * seconds
+        let dataBytes = samples * channels * bits / 8
+        var out = Data()
+        func le(_ value: Int, _ width: Int) {
+            for byte in 0..<width { out.append(UInt8((value >> (8 * byte)) & 0xFF)) }
+        }
+        out.append(contentsOf: Array("RIFF".utf8)); le(36 + dataBytes, 4)
+        out.append(contentsOf: Array("WAVEfmt ".utf8)); le(16, 4); le(1, 2); le(channels, 2)
+        le(rate, 4); le(rate * channels * bits / 8, 4); le(channels * bits / 8, 2); le(bits, 2)
+        out.append(contentsOf: Array("data".utf8)); le(dataBytes, 4)
+        out.append(Data(count: dataBytes))
+        return out
+    }
 
     private static func track(_ id: String, album: String = "album", duration: TimeInterval = 200) -> Track {
         Track(
