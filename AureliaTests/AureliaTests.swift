@@ -1631,6 +1631,22 @@ struct AureliaTests {
         #expect(ordered.map(\.id) == ["a", "b", "c"])
     }
 
+    @Test func catchingUpClosesTheWholeGapAtOnce() {
+        // Advancing one position per observation assumes the player is exactly
+        // one track ahead. When it is further ahead the queue never catches it,
+        // and every observation takes another step: observed on a device as the
+        // queue walking from track 172 to 175 in under a second.
+        #expect(StalledAdvanceRecovery.positionsToAdvance(playingIndex: 2) == 2)
+        #expect(StalledAdvanceRecovery.positionsToAdvance(playingIndex: 1) == 1)
+
+        // Already in step.
+        #expect(StalledAdvanceRecovery.positionsToAdvance(playingIndex: 0) == nil)
+
+        // Playing something the queue is not holding. Stepping on a guess is
+        // what turned a one-track lag into a stampede, so it stays put.
+        #expect(StalledAdvanceRecovery.positionsToAdvance(playingIndex: nil) == nil)
+    }
+
     @Test func recoveringAStreamThatKeepsRestartingGivesUp() {
         // Seeking a transcoded stream is what restarts it, so recovering from
         // that restart seeks again and the song plays the same half second for

@@ -194,6 +194,17 @@ enum StalledAdvanceRecovery {
     static func shouldForceAdvance(mismatchedSamples: Int) -> Bool {
         mismatchedSamples >= requiredMismatchedSamples
     }
+
+    /// How many positions the queue must move to sit on what is playing.
+    ///
+    /// Nil when there is nothing to do, and nil when the playing item is not one
+    /// we are holding: stepping the queue on a guess is what turns a lag of one
+    /// track into a walk through the whole queue, a step every time the observer
+    /// fires. Not knowing where we are is a reason to stop, not to keep moving.
+    static func positionsToAdvance(playingIndex: Int?) -> Int? {
+        guard let playingIndex, playingIndex > 0 else { return nil }
+        return playingIndex
+    }
 }
 
 /// `isPlaying` records what the listener asked for; the player's
@@ -1538,6 +1549,34 @@ class PlayerManager: NSObject, ObservableObject {
         return playing !== expected
     }
 
+    /// Where the playing item sits among the ones we are holding, if at all.
+    private func playingItemIndex() -> Int? {
+        guard let playing = player?.currentItem else { return nil }
+        return playerItems.firstIndex { $0 === playing }
+    }
+
+    /// Moves the queue onto whatever is actually playing, in one step.
+    ///
+    /// Advancing a single position per observation assumes the player is exactly
+    /// one ahead. When it is further ahead the queue never catches it, and each
+    /// observation moves one more track, so the whole queue is consumed in a few
+    /// seconds. Closing the gap in one go leaves the two in step.
+    private func catchUpToPlayingItem() {
+        guard let positions = StalledAdvanceRecovery.positionsToAdvance(
+            playingIndex: playingItemIndex()
+        ) else {
+            // Playing something we are not holding. Advancing would be a guess,
+            // and the guess is what does the damage.
+            logger.error("⚠️ Player is on an item the queue does not hold; leaving the queue where it is")
+            return
+        }
+
+        logger.warning("⚠️ Player is \(positions) track(s) ahead of the queue — catching up")
+        for _ in 0..<positions {
+            advanceAfterTrackEnded()
+        }
+    }
+
     private func setupPlayerObservers() {
         guard let player = player else {
             logger.error("Player is nil in setupPlayerObservers")
@@ -1577,25 +1616,31 @@ class PlayerManager: NSObject, ObservableObject {
             if self.playerHasOutrunQueue() {
                 self.mismatchedItemSamples += 1
                 if StalledAdvanceRecovery.shouldForceAdvance(mismatchedSamples: self.mismatchedItemSamples) {
-                    self.logger.warning("⚠️ Player is playing ahead of the queue — advancing to catch up")
                     self.mismatchedItemSamples = 0
-                    self.advanceAfterTrackEnded()
+                    self.catchUpToPlayingItem()
                 }
                 return
             }
             self.mismatchedItemSamples = 0
 
-            let newTime = time.seconds
-
             // CRITICAL: Reset time tracking when track changes
             // This prevents false "restart" detection when AVQueuePlayer advances to next track
+            // Done before the position is read, or the first reading of a new
+            // song is still measured from where the last one was seeked to.
             if let currentTrackId = self.currentTrack?.id, currentTrackId != lastTrackedTrackId {
                 self.logger.info("🔄 Track changed in time observer, resetting time tracking (was: \(lastTrackedTrackId ?? "nil"), now: \(currentTrackId))")
                 lastValidTime = 0.0
                 lastTrackedTrackId = currentTrackId
                 // A new song is owed its own attempts, whatever the last one did.
                 self.restartRecoveryAttempts.removeAll()
+                // And it plays from its own beginning, not the last one's.
+                self.streamStartOffset = 0
             }
+
+            // A stream asked to begin partway through counts from nothing, so
+            // where it was cut is added back for the position to describe the
+            // track rather than the stream.
+            let newTime = self.streamStartOffset + time.seconds
 
             // Sync local tracker with any external seek (e.g. user seeking backward)
             // so the restart detector doesn't misread a legitimate seek as a stream restart
