@@ -2,8 +2,8 @@
 //  PlaybackReconciliationTests.swift
 //  AureliaTests
 //
-//  `isPlaying` is what the listener asked for; `timeControlStatus` is what the
-//  player is doing. These cover the cases where the two disagree — the reason a
+//  `isPlaying` is what the listener asked for; the engine's activity is what is
+//  actually happening. These cover the cases where the two disagree — the reason a
 //  silent track could sit there showing a pause button.
 //
 
@@ -13,15 +13,15 @@ import AVFoundation
 
 struct PlaybackReconciliationTests {
 
-    private static let paused = AVPlayer.TimeControlStatus.paused
-    private static let waiting = AVPlayer.TimeControlStatus.waitingToPlayAtSpecifiedRate
-    private static let playing = AVPlayer.TimeControlStatus.playing
+    private static let paused = PlaybackActivity.paused
+    private static let waiting = PlaybackActivity.waitingToStart
+    private static let playing = PlaybackActivity.playing
 
     @Test func aPlayerThatStoppedOnItsOwnClearsThePlayingState() {
         // The bug: player stopped, nothing asked it to, UI kept saying playing.
         #expect(
             PlaybackReconciliation.action(
-                status: Self.paused,
+                activity: Self.paused,
                 intendsToPlay: true,
                 isReconfiguring: false
             ) == .clearPlayingState
@@ -32,7 +32,7 @@ struct PlaybackReconciliationTests {
         // The listener pressed pause: intent and player already agree.
         #expect(
             PlaybackReconciliation.action(
-                status: Self.paused,
+                activity: Self.paused,
                 intendsToPlay: false,
                 isReconfiguring: false
             ) == .none
@@ -45,7 +45,7 @@ struct PlaybackReconciliationTests {
         for status in [Self.paused, Self.waiting, Self.playing] {
             #expect(
                 PlaybackReconciliation.action(
-                    status: status,
+                    activity: status,
                     intendsToPlay: true,
                     isReconfiguring: true
                 ) == .none
@@ -56,7 +56,7 @@ struct PlaybackReconciliationTests {
     @Test func waitingToStartIsAStallOnlyWhilePlaybackIsWanted() {
         #expect(
             PlaybackReconciliation.action(
-                status: Self.waiting,
+                activity: Self.waiting,
                 intendsToPlay: true,
                 isReconfiguring: false
             ) == .markStalled
@@ -64,7 +64,7 @@ struct PlaybackReconciliationTests {
         // Buffering ahead while paused is ordinary and worth no comment.
         #expect(
             PlaybackReconciliation.action(
-                status: Self.waiting,
+                activity: Self.waiting,
                 intendsToPlay: false,
                 isReconfiguring: false
             ) == .none
@@ -76,7 +76,7 @@ struct PlaybackReconciliationTests {
         // player is playing, so the UI must stop claiming otherwise.
         #expect(
             PlaybackReconciliation.action(
-                status: Self.playing,
+                activity: Self.playing,
                 intendsToPlay: false,
                 isReconfiguring: false
             ) == .restorePlayingState
@@ -86,7 +86,7 @@ struct PlaybackReconciliationTests {
     @Test func healthyPlaybackAsksForNothing() {
         #expect(
             PlaybackReconciliation.action(
-                status: Self.playing,
+                activity: Self.playing,
                 intendsToPlay: true,
                 isReconfiguring: false
             ) == .none
