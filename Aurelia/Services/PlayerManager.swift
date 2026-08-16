@@ -903,7 +903,6 @@ class PlayerManager: NSObject, ObservableObject {
         pendingStart = nil
         adoptNextItem(at: index)
         // Skipping is also a request to play, whatever the player was doing.
-        addToRecentTracks(queue[index])
         engine.play()
         isPlaying = true
         logger.info("⏭️ Stepped onto the loaded item for '\(self.queue[index].name)'")
@@ -1702,6 +1701,11 @@ class PlayerManager: NSObject, ObservableObject {
         let newTrack = queue[index]
         let previousTrack: Track? = currentTrack
         recordPlaybackTransition(to: newTrack)
+        // A track reached this way is being played like any other, so it belongs
+        // in Recently Played too — which used to list only the tracks that
+        // arrived by rebuilding the player, and so missed every song that
+        // followed the one before it.
+        addToRecentTracks(newTrack)
         currentTrack = newTrack
         currentTime = 0
         lastValidPlaybackTime = 0

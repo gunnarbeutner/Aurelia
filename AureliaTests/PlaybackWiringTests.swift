@@ -384,6 +384,24 @@ struct PlaybackWiringTests {
         #expect(harness.engine.items.count == 3)
     }
 
+    @Test func everyTrackThatPlaysReachesRecentlyPlayed() {
+        // Only tracks that arrived by rebuilding the player were listed, so a
+        // song that simply followed the one before it was never recorded.
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(4))
+        #expect(harness.player.recentlyPlayedTracks.first?.id == "track-1")
+
+        harness.engine.finishCurrentItem(after: 240)
+        #expect(harness.player.recentlyPlayedTracks.first?.id == "track-2")
+
+        harness.player.playNext()
+        #expect(harness.player.recentlyPlayedTracks.first?.id == "track-3")
+
+        // Listed once each, newest first.
+        #expect(harness.player.recentlyPlayedTracks.prefix(3).map(\.id)
+                == ["track-3", "track-2", "track-1"])
+    }
+
     @Test func anEndOfItemEventPartwayThroughIsIgnored() {
         // AVFoundation reports this mid-song sometimes. Believing it skips a
         // track the listener is still in the middle of.
