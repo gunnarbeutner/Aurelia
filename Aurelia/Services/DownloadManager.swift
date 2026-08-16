@@ -1257,11 +1257,19 @@ class DownloadManager: NSObject, ObservableObject {
     static func holdsWholeTrack(at url: URL, expecting duration: TimeInterval) async -> Bool {
         guard duration > 0 else { return true }
 
+        // Precise timing, because a transcode arrives with no duration in its
+        // header and the ordinary reading of one is whatever the header says:
+        // for these files, zero. Measuring means parsing, which is a cost worth
+        // paying once for a file that is about to be kept.
+        //
         // Asked only of a file that has just arrived, so an unreadable one is
         // rejected and fetched again rather than kept on the chance it is fine.
         // Nothing is lost by being wrong here; the same doubt about a file that
         // has been on disk for a month would cost the user their music.
-        let asset = AVURLAsset(url: url)
+        let asset = AVURLAsset(
+            url: url,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+        )
         guard let assetDuration = try? await asset.load(.duration) else { return false }
 
         let seconds = CMTimeGetSeconds(assetDuration)
