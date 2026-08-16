@@ -26,6 +26,7 @@ private final class FakeItem: PlaybackItemHandle {
     let url: URL?
     let bufferedForStreaming: Bool
     var isReadyToPlay = true
+    var hasFailed = false
     var playedTime: TimeInterval = 0
     /// Not a number, like a transcode, unless a test says otherwise.
     var loadedDuration: TimeInterval = .nan
@@ -84,6 +85,10 @@ private final class FakeEngine: PlaybackEngine {
         } else {
             items[0] = item
         }
+    }
+
+    func advanceToNextItem() {
+        if !items.isEmpty { items.removeFirst() }
     }
 
     func play() {
@@ -149,6 +154,9 @@ private final class Harness {
     }
 
     var engine: FakeEngine { built.all.last! }
+    /// How many engines the player has built. More than one means it tore the
+    /// last one down and started again.
+    var enginesBuilt: Int { built.all.count }
 
     /// The state keys the player persists to, saved so a test cannot leave the
     /// app on this simulator restoring a queue of mock tracks.
@@ -248,6 +256,132 @@ struct PlaybackWiringTests {
         // Still three loaded, so the one after next is ready in time.
         #expect(harness.engine.items.count == 3)
         #expect(harness.engine.items.last?.url?.path == "/Audio/track-4/universal")
+    }
+
+    @Test func skippingForwardUsesTheTrackAlreadyLoaded() {
+        // Rebuilding the engine here discards the item being asked for: the next
+        // track is loaded and buffering as part of the window, so a skip used to
+        // wait several seconds for a stream the server had already begun sending.
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(5))
+        let alreadyLoaded = harness.engine.items[1]
+
+        harness.player.playNext()
+
+        #expect(harness.engine.current === alreadyLoaded)
+        #expect(harness.enginesBuilt == 1)
+        #expect(harness.player.currentIndex == 1)
+        #expect(harness.player.currentTrack?.id == "track-2")
+        #expect(harness.player.isPlaying)
+        // And the window is topped back up behind it.
+        #expect(harness.engine.items.count == 3)
+        #expect(harness.engine.items.last?.url?.path == "/Audio/track-4/universal")
+    }
+
+    @Test func skippingForwardOpensTheTrackAtItsStart() {
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(5))
+        harness.engine.reportTime(64)
+
+        harness.player.playNext()
+        harness.engine.reportTime(3)
+
+        #expect(harness.player.playbackProgress.currentTime == 3)
+        #expect(harness.player.duration == 240)
+    }
+
+    @Test func skippingForwardWhilePausedStartsPlaying() {
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(5))
+        harness.player.pause()
+
+        harness.player.playNext()
+
+        #expect(harness.player.isPlaying)
+        #expect(harness.engine.rate == 1)
+        #expect(harness.enginesBuilt == 1)
+    }
+
+    @Test func skippingOntoATrackThatFailedToLoadRebuilds() {
+        // It would never start, and nothing more is said about it, so the step
+        // would end in silence until the stall watch gave up.
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(5))
+        harness.engine.items[1].hasFailed = true
+
+        harness.player.playNext()
+
+        #expect(harness.enginesBuilt == 2)
+        #expect(harness.player.currentIndex == 1)
+        #expect(harness.engine.current?.url?.path == "/Audio/track-2/universal")
+        #expect(harness.engine.current?.hasFailed == false)
+    }
+
+    @Test func skippingBeyondTheLoadedWindowRebuilds() {
+        // Nothing has been loaded for a track three places away.
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(6))
+
+        harness.player.jumpToTrack(at: 3)
+
+        #expect(harness.enginesBuilt == 2)
+        #expect(harness.player.currentIndex == 3)
+        #expect(harness.engine.current?.url?.path == "/Audio/track-4/universal")
+        #expect(harness.player.isPlaying)
+    }
+
+    @Test func skippingBackwardsRebuilds() {
+        // The track before this one is behind the engine, not in front of it.
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(5), startingAt: 2)
+
+        harness.player.playPrevious()
+
+        #expect(harness.enginesBuilt == 2)
+        #expect(harness.player.currentIndex == 1)
+        #expect(harness.engine.current?.url?.path == "/Audio/track-2/universal")
+    }
+
+    @Test func skippingWhileTheEngineHasRunAheadRebuilds() {
+        // What it is playing and what we hold already disagree; stepping again
+        // would compound that rather than settle it.
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(5))
+        harness.engine.silentlyAdvance(by: 1)
+
+        harness.player.playNext()
+
+        #expect(harness.enginesBuilt == 2)
+        #expect(harness.player.currentIndex == 1)
+        #expect(harness.engine.current?.url?.path == "/Audio/track-2/universal")
+    }
+
+    @Test func skippingWithNothingLoadedBehindRebuilds() {
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(2), startingAt: 1)
+        harness.player.repeatMode = .all
+
+        // Wrapping to the top is not one place forward.
+        harness.player.playNext()
+
+        #expect(harness.enginesBuilt == 2)
+        #expect(harness.player.currentIndex == 0)
+        #expect(harness.engine.current?.url?.path == "/Audio/track-1/universal")
+    }
+
+    @Test func skippingRepeatedlyWalksTheQueueOneTrackAtATime() {
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(8))
+
+        for expected in 1...4 {
+            harness.player.playNext()
+            #expect(harness.player.currentIndex == expected)
+            #expect(harness.player.currentTrack?.id == "track-\(expected + 1)")
+        }
+
+        // Every one of those was a step, so the engine was never rebuilt.
+        #expect(harness.enginesBuilt == 1)
+        #expect(harness.engine.items.count == 3)
     }
 
     @Test func anEndOfItemEventPartwayThroughIsIgnored() {

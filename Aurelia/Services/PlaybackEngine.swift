@@ -33,6 +33,9 @@ protocol PlaybackItemHandle: AnyObject {
     /// sent, so it has no length and no position to move to.
     var url: URL? { get }
     var isReadyToPlay: Bool { get }
+    /// It will not play: the URL was refused, or the stream broke while it was
+    /// waiting its turn.
+    var hasFailed: Bool { get }
     /// How far playback has got by this item's own clock, which starts at zero
     /// even when the item is a stream cut from the middle of a track.
     var playedTime: TimeInterval { get }
@@ -75,6 +78,9 @@ protocol PlaybackEngine: AnyObject {
     func remove(_ item: any PlaybackItemHandle)
     /// Exchanges what is playing, leaving the items queued behind it in place.
     func replaceCurrentItem(with item: any PlaybackItemHandle)
+    /// Drops what is playing and starts the item behind it, keeping whatever
+    /// that one has already buffered.
+    func advanceToNextItem()
     func play()
     func pause()
     /// Stops, releases the queue, and stops reporting events.
@@ -195,6 +201,10 @@ final class AVPlaybackEngine: PlaybackEngine {
         player?.replaceCurrentItem(with: avItem)
     }
 
+    func advanceToNextItem() {
+        player?.advanceToNextItem()
+    }
+
     func play() {
         player?.play()
     }
@@ -282,6 +292,10 @@ private final class AVPlaybackItem: PlaybackItemHandle {
 
     var isReadyToPlay: Bool {
         item.status == .readyToPlay
+    }
+
+    var hasFailed: Bool {
+        item.status == .failed
     }
 
     var playedTime: TimeInterval {

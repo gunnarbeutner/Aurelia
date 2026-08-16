@@ -849,10 +849,65 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
-        currentIndex = nextIndex
-        // Manually advance and rebuild gapless queue
+        moveToTrack(at: nextIndex)
+    }
+
+    /// Moves to a track in the queue, stepping onto it when the engine has
+    /// already loaded it and rebuilding around it when it has not.
+    ///
+    /// Rebuilding throws away the very item being asked for: the track after
+    /// this one is loaded and buffering as part of the three-track window, so
+    /// tearing the engine down means asking the server for a stream it had
+    /// already started sending, and the listener waits for it with the new
+    /// title and 0:00 already on screen.
+    private func moveToTrack(at index: Int) {
+        if stepOntoLoadedItem(at: index) { return }
+
+        currentIndex = index
         engine?.pause()
         playCurrentTrack()
+    }
+
+    /// Steps onto the next track using the item already loaded behind this one.
+    ///
+    /// False when that cannot be done — anything other than one place forward,
+    /// nothing loaded behind, or an engine that has moved on by itself — in
+    /// which case the caller rebuilds instead. Nothing is left half-done: the
+    /// engine having let go of the item is checked after advancing, and a
+    /// rebuild starts from wherever it is.
+    private func stepOntoLoadedItem(at index: Int) -> Bool {
+        guard let engine,
+              index == currentIndex + 1,
+              queue.indices.contains(index),
+              playerItems.count >= 2,
+              !playerHasOutrunQueue() else { return false }
+
+        let intended = playerItems[1]
+        // One that has already failed will not start when it becomes current,
+        // and nothing further is reported about it, so it would simply sit
+        // there until the stall watch gave up on it.
+        guard !intended.hasFailed else {
+            logger.warning("⏭️ The loaded item for the next track has failed; rebuilding")
+            return false
+        }
+
+        engine.advanceToNextItem()
+        guard engine.currentItem === intended else {
+            logger.warning("⏭️ Stepping forward did not land on the loaded item; rebuilding")
+            return false
+        }
+
+        // Report stopped for the track being left, as a track ending does.
+        stopProgressReporting(reportStopped: true)
+        // A position remembered for the track being left has no bearing on this one.
+        pendingStart = nil
+        adoptNextItem(at: index)
+        // Skipping is also a request to play, whatever the player was doing.
+        addToRecentTracks(queue[index])
+        engine.play()
+        isPlaying = true
+        logger.info("⏭️ Stepped onto the loaded item for '\(self.queue[index].name)'")
+        return true
     }
 
     /// Skips to previous track
@@ -864,10 +919,7 @@ class PlayerManager: NSObject, ObservableObject {
         case .restart:
             seek(to: 0)
         case .step(let index):
-            currentIndex = index
-            // Rebuild gapless queue from new position
-            engine?.pause()
-            playCurrentTrack()
+            moveToTrack(at: index)
         }
     }
 
@@ -1230,8 +1282,7 @@ class PlayerManager: NSObject, ObservableObject {
     /// Jump to track at index in queue
     func jumpToTrack(at index: Int) {
         guard index >= 0 && index < queue.count else { return }
-        currentIndex = index
-        playCurrentTrack()
+        moveToTrack(at: index)
     }
 
     /// Replays a session-history item without discarding the existing queue.
@@ -1601,80 +1652,84 @@ class PlayerManager: NSObject, ObservableObject {
             return
         }
 
-        // Move to next track in queue
-        if !playerItems.isEmpty {
-            playerItems.removeFirst()
-        }
-
-        // Update current index and track
         switch repeatMode {
         case .off:
             guard currentIndex < queue.count - 1 else {
                 // End of queue
+                dropFinishedItem()
                 isPlaying = false
                 return
             }
-            currentIndex += 1
+            adoptNextItem(at: currentIndex + 1)
         case .all:
-            // Loop to beginning if at end
             if currentIndex < queue.count - 1 {
-                currentIndex += 1
+                adoptNextItem(at: currentIndex + 1)
             } else {
+                // Loop back to the beginning, which needs the whole window
+                // reloaded rather than stepped.
                 currentIndex = 0
-                // Reload queue from beginning for repeat all
                 setupGaplessQueue(startingAt: 0)
                 engine?.play()
                 isPlaying = true
                 updateNowPlayingInfo()
-                return
             }
         case .one:
             // Already handled above
             break
         }
+    }
 
-        // Update current track and metadata
-        if currentIndex < queue.count {
-            let newTrack = queue[currentIndex]
-            let previousTrack: Track? = currentTrack
-            recordPlaybackTransition(to: newTrack)
-            self.currentTrack = newTrack
-            self.currentTime = 0
-            self.lastValidPlaybackTime = 0
-            self.streamStartOffset = 0
+    /// What was playing is finished with, so what we hold starts at the item
+    /// now playing.
+    private func dropFinishedItem() {
+        if !playerItems.isEmpty {
+            playerItems.removeFirst()
+        }
+    }
 
-            // Take the next item back to its beginning — preloaded items can
-            // start mid-buffer if the previous one was streamed.
-            engine?.currentItem?.seek(to: 0, tolerance: 0)
+    /// Takes the queue onto the item the engine has moved to: metadata,
+    /// reporting, and one more track loaded behind it.
+    private func adoptNextItem(at index: Int) {
+        dropFinishedItem()
 
-            // Set duration from track metadata (not from stream)
-            duration = newTrack.duration
-            logger.info("📏 Track changed: '\(previousTrack?.name ?? "nil")' → '\(newTrack.name)' (index: \(self.currentIndex), duration: \(newTrack.duration)s)")
-
-            // Report playback start for the new track (gapless advance)
-            startProgressReporting(for: newTrack)
-            primeAutoplayIfNeeded()
-        } else {
-            logger.error("❌ currentIndex \(self.currentIndex) out of bounds for queue size \(self.queue.count)")
+        guard queue.indices.contains(index) else {
+            logger.error("❌ Index \(index) out of bounds for queue size \(self.queue.count)")
+            updateNowPlayingInfo()
+            return
         }
 
-        // Preload next track if available (maintain 3-track buffer)
-        let nextIndex = currentIndex + playerItems.count
-        logger.info("🔄 Preload check: currentIndex=\(self.currentIndex), playerItems.count=\(self.playerItems.count), nextIndex=\(nextIndex), queue.count=\(self.queue.count)")
+        currentIndex = index
+        let newTrack = queue[index]
+        let previousTrack: Track? = currentTrack
+        recordPlaybackTransition(to: newTrack)
+        currentTrack = newTrack
+        currentTime = 0
+        lastValidPlaybackTime = 0
+        // This item is its own stream, playing from its own beginning.
+        streamStartOffset = 0
 
+        // Take it back to that beginning — a preloaded item can start
+        // mid-buffer if the one before it was streamed.
+        engine?.currentItem?.seek(to: 0, tolerance: 0)
+
+        // Set duration from track metadata (not from stream)
+        duration = newTrack.duration
+        logger.info("📏 Track changed: '\(previousTrack?.name ?? "nil")' → '\(newTrack.name)' (index: \(self.currentIndex), duration: \(newTrack.duration)s)")
+
+        startProgressReporting(for: newTrack)
+        primeAutoplayIfNeeded()
+
+        // Keep three loaded, so the track after this one is ready in time.
+        let nextIndex = currentIndex + playerItems.count
         if nextIndex < queue.count {
             let nextTrack = queue[nextIndex]
-
-            guard let item = makeItem(for: nextTrack) else {
+            if let item = makeItem(for: nextTrack) {
+                engine?.append(item)
+                playerItems.append(item)
+                logger.info("✅ Preloaded next track: \(nextTrack.name) at index \(nextIndex)")
+            } else {
                 logger.error("❌ Failed to preload next track: \(nextTrack.name)")
-                updateNowPlayingInfo()
-                return
             }
-
-            engine?.append(item)
-            playerItems.append(item)
-
-            logger.info("✅ Preloaded next track: \(nextTrack.name) at index \(nextIndex)")
         }
 
         updateNowPlayingInfo()
