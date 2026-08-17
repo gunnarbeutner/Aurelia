@@ -6,6 +6,13 @@ A modern music streaming client for Jellyfin servers, built for iOS, macOS, and 
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/macos-discover.png" alt="Discover on macOS: daily mixes, underplayed corners of the library, and recently played" width="60%" align="top">
+  <img src="docs/screenshots/ios-now-playing.png" alt="Now Playing on iPhone" width="22%" align="top">
+</p>
+
 ## Features
 
 ### iOS App
