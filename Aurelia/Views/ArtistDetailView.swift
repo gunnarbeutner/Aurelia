@@ -15,7 +15,24 @@ enum ArtistViewMode {
     case byYear      // grouped by year
 }
 
+/// An artist's page, identified by the artist it is showing.
+///
+/// Going to an artist replaces the Library stack with a one-item path, so
+/// stepping from one artist's page to another puts the same destination at the
+/// same depth. SwiftUI reads that as the same view and keeps its state, which
+/// left the page showing the name and photo it was handed above the discography
+/// it already had — Frank Sinatra over Massive Attack's albums. Tying identity
+/// to the artist retires the old page instead of redressing it.
 struct ArtistDetailView: View {
+    let artist: Artist
+
+    var body: some View {
+        ArtistDetailContent(artist: artist)
+            .id(artist.id)
+    }
+}
+
+private struct ArtistDetailContent: View {
     let artist: Artist
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
@@ -25,7 +42,6 @@ struct ArtistDetailView: View {
 
     @State private var albums: [Album] = []
     @State private var isLoadingAlbums = false
-    @State private var hasLoadedAlbums = false
     // Navigation handled by NavigationStack
     @State private var viewMode: ArtistViewMode = .allAlbums
     @State private var selectedYear: Int?
@@ -178,12 +194,8 @@ struct ArtistDetailView: View {
         .task(id: headerImageURL) {
             await loadHeaderImage()
         }
-        .onAppear {
-            guard !hasLoadedAlbums else { return }
-            hasLoadedAlbums = true
-            Task {
-                await fetchArtistAlbums()
-            }
+        .task(id: artist.id) {
+            await fetchArtistAlbums()
         }
         .task {
             if artist.artworkURL == nil {
