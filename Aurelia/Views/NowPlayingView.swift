@@ -650,8 +650,7 @@ struct NowPlayingView: View {
     private func artworkSection(size artSize: CGFloat) -> some View {
         ZStack {
             if let track = playerManager.currentTrack,
-               let artworkURLString = track.artworkURL,
-               let artworkURL = URL(string: artworkURLString) {
+               let artworkURL = ArtworkURL.resized(track.artworkURL, maxWidth: ArtworkURL.player) {
                 AnimatedArtworkView(url: artworkURL) {
                     placeholderArtwork(size: artSize)
                 }

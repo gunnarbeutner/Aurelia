@@ -2037,7 +2037,8 @@ class PlayerManager: NSObject, ObservableObject {
         // Add media type
         info[MPMediaItemPropertyMediaType] = MPMediaType.music.rawValue
 
-        let url = track.artworkURL.flatMap(URL.init(string:))
+        // The lock screen and CarPlay draw this large, and AirPlay hands it on.
+        let url = ArtworkURL.resized(track.artworkURL, maxWidth: ArtworkURL.player)
 
         // Carried across the update rather than left out and filled in after.
         // This runs on every play, pause, seek and position report, and the

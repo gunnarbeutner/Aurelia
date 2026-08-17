@@ -368,7 +368,7 @@ struct AlbumDetailView: View {
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
                 .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
                 .accessibilityIdentifier("album-detail-artwork")
-        } else if let artworkURL = album.artworkURL, let url = URL(string: artworkURL) {
+        } else if let url = ArtworkURL.resized(album.artworkURL, maxWidth: ArtworkURL.albumHeader) {
             AnimatedArtworkView(url: url) {
                 placeholderArtwork
             }

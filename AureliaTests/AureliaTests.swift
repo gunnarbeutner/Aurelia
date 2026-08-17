@@ -100,6 +100,30 @@ struct AureliaTests {
         #expect(try await repository.librarySnapshot(in: scope).albums.map(\.id) == ["keep"])
     }
 
+    @Test func artworkIsAskedForAtTheSizeItIsDrawn() throws {
+        // One URL is stored per item, built for a thumbnail. Drawn full screen
+        // that was a 300-pixel cover stretched over three times its width.
+        let stored = "https://music.example/Items/album/Images/Primary?maxWidth=300&tag=abc"
+
+        let large = try #require(ArtworkURL.resized(stored, maxWidth: ArtworkURL.player))
+        let items = URLComponents(url: large, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+
+        #expect(query["maxWidth"] == "1000")
+        // The tag is what ties the URL to this version of the image; losing it
+        // would serve a cover the item no longer has.
+        #expect(query["tag"] == "abc")
+        #expect(large.path == "/Items/album/Images/Primary")
+
+        // A URL that never named a size is still asked for at one.
+        let unsized = try #require(
+            ArtworkURL.resized("https://music.example/art?tag=abc", maxWidth: 800)
+        )
+        #expect(unsized.query?.contains("maxWidth=800") == true)
+
+        #expect(ArtworkURL.resized(nil, maxWidth: 1000) == nil)
+    }
+
     @Test func storedTrackShowsItsAlbumsCurrentArtwork() async throws {
         let databaseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

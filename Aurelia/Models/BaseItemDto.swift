@@ -300,6 +300,38 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// Artwork already asked for, asked for again at the size it is drawn.
+///
+/// Each item carries one artwork URL, built at the width a list draws it at.
+/// Drawn large — a full-screen player, the lock screen, an album's header —
+/// that is a 300-pixel image stretched over three times its width, which is
+/// what made covers look soft everywhere but in a thumbnail.
+///
+/// Asking for more than the source holds costs nothing: Jellyfin sends an image
+/// at its own size rather than scaling it up.
+nonisolated enum ArtworkURL {
+    /// A full-screen player and the lock screen, which on the largest phone is
+    /// around 1200 pixels across.
+    static let player = 1000
+    /// An album's header, drawn at 260 points.
+    static let albumHeader = 800
+
+    static func resized(_ urlString: String?, maxWidth: Int) -> URL? {
+        guard let urlString, var components = URLComponents(string: urlString) else { return nil }
+
+        var items = components.queryItems ?? []
+        let size = URLQueryItem(name: "maxWidth", value: "\(maxWidth)")
+        if let existing = items.firstIndex(where: { $0.name == "maxWidth" }) {
+            items[existing] = size
+        } else {
+            items.append(size)
+        }
+        components.queryItems = items
+
+        return components.url
+    }
+}
+
 /// Jellyfin item types
 nonisolated enum ItemType: String, Codable, Sendable {
     case Audio = "Audio"
