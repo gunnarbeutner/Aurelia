@@ -450,12 +450,16 @@ class PlayerManager: NSObject, ObservableObject {
     /// Whether what is playing can be moved around in.
     ///
     /// A local file and the original-quality endpoint are ordinary media that
-    /// answer byte ranges. A transcode is produced as it is sent: it carries no
-    /// length and refuses ranges, so there is no position in it to move to.
+    /// answer byte ranges, and a transcode delivered as a playlist is addressed
+    /// by segment. Only a transcode sent as one open-ended response has no
+    /// position to move to, because it carries no length and refuses ranges.
     private var currentItemIsSeekable: Bool {
         guard let url = engine?.currentItem?.url else { return true }
         if url.isFileURL { return true }
-        return !url.path.hasSuffix("/universal")
+        guard url.path.hasSuffix("/universal") else { return true }
+        // Left over from streams asked for the old way, which are still what an
+        // engine built before an update is playing.
+        return StreamURL.isSegmented(url)
     }
 
     /// Where the current stream begins within the track.

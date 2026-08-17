@@ -29,8 +29,8 @@ enum PlaybackActivity: Equatable {
 /// One loaded track the engine can play.
 protocol PlaybackItemHandle: AnyObject {
     /// Where it is read from. A local file and the original-quality endpoint are
-    /// ordinary media that answer byte ranges; a transcode is produced as it is
-    /// sent, so it has no length and no position to move to.
+    /// ordinary media that answer byte ranges; a transcode arrives as a playlist
+    /// of segments, which is addressed a segment at a time.
     var url: URL? { get }
     var isReadyToPlay: Bool { get }
     /// It will not play: the URL was refused, or the stream broke while it was
@@ -39,7 +39,8 @@ protocol PlaybackItemHandle: AnyObject {
     /// How far playback has got by this item's own clock, which starts at zero
     /// even when the item is a stream cut from the middle of a track.
     var playedTime: TimeInterval { get }
-    /// The item's own length. Not a number for a transcode.
+    /// The item's own length. Not a number until the medium has stated one,
+    /// which a stream does only once enough of it has been read.
     var loadedDuration: TimeInterval { get }
     func seek(to time: TimeInterval, tolerance: TimeInterval, completion: @escaping (Bool) -> Void)
 }

@@ -72,12 +72,13 @@ struct PlaybackScenarioTests {
         // static=true, which tells Jellyfin to send the original file and
         // override the bitrate, so Low and Original fetched the same bytes.
         func query(_ bitrate: Int, startingAt offset: TimeInterval = 0) throws -> [String: String] {
-            let url = StreamURL.universal(
+            let url = StreamURL.mediaPlaylist(
                 baseURL: "https://music.example",
                 itemID: "track-1",
                 token: "secret",
                 userID: "listener",
                 deviceID: "device-1",
+                playSessionID: "session-1",
                 bitrate: bitrate,
                 startingAt: offset
             )
@@ -94,12 +95,13 @@ struct PlaybackScenarioTests {
 
     @Test func seekingATranscodeAsksItToBeginThere() throws {
         func url(startingAt offset: TimeInterval) throws -> URL {
-            try #require(StreamURL.universal(
+            try #require(StreamURL.mediaPlaylist(
                 baseURL: "https://music.example/",
                 itemID: "track-1",
                 token: "secret",
                 userID: nil,
                 deviceID: "device-1",
+                playSessionID: "session-1",
                 bitrate: 192,
                 startingAt: offset
             ))

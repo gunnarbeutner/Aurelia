@@ -496,10 +496,16 @@ class JellyfinService: ObservableObject {
 
     /// The URL for streaming a track at the chosen quality.
     ///
-    /// `/universal` rather than `/stream?static=true`: static means "send the
+    /// A playlist rather than `/stream?static=true`: static means "send the
     /// original file", which overrides the bitrate entirely, so every quality
-    /// setting fetched the same lossless file. The cost is that a transcode is
-    /// produced as it is sent and cannot be seeked — see `startingAt`.
+    /// setting fetched the same lossless file.
+    ///
+    /// It is asked for as HLS. Sent as one http response a transcode carries no
+    /// length and answers no ranges, which AVFoundation cannot tell apart from
+    /// a live broadcast: the item never reports an end, so the queue waits for
+    /// one that never comes while the player, out of data, drops back into what
+    /// it still holds and plays the middle of the song again. A playlist states
+    /// its own length, ends explicitly, and is seekable by segment.
     func getStreamingURL(for itemId: String, bitrate: Int, startingAt offset: TimeInterval = 0) -> URL? {
         // Validate item ID
         guard !itemId.isEmpty else {
@@ -519,12 +525,13 @@ class JellyfinService: ObservableObject {
             return nil
         }
 
-        guard let url = StreamURL.universal(
+        guard let url = StreamURL.mediaPlaylist(
             baseURL: cleanBaseURL,
             itemID: itemId,
             token: token,
             userID: KeychainService.shared.getUserID(),
             deviceID: deviceId,
+            playSessionID: UUID().uuidString,
             bitrate: bitrate,
             startingAt: offset
         ) else {
@@ -533,7 +540,7 @@ class JellyfinService: ObservableObject {
         }
 
         logger.info("Generated streaming URL for item \(itemId) at \(bitrate)kbps")
-        logger.info("  → Using /stream endpoint with HTTP transcoding support")
+        logger.info("  → HLS transcode, in its own play session")
         return url
     }
 
@@ -1462,19 +1469,40 @@ private struct AnyCodable: Codable {
 /// because `static=true` told Jellyfin to send the original file and override
 /// everything else, and nothing here could tell.
 nonisolated enum StreamURL {
-    static func universal(
+    /// Whether a stream arrives as a playlist of segments rather than as one
+    /// open-ended response — which is what decides whether it can be moved
+    /// within, and whether it can say where it ends.
+    static func isSegmented(_ url: URL) -> Bool {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .contains { $0.name == "TranscodingProtocol" && $0.value == "hls" }
+            ?? false
+    }
+
+    /// The playlist for a track, asked for directly rather than through
+    /// `/universal`.
+    ///
+    /// `/universal` chooses between sending a file and transcoding, and answers
+    /// a transcode with a master playlist — whose link to the real playlist
+    /// carries `TranscodeReasons=A, B, C` with the spaces left in it. That is
+    /// not a URL, and the request AVFoundation builds from it dies as a lost
+    /// connection, so every track the server actually had to convert refused to
+    /// play while the ones it could send as they were carried on working.
+    /// Asking for the media playlist ourselves keeps that link out of it.
+    static func mediaPlaylist(
         baseURL: String,
         itemID: String,
         token: String,
         userID: String?,
         deviceID: String,
+        playSessionID: String,
         bitrate: Int,
         startingAt offset: TimeInterval = 0
     ) -> URL? {
         guard !itemID.isEmpty, !token.isEmpty else { return nil }
 
         let root = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
-        guard var components = URLComponents(string: root + "/Audio/\(itemID)/universal") else {
+        guard var components = URLComponents(string: root + "/Audio/\(itemID)/main.m3u8") else {
             return nil
         }
 
@@ -1482,20 +1510,23 @@ nonisolated enum StreamURL {
             URLQueryItem(name: "mediaSourceId", value: itemID),
             URLQueryItem(name: "api_key", value: token),
             URLQueryItem(name: "DeviceId", value: deviceID),
+            // One session per stream, so the three the player keeps loaded are
+            // not taken for one playback the server may cut back to a single
+            // transcode.
+            URLQueryItem(name: "PlaySessionId", value: playSessionID),
             URLQueryItem(name: "MaxStreamingBitrate", value: "\(bitrate * 1000)"),
             URLQueryItem(name: "AudioCodec", value: "mp3"),
-            // Containers this client can play directly, so a source already
-            // inside the ceiling is sent as it is rather than re-encoded.
+            // Containers this client can play, so a source already inside the
+            // ceiling is copied into the segments rather than re-encoded.
             URLQueryItem(name: "Container", value: "mp3,aac,m4a"),
-            URLQueryItem(name: "TranscodingContainer", value: "mp3"),
-            URLQueryItem(name: "TranscodingProtocol", value: "http")
+            URLQueryItem(name: "TranscodingContainer", value: "ts"),
+            URLQueryItem(name: "SegmentContainer", value: "ts"),
+            URLQueryItem(name: "TranscodingProtocol", value: "hls")
         ]
         if let userID {
             components.queryItems?.append(URLQueryItem(name: "UserId", value: userID))
         }
 
-        // A transcode carries no byte ranges, so the only way to reach a
-        // position is to ask the server to begin there.
         if offset > 0 {
             let ticks = Int64(offset * 10_000_000)
             components.queryItems?.append(URLQueryItem(name: "StartTimeTicks", value: "\(ticks)"))
