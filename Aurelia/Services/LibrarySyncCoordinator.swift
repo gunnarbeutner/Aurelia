@@ -25,6 +25,12 @@ final class LibrarySyncCoordinator: ObservableObject {
         category: "LibrarySync"
     )
 
+    /// Where the reported figure stops. Segments keep arriving past it — and
+    /// while the server materializes its snapshot they arrive carrying
+    /// nothing — so beyond this point the number would only be counting how
+    /// often it has asked.
+    static let progressCeiling = 0.92
+
     @Published private(set) var status: LibrarySyncStatus = .idle
 
     private let service: JellyfinService
@@ -147,7 +153,7 @@ final class LibrarySyncCoordinator: ObservableObject {
                 try Task.checkCancellation()
                 status = .syncing(
                     message: session.mode == .snapshot ? "Updating your library…" : "Applying library changes…",
-                    progress: min(0.08 + Double(segments) * 0.03, 0.92)
+                    progress: min(0.08 + Double(segments) * 0.03, Self.progressCeiling)
                 )
                 let segment = try await client.stream(session: session, after: cursor)
                 let acknowledgement = AureliaSyncAcknowledgement(

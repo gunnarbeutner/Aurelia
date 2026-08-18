@@ -94,9 +94,9 @@ struct DiscoveryView: View {
         .onChange(of: libraryStore.syncProgress) { _, progress in
             advanceProgress(to: (progress ?? 0) * 0.9, duration: 0.3)
         }
-        .onChange(of: isBuildingMixes) { _, isBuilding in
-            guard isBuilding else { return }
-            Task { await crawlThroughFinalStretch() }
+        .task(id: showsPreparationSection) {
+            guard showsPreparationSection else { return }
+            await keepTheBarMoving()
         }
         .task {
             await viewModel.activate()
@@ -580,16 +580,27 @@ struct DiscoveryView: View {
         withAnimation(.easeOut(duration: duration)) { shownProgress = value }
     }
 
-    /// Walks the last stretch a point at a time.
+    /// Whether anything behind the bar is still counting.
     ///
-    /// The refresh reports nothing to measure, so the bar keeps moving on its
-    /// own — in steps rather than one long glide, so the figure beside it has
-    /// real values to show along the way. It stops short of full: reaching 100
-    /// while the screen is still up would say the wait is over when it is not.
-    private func crawlThroughFinalStretch() async {
-        while isBuildingMixes, shownProgress < 0.97 {
-            advanceProgress(to: min(0.97, shownProgress + 0.01), duration: 0.6)
-            try? await Task.sleep(nanoseconds: 700_000_000)
+    /// The sync stops reporting at its own ceiling, which it reaches while the
+    /// server is still materializing the snapshot, and the refresh that builds
+    /// the mixes never had a figure at all.
+    private var hasNothingLeftToMeasure: Bool {
+        guard let progress = libraryStore.syncProgress else { return true }
+        return progress >= LibrarySyncCoordinator.progressCeiling
+    }
+
+    /// Keeps the bar moving through the stretches nothing is measuring.
+    ///
+    /// Those stretches are not short — materializing a large library runs for
+    /// minutes — and a bar that sits at the same figure for that long reads as
+    /// a stall rather than as work. A real figure overtakes it whenever one
+    /// comes.
+    private func keepTheBarMoving() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: PreparationCrawl.stepNanoseconds)
+            guard !Task.isCancelled, hasNothingLeftToMeasure else { continue }
+            advanceProgress(to: PreparationCrawl.step(from: shownProgress), duration: 0.9)
         }
     }
 
