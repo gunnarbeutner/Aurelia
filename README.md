@@ -9,8 +9,9 @@ A modern music streaming client for Jellyfin servers, built for iOS, macOS, and 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/macos-discover.png" alt="Discover on macOS: daily mixes, underplayed corners of the library, and recently played" width="60%" align="top">
-  <img src="docs/screenshots/ios-now-playing.png" alt="Now Playing on iPhone" width="22%" align="top">
+  <img src="docs/screenshots/macos-discover.png" alt="Discover on macOS: daily mixes, underplayed corners of the library, and recently played" width="59%" align="top">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/screenshots/ios-now-playing.png" alt="Now Playing on iPhone" width="21%" align="top">
 </p>
 
 ## Features
