@@ -7,6 +7,27 @@ enum LibrarySyncTrigger: Sendable {
     case launch, pullToRefresh, manual, rebuild, serverEvent
 }
 
+/// Whether a checkpoint is one of the legacy ones that cannot prove its
+/// generation ever reached the live catalog, and so has to be replaced by a
+/// fresh delivery.
+///
+/// A snapshot still being staged looks the same from the checkpoint alone —
+/// segments acknowledge as they land, and the publication marker is only
+/// written once the last one promotes. Telling them apart takes the staged
+/// generation: a legacy checkpoint has none, an interrupted snapshot does.
+/// Reading an interrupted snapshot as legacy asks the server to start again,
+/// which on a library too large for one session is a loop that never
+/// converges.
+nonisolated enum AureliaSyncPublicationRecovery {
+    static func isNeeded(
+        checkpointToken: String?,
+        snapshotGeneration: String?,
+        publishedSnapshotGeneration: String?
+    ) -> Bool {
+        checkpointToken != nil && publishedSnapshotGeneration == nil && snapshotGeneration == nil
+    }
+}
+
 enum LibrarySyncStatus: Equatable, Sendable {
     case idle
     case syncing(message: String, progress: Double)
@@ -124,8 +145,11 @@ final class LibrarySyncCoordinator: ObservableObject {
             // Checkpoints created by builds predating the publication marker
             // cannot prove that their generation reached the live catalog. Ask
             // the server for one fresh delivery while keeping the old UI data.
-            let needsPublicationRecovery = local?.checkpointToken != nil
-                && local?.publishedSnapshotGeneration == nil
+            let needsPublicationRecovery = AureliaSyncPublicationRecovery.isNeeded(
+                checkpointToken: local?.checkpointToken,
+                snapshotGeneration: local?.snapshotGeneration,
+                publishedSnapshotGeneration: local?.publishedSnapshotGeneration
+            )
             let session = try await client.openSession(
                 checkpoint: needsPublicationRecovery ? nil : local?.checkpointToken,
                 reset: forceSnapshot || needsPublicationRecovery
