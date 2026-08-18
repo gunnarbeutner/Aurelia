@@ -6,6 +6,17 @@
 	<array>
 		<string>de.beutner.Aurelia.favoritesSync</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>de.beutner.Aurelia</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>aurelia</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

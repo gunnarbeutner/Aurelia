@@ -56,6 +56,10 @@ struct ContentView: View {
         .onChange(of: preferredAppearance) { _, _ in
             applyWindowAppearance()
         }
+        .onOpenURL { url in
+            guard url.scheme == "aurelia", url.host == "now-playing" else { return }
+            NavigationCoordinator.shared.pendingPlayerPresentation = true
+        }
     }
 
     private func applyWindowAppearance() {

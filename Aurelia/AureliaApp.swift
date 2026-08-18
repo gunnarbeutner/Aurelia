@@ -83,6 +83,16 @@ struct AureliaApp: App {
         // draining whatever the last session left behind.
         DownloadManager.shared.start()
         FavoritesOfflineSync.shared.start()
+
+        // Restored playback state is already in place by now, so the first
+        // snapshot the widget reads describes the track the app will resume.
+        //
+        // Not on the Mac: the widget extension is excluded there, so nothing
+        // reads what this writes, and reaching into the shared container makes
+        // macOS ask on every launch whether the app may see other apps' data.
+        #if !targetEnvironment(macCatalyst)
+        NowPlayingPublisher.shared.start()
+        #endif
     }
 
     #if DEBUG

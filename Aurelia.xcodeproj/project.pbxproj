@@ -17,6 +17,7 @@
 		7A1C00082F40000100DB0001 /* Aurelia Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 4BEDE7C42EA2BEC6001E8050 /* Aurelia Watch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A1C00122F40000100DB0001 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00112F40000100DB0001 /* SDWebImageSwiftUI */; };
 		7A1C00222F40000100DB0001 /* SDWebImageWebPCoder in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1C00212F40000100DB0001 /* SDWebImageWebPCoder */; };
+		7B2D000A2F50000100AB0001 /* AureliaWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7B2D00012F50000100AB0001 /* AureliaWidgetsExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,13 @@
 			remoteGlobalIDString = 4BEDE7C32EA2BEC6001E8050;
 			remoteInfo = "Aurelia Watch";
 		};
+		7B2D000B2F50000100AB0001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BEDE76B2EA2B830001E8050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B2D00052F50000100AB0001;
+			remoteInfo = AureliaWidgetsExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -104,6 +112,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B2D00092F50000100AB0001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7B2D000A2F50000100AB0001 /* AureliaWidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -119,6 +138,8 @@
 		6D1D0D032F3A7AA100995579 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		6D1D0D052F3A7AA100995579 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		6D1D0D172F3A7E7D00995579 /* AureliaComplicationExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AureliaComplicationExtension.entitlements; sourceTree = "<group>"; };
+		7B2D00012F50000100AB0001 /* AureliaWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AureliaWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B2D00022F50000100AB0001 /* AureliaWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AureliaWidgets.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -135,6 +156,13 @@
 				Info.plist,
 			);
 			target = 6D1D0D002F3A7AA100995579 /* AureliaComplicationExtension */;
+		};
+		7B2D00102F50000100AB0001 /* Exceptions for "AureliaWidgets" folder in "AureliaWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7B2D00052F50000100AB0001 /* AureliaWidgetsExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -188,6 +216,19 @@
 				6D1D0D162F3A7AA200995579 /* Exceptions for "AureliaComplication" folder in "AureliaComplicationExtension" target */,
 			);
 			path = AureliaComplication;
+			sourceTree = "<group>";
+		};
+		7B2D00042F50000100AB0001 /* AureliaShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AureliaShared;
+			sourceTree = "<group>";
+		};
+		7B2D00032F50000100AB0001 /* AureliaWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7B2D00102F50000100AB0001 /* Exceptions for "AureliaWidgets" folder in "AureliaWidgetsExtension" target */,
+			);
+			path = AureliaWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -264,6 +305,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B2D00072F50000100AB0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -280,6 +328,9 @@
 				4BEDE7D32EA2BECB001E8050 /* Aurelia WatchTests */,
 				4BEDE7DD2EA2BECB001E8050 /* Aurelia WatchUITests */,
 				6D1D0D072F3A7AA100995579 /* AureliaComplication */,
+				7B2D00042F50000100AB0001 /* AureliaShared */,
+				7B2D00032F50000100AB0001 /* AureliaWidgets */,
+				7B2D00022F50000100AB0001 /* AureliaWidgets.entitlements */,
 				6D1D0D022F3A7AA100995579 /* Frameworks */,
 				4BEDE7742EA2B830001E8050 /* Products */,
 			);
@@ -297,6 +348,7 @@
 				4BEDE7D02EA2BECB001E8050 /* Aurelia WatchTests.xctest */,
 				4BEDE7DA2EA2BECB001E8050 /* Aurelia WatchUITests.xctest */,
 				6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */,
+				7B2D00012F50000100AB0001 /* AureliaWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -332,14 +384,17 @@
 				4BEDE7712EA2B830001E8050 /* Resources */,
 				4BEDE7BC2EA2BA6B001E8050 /* Embed Frameworks */,
 				4BEDE7E82EA2BECB001E8050 /* Embed Watch Content */,
+				7B2D00092F50000100AB0001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				7A1C000A2F40000100DB0001 /* PBXTargetDependency */,
+				7B2D000C2F50000100AB0001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4BEDE7752EA2B830001E8050 /* Aurelia */,
+				7B2D00042F50000100AB0001 /* AureliaShared */,
 			);
 			name = Aurelia;
 			packageProductDependencies = (
@@ -538,6 +593,29 @@
 			productReference = 6D1D0D012F3A7AA100995579 /* AureliaComplicationExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		7B2D00052F50000100AB0001 /* AureliaWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7B2D000F2F50000100AB0001 /* Build configuration list for PBXNativeTarget "AureliaWidgetsExtension" */;
+			buildPhases = (
+				7B2D00062F50000100AB0001 /* Sources */,
+				7B2D00072F50000100AB0001 /* Frameworks */,
+				7B2D00082F50000100AB0001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7B2D00032F50000100AB0001 /* AureliaWidgets */,
+				7B2D00042F50000100AB0001 /* AureliaShared */,
+			);
+			name = AureliaWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = AureliaWidgetsExtension;
+			productReference = 7B2D00012F50000100AB0001 /* AureliaWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -610,6 +688,7 @@
 				4BEDE7CF2EA2BECB001E8050 /* Aurelia WatchTests */,
 				4BEDE7D92EA2BECB001E8050 /* Aurelia WatchUITests */,
 				6D1D0D002F3A7AA100995579 /* AureliaComplicationExtension */,
+				7B2D00052F50000100AB0001 /* AureliaWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -672,6 +751,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		6D1D0CFF2F3A7AA100995579 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B2D00082F50000100AB0001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -744,6 +830,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7B2D00062F50000100AB0001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -782,6 +875,12 @@
 			platformFilter = ios;
 			target = 4BEDE7C32EA2BEC6001E8050 /* Aurelia Watch */;
 			targetProxy = 7A1C00092F40000100DB0001 /* PBXContainerItemProxy */;
+		};
+		7B2D000C2F50000100AB0001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = 7B2D00052F50000100AB0001 /* AureliaWidgetsExtension */;
+			targetProxy = 7B2D000B2F50000100AB0001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1433,6 +1532,76 @@
 			};
 			name = Release;
 		};
+		7B2D000D2F50000100AB0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AureliaWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AureliaWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Aurelia;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia.AureliaWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7B2D000E2F50000100AB0001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AureliaWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = Z5JV9S33V5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AureliaWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Aurelia;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = de.beutner.Aurelia.AureliaWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1522,6 +1691,15 @@
 			buildConfigurations = (
 				6D1D0D132F3A7AA200995579 /* Debug */,
 				6D1D0D142F3A7AA200995579 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7B2D000F2F50000100AB0001 /* Build configuration list for PBXNativeTarget "AureliaWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7B2D000D2F50000100AB0001 /* Debug */,
+				7B2D000E2F50000100AB0001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

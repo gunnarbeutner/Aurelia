@@ -10,7 +10,8 @@ import Foundation
 
 // These intents live in the app target rather than an App Intents extension on
 // purpose. `PlayerManager` owns the AVQueuePlayer singleton, so an extension
-// process would mutate a different instance and silently play nothing.
+// process would mutate a different instance and silently play nothing. The
+// transport intents the widget also names are in AureliaShared instead.
 
 // MARK: - Start playback
 
@@ -104,56 +105,6 @@ struct StartInstantMixIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let outcome = AureliaActions.startInstantMix(seedID: artist.id, name: artist.name)
         return .result(dialog: IntentDialog(stringLiteral: outcome.message))
-    }
-}
-
-// MARK: - Transport
-
-struct ResumePlaybackIntent: AppIntent {
-    static var title: LocalizedStringResource { "Resume Playback" }
-    static var description: IntentDescription {
-        IntentDescription("Resumes the current track.")
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: IntentDialog(stringLiteral: AureliaActions.resume().message))
-    }
-}
-
-struct PausePlaybackIntent: AppIntent {
-    static var title: LocalizedStringResource { "Pause Playback" }
-    static var description: IntentDescription {
-        IntentDescription("Pauses the current track.")
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: IntentDialog(stringLiteral: AureliaActions.pause().message))
-    }
-}
-
-struct NextTrackIntent: AppIntent {
-    static var title: LocalizedStringResource { "Next Track" }
-    static var description: IntentDescription {
-        IntentDescription("Skips to the next track in the queue.")
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: IntentDialog(stringLiteral: AureliaActions.skip(forward: true).message))
-    }
-}
-
-struct PreviousTrackIntent: AppIntent {
-    static var title: LocalizedStringResource { "Previous Track" }
-    static var description: IntentDescription {
-        IntentDescription("Skips to the previous track in the queue.")
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: IntentDialog(stringLiteral: AureliaActions.skip(forward: false).message))
     }
 }
 
