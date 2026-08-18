@@ -1547,6 +1547,61 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }.prefix(limit).map { $0 }
     }
 
+    // MARK: - Normalization gains
+
+    /// What has already been read for these tracks.
+    ///
+    /// A row carrying no numbers is an answer of its own: that track was
+    /// measured, and measured nothing.
+    func normalizationGains(
+        for trackIDs: [String],
+        in scope: LibraryScope
+    ) -> [String: NormalizationGain] {
+        guard !trackIDs.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: trackIDs.count).joined(separator: ",")
+        do {
+            return try database.read { db in
+                try TrackGainRecord.fetchAll(
+                    db,
+                    sql: """
+                        SELECT * FROM trackGain
+                        WHERE serverKey = ? AND userID = ? AND itemID IN (\(placeholders))
+                        """,
+                    arguments: StatementArguments([scope.serverKey, scope.userID] + trackIDs)
+                ).reduce(into: [:]) { gains, record in
+                    gains[record.itemID] = NormalizationGain(
+                        track: record.trackGain,
+                        album: record.albumGain
+                    )
+                }
+            }
+        } catch {
+            logger.error("Unable to read normalization gains: \(error.localizedDescription)")
+            return [:]
+        }
+    }
+
+    func saveNormalizationGains(_ gains: [String: NormalizationGain], in scope: LibraryScope) {
+        guard !gains.isEmpty else { return }
+        do {
+            try database.write { db in
+                let readAt = Date()
+                for (itemID, gain) in gains {
+                    try TrackGainRecord(
+                        serverKey: scope.serverKey,
+                        userID: scope.userID,
+                        itemID: itemID,
+                        trackGain: gain.track,
+                        albumGain: gain.album,
+                        updatedAt: readAt
+                    ).save(db)
+                }
+            }
+        } catch {
+            logger.error("Unable to persist normalization gains: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Discovery snapshot
 
     func discoverySnapshot(in scope: LibraryScope) -> DiscoverySnapshot? {
@@ -2066,6 +2121,21 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 """)
             try db.execute(sql: Self.resolvedItemViewSQL)
         }
+        migrator.registerMigration("trackNormalizationGains") { db in
+            // Measured loudness rather than catalog metadata: it is read from
+            // the server a queue at a time and survives a rebuilt catalog,
+            // which is what makes a download play at the right volume with no
+            // server in reach.
+            try db.create(table: "trackGain") { table in
+                table.column("serverKey", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("itemID", .text).notNull()
+                table.column("trackGain", .double)
+                table.column("albumGain", .double)
+                table.column("updatedAt", .datetime).notNull()
+                table.primaryKey(["serverKey", "userID", "itemID"])
+            }
+        }
         return migrator
     }
 
@@ -2213,6 +2283,10 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         )
         try db.execute(
             sql: "DELETE FROM userItemState WHERE serverKey = ? AND userID = ? AND itemID = ?",
+            arguments: arguments
+        )
+        try db.execute(
+            sql: "DELETE FROM trackGain WHERE serverKey = ? AND userID = ? AND itemID = ?",
             arguments: arguments
         )
     }
@@ -2430,6 +2504,17 @@ nonisolated private enum LibraryItemType: String, Sendable {
     case artist
     case playlist
     case genre
+}
+
+nonisolated private struct TrackGainRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
+    static let databaseTableName = "trackGain"
+
+    let serverKey: String
+    let userID: String
+    let itemID: String
+    let trackGain: Double?
+    let albumGain: Double?
+    let updatedAt: Date
 }
 
 nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, PersistableRecord, Sendable {

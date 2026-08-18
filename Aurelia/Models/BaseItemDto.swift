@@ -61,6 +61,14 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     // Play statistics
     let PlayCount: Int?
 
+    /// Decibels this track is off Jellyfin's -18 LUFS reference, as measured
+    /// by a library scan. Absent until one has run, and on servers without the
+    /// analysis at all.
+    let NormalizationGain: Double?
+    /// The same measurement for the album this track belongs to. Only newer
+    /// servers send it.
+    let AlbumNormalizationGain: Double?
+
     // Playback information
     let CanDownload: Bool?
     let UserData: UserItemData?
@@ -110,6 +118,9 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         SongCount = try? container.decode(Int.self, forKey: .SongCount)
         PlayCount = try? container.decode(Int.self, forKey: .PlayCount)
 
+        NormalizationGain = try? container.decode(Double.self, forKey: .NormalizationGain)
+        AlbumNormalizationGain = try? container.decode(Double.self, forKey: .AlbumNormalizationGain)
+
         CanDownload = try? container.decode(Bool.self, forKey: .CanDownload)
         UserData = try? container.decode(UserItemData.self, forKey: .UserData)
     }
@@ -157,6 +168,9 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         try container.encodeIfPresent(SongCount, forKey: .SongCount)
         try container.encodeIfPresent(PlayCount, forKey: .PlayCount)
 
+        try container.encodeIfPresent(NormalizationGain, forKey: .NormalizationGain)
+        try container.encodeIfPresent(AlbumNormalizationGain, forKey: .AlbumNormalizationGain)
+
         try container.encodeIfPresent(CanDownload, forKey: .CanDownload)
         try container.encodeIfPresent(UserData, forKey: .UserData)
     }
@@ -170,6 +184,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         case IndexNumber, ParentIndexNumber, PremiereDate, ProductionYear, Overview, Genres
         case DateCreated, CollectionType, Path, ChannelId, IsFolder
         case AlbumCount, SongCount, PlayCount
+        case NormalizationGain, AlbumNormalizationGain
         case CanDownload, UserData
     }
 
@@ -187,6 +202,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
          CollectionType: String? = nil,
          Path: String? = nil, ChannelId: String? = nil, IsFolder: Bool? = nil,
          AlbumCount: Int? = nil, SongCount: Int? = nil, PlayCount: Int? = nil,
+         NormalizationGain: Double? = nil, AlbumNormalizationGain: Double? = nil,
          CanDownload: Bool? = nil, UserData: UserItemData? = nil) {
         self.Id = Id
         self.Name = Name
@@ -221,6 +237,8 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         self.AlbumCount = AlbumCount
         self.SongCount = SongCount
         self.PlayCount = PlayCount
+        self.NormalizationGain = NormalizationGain
+        self.AlbumNormalizationGain = AlbumNormalizationGain
         self.CanDownload = CanDownload
         self.UserData = UserData
     }

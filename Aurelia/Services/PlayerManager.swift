@@ -416,6 +416,11 @@ class PlayerManager: NSObject, ObservableObject {
     /// anything still paused afterwards stopped without being asked to.
     private let pausedReconcileDelay: TimeInterval = 0.75
 
+    /// Songs whose loudness is read at once, counted from the one playing. Well
+    /// beyond the three the engine holds, so a queue is read in a request or
+    /// two rather than one per track change.
+    private let normalizationLookahead = 25
+
     /// Where a track is played from, when something other than the library and
     /// the user's quality setting decides it.
     private let resolvePlaybackURL: ((Track, TimeInterval) -> URL?)?
@@ -424,7 +429,51 @@ class PlayerManager: NSObject, ObservableObject {
     /// disk. Nil when there is nowhere to play it from.
     private func makeItem(for track: Track, startingAt offset: TimeInterval = 0) -> (any PlaybackItemHandle)? {
         guard let engine, let url = playbackURL(for: track, startingAt: offset) else { return nil }
-        return engine.makeItem(url: url, bufferedForStreaming: !url.isFileURL)
+        let item = engine.makeItem(url: url, bufferedForStreaming: !url.isFileURL)
+        item.volume = normalizedVolume(for: track)
+        return item
+    }
+
+    /// How loud a track plays, given the setting and what has been measured for
+    /// it. A track with no measurement — or none read yet — plays untouched.
+    private func normalizedVolume(for track: Track) -> Float {
+        let mode = NormalizationMode.current
+        guard mode != .off else { return 1 }
+        return VolumeNormalization.volume(
+            for: NormalizationGainStore.shared.gain(for: track.id),
+            mode: mode
+        )
+    }
+
+    /// Reads the gains for what is playing and what follows it, then applies
+    /// whatever came back to the items already built.
+    ///
+    /// The item playing is one of them: a measurement read while its first
+    /// seconds are going out still lands on that play, rather than waiting for
+    /// the next time the track comes round.
+    private func loadNormalizationGains() {
+        guard NormalizationMode.current != .off, queue.indices.contains(currentIndex) else { return }
+
+        let upcoming = queue[currentIndex...].prefix(normalizationLookahead).map(\.id)
+        Task { [weak self] in
+            await NormalizationGainStore.shared.load(upcoming)
+            self?.applyNormalizedVolumes()
+        }
+    }
+
+    /// Takes up the normalization setting as it stands now, so a change made
+    /// while something is playing is heard in that song rather than the next.
+    func refreshNormalization() {
+        applyNormalizedVolumes()
+        loadNormalizationGains()
+    }
+
+    private func applyNormalizedVolumes() {
+        for (offset, item) in playerItems.enumerated() {
+            let index = currentIndex + offset
+            guard queue.indices.contains(index) else { break }
+            item.volume = normalizedVolume(for: queue[index])
+        }
     }
 
     /// Get playback URL respecting user's streaming quality preference
@@ -1354,6 +1403,7 @@ class PlayerManager: NSObject, ObservableObject {
 
         // Load the current track and the next two, for gapless playback.
         setupGaplessQueue(startingAt: currentIndex)
+        loadNormalizationGains()
 
         // Ensure audio session is properly configured and active before playing
         do {
@@ -1726,6 +1776,7 @@ class PlayerManager: NSObject, ObservableObject {
 
         startProgressReporting(for: newTrack)
         primeAutoplayIfNeeded()
+        loadNormalizationGains()
 
         // Keep three loaded, so the track after this one is ready in time.
         let nextIndex = currentIndex + playerItems.count

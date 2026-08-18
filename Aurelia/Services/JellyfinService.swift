@@ -469,6 +469,35 @@ class JellyfinService: ObservableObject {
         return response.Items.map { Track(from: $0, baseURL: baseURL) }
     }
 
+    /// The loudness Jellyfin measured for these tracks, by identifier.
+    ///
+    /// Both figures ride on the track item and need no `Fields` asking for. A
+    /// track that has never been scanned comes back with neither, which is
+    /// still an answer: the caller can stop asking.
+    func fetchNormalizationGains(for itemIDs: [String]) async -> [String: NormalizationGain] {
+        guard !itemIDs.isEmpty,
+              let token = KeychainService.shared.getAccessToken(),
+              let userId = KeychainService.shared.getUserID(),
+              var components = try? buildURLComponents(path: "Users/\(userId)/Items") else {
+            return [:]
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "Ids", value: itemIDs.joined(separator: ",")),
+            URLQueryItem(name: "Limit", value: String(itemIDs.count)),
+            URLQueryItem(name: "EnableImages", value: "false"),
+            URLQueryItem(name: "EnableUserData", value: "false")
+        ]
+
+        guard let response = await fetchItems(from: components, token: token) else { return [:] }
+        return response.Items.reduce(into: [:]) { gains, item in
+            gains[item.Id] = NormalizationGain(
+                track: item.NormalizationGain,
+                album: item.AlbumNormalizationGain
+            )
+        }
+    }
+
     private func fetchItems(from components: URLComponents, token: String) async -> ItemsResponse? {
         guard let url = try? buildURL(from: components) else { return nil }
         var request = URLRequest(url: url)

@@ -42,6 +42,10 @@ protocol PlaybackItemHandle: AnyObject {
     /// The item's own length. Not a number until the medium has stated one,
     /// which a stream does only once enough of it has been read.
     var loadedDuration: TimeInterval { get }
+    /// How loud to play this one, as a multiplier of ordinary volume. Set while
+    /// it is the item playing, it takes effect there and then, which is what
+    /// lets a gain that arrived late still be applied.
+    var volume: Float { get set }
     func seek(to time: TimeInterval, tolerance: TimeInterval, completion: @escaping (Bool) -> Void)
 }
 
@@ -157,6 +161,9 @@ final class AVPlaybackEngine: PlaybackEngine {
         }
 
         let handle = AVPlaybackItem(item: item)
+        handle.onVolumeChanged = { [weak self] handle in
+            self?.applyVolume(of: handle)
+        }
         handles.append(handle)
         observe(handle)
         return handle
@@ -168,8 +175,14 @@ final class AVPlaybackEngine: PlaybackEngine {
         let avItems = items.compactMap { ($0 as? AVPlaybackItem)?.item }
         let player = AVQueuePlayer(items: avItems)
         player.automaticallyWaitsToMinimizeStalling = true
-        player.volume = 1.0
         self.player = player
+
+        player.publisher(for: \.currentItem)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyVolumeOfCurrentItem()
+            }
+            .store(in: &queueObservations)
 
         player.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
@@ -234,6 +247,24 @@ final class AVPlaybackEngine: PlaybackEngine {
         handles.first { $0.item === item }
     }
 
+    /// An item's volume is given to the player while that item is the one
+    /// playing, rather than to the item through an `AVAudioMix`.
+    ///
+    /// A mix sets its levels against an audio track of the asset, and a
+    /// transcode arrives as a playlist whose tracks belong to the item and not
+    /// to the asset — so a mix would be ignored for exactly the streams it was
+    /// wanted for. The player also takes a level that arrives after the item
+    /// was built, which a mix, fixed when the item is made, does not.
+    private func applyVolumeOfCurrentItem() {
+        guard let player else { return }
+        player.volume = player.currentItem.flatMap { handle(for: $0) }?.volume ?? 1
+    }
+
+    private func applyVolume(of handle: AVPlaybackItem) {
+        guard let player, player.currentItem === handle.item else { return }
+        player.volume = handle.volume
+    }
+
     /// Every item is watched from the moment it is made, so one swapped in to
     /// seek a transcode is looked after exactly like one loaded with the queue.
     private func observe(_ handle: AVPlaybackItem) {
@@ -282,6 +313,15 @@ final class AVPlaybackEngine: PlaybackEngine {
 /// An `AVPlayerItem` under the name the player knows it by.
 private final class AVPlaybackItem: PlaybackItemHandle {
     let item: AVPlayerItem
+    /// Told to the engine, which is the only thing that can act on it.
+    var onVolumeChanged: ((AVPlaybackItem) -> Void)?
+
+    var volume: Float = 1 {
+        didSet {
+            guard volume != oldValue else { return }
+            onVolumeChanged?(self)
+        }
+    }
 
     init(item: AVPlayerItem) {
         self.item = item

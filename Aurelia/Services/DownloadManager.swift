@@ -1374,6 +1374,11 @@ class DownloadManager: NSObject, ObservableObject {
         publishCounts()
         store.upsert(downloadedTrack)
 
+        // Read while the server is still in reach, so a track downloaded for a
+        // journey and played for the first time on it is normalized like any
+        // other.
+        Task { await NormalizationGainStore.shared.load([trackID]) }
+
         NotificationCenter.default.post(
             name: NSNotification.Name("TrackDownloadCompleted"),
             object: nil,

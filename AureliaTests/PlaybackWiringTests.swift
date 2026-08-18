@@ -30,6 +30,7 @@ private final class FakeItem: PlaybackItemHandle {
     var playedTime: TimeInterval = 0
     /// Not a number, like a transcode, unless a test says otherwise.
     var loadedDuration: TimeInterval = .nan
+    var volume: Float = 1
     /// Every position this item was moved to, in order.
     private(set) var seeks: [TimeInterval] = []
 

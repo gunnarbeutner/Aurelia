@@ -70,6 +70,7 @@ struct SettingsView: View {
     @AppStorage("preferredAppearance") private var preferredAppearance: AppearancePreference = .system
     @AppStorage("streamingQuality") private var selectedQualityRaw = StreamingQuality.medium.rawValue
     @AppStorage(DownloadManager.qualityDefaultsKey) private var downloadQualityRaw = DownloadQuality.original.rawValue
+    @AppStorage(NormalizationMode.defaultsKey) private var normalizationRaw = NormalizationMode.default.rawValue
     @State private var audioMuseAvailability: AudioMuseAvailability = .checking
     @State private var aureliaSyncState: AureliaSyncSettingsState = .checking
     /// Carried across readings so a single failed request cannot report a
@@ -85,6 +86,10 @@ struct SettingsView: View {
 
     private var downloadQuality: DownloadQuality {
         DownloadQuality(rawValue: downloadQualityRaw) ?? .original
+    }
+
+    private var normalizationMode: NormalizationMode {
+        NormalizationMode(rawValue: normalizationRaw) ?? .default
     }
 
     var body: some View {
@@ -103,8 +108,8 @@ struct SettingsView: View {
                     // Streaming Quality
                     streamingQualitySection
 
-                    // Queue continuation
-                    autoplaySection
+                    // Queue continuation and loudness
+                    playbackSection
 
                     // Offline storage
                     storageSection
@@ -621,44 +626,58 @@ struct SettingsView: View {
 
             VStack(spacing: 8) {
                 ForEach(StreamingQuality.allCases) { quality in
-                    Button {
+                    choiceRow(
+                        title: quality.displayName,
+                        description: quality.description,
+                        isSelected: selectedQuality == quality
+                    ) {
                         setSelectedQuality(quality)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(quality.displayName)
-                                    .font(.appBody)
-                                    .foregroundColor(Color.appText)
-                                Text(quality.description)
-                                    .font(.appCaption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            if selectedQuality == quality {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.appAccent)
-                            }
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(selectedQuality == quality ? Color.appMidBackground : Color.clear)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(selectedQuality == quality ? Color.appAccent.opacity(0.5) : Color.appControlFill, lineWidth: 1)
-                                )
-                        )
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
     }
 
-    // MARK: - Autoplay Section
+    /// One option in a list of them, chosen by tapping it.
+    private func choiceRow(
+        title: String,
+        description: String,
+        isSelected: Bool,
+        select: @escaping () -> Void
+    ) -> some View {
+        Button(action: select) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.appBody)
+                        .foregroundColor(Color.appText)
+                    Text(description)
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.appAccent)
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.appMidBackground : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isSelected ? Color.appAccent.opacity(0.5) : Color.appControlFill, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
 
-    private var autoplaySection: some View {
+    // MARK: - Playback Section
+
+    private var playbackSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Playback")
                 .font(.appHeadline)
@@ -680,6 +699,27 @@ struct SettingsView: View {
             .tint(.appAccentMuted)
             .settingsCard()
             .accessibilityIdentifier("continue-playing-similar-music")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Volume Normalization")
+                    .font(.appBody)
+                    .foregroundColor(.appText)
+                Text("Plays everything at one loudness, using what your server measured. Tracks are only ever turned down, never up.")
+                    .font(.appCaption)
+                    .foregroundColor(.appTextSecondary)
+
+                ForEach(NormalizationMode.allCases) { mode in
+                    choiceRow(
+                        title: mode.displayName,
+                        description: mode.description,
+                        isSelected: normalizationMode == mode
+                    ) {
+                        normalizationRaw = mode.rawValue
+                        playerManager.refreshNormalization()
+                    }
+                }
+            }
+            .accessibilityIdentifier("volume-normalization")
         }
     }
 
