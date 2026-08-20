@@ -10,6 +10,7 @@ import SwiftUI
 private enum SettingsDestination: Hashable {
     case downloads
     case favoritesOffline
+    case musicRequests
 }
 
 enum StreamingQuality: String, CaseIterable, Identifiable {
@@ -64,6 +65,7 @@ struct SettingsView: View {
     @ObservedObject private var playerManager = PlayerManager.shared
     @ObservedObject private var libraryStore = LibraryStore.shared
     @ObservedObject private var favoritesOffline = FavoritesOfflineSync.shared
+    @ObservedObject private var lidarr = LidarrService.shared
     @State private var showSignOutConfirmation = false
     @State private var showRebuildConfirmation = false
     @State private var showLibrarySyncError = false
@@ -119,6 +121,8 @@ struct SettingsView: View {
 
                     aureliaSyncSection
 
+                    lidarrSection
+
                     // Server Info Section
                     serverInfoSection
 
@@ -137,6 +141,8 @@ struct SettingsView: View {
                 DownloadsView()
             case .favoritesOffline:
                 FavoritesOfflineView()
+            case .musicRequests:
+                LidarrRequestsView()
             }
         }
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
@@ -160,7 +166,72 @@ struct SettingsView: View {
         } message: {
             Text(libraryStore.errorMessage ?? "The library could not be updated.")
         }
-        .task { await checkAureliaSync() }
+        .task {
+            await checkAureliaSync()
+            await lidarr.refreshStatus()
+            if lidarr.status?.canRequest == true { await lidarr.refreshRequests() }
+        }
+    }
+
+    private var lidarrSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add Music")
+                .font(.appHeadline)
+                .foregroundColor(.appAccent)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: lidarr.status?.healthy == true ? "checkmark.circle.fill" : "music.note.house")
+                        .foregroundColor(lidarr.status?.healthy == true ? .green : .appTextSecondary)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(lidarrStatusTitle)
+                            .font(.appBody)
+                            .foregroundColor(.appText)
+                        Text(lidarrStatusDetail)
+                            .font(.appCaption)
+                            .foregroundColor(.appTextSecondary)
+                    }
+                    Spacer()
+                }
+
+                if lidarr.status?.configured == true && lidarr.status?.canRequest == true {
+                    NavigationLink(value: SettingsDestination.musicRequests) {
+                        HStack {
+                            Label("Music Requests", systemImage: "arrow.down.circle")
+                            Spacer()
+                            if !lidarr.requests.isEmpty {
+                                Text("\(lidarr.requests.count)")
+                                    .foregroundColor(.appTextSecondary)
+                            }
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.appTextSecondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .settingsCard()
+        }
+    }
+
+    private var lidarrStatusTitle: String {
+        guard let status = lidarr.status else { return "Checking Lidarr…" }
+        if !status.enabled { return "Not enabled" }
+        if !status.configured { return "Setup incomplete" }
+        if !status.canRequest { return "Requests not permitted" }
+        if status.healthy { return status.version.map { "Lidarr \($0)" } ?? "Lidarr ready" }
+        return "Lidarr unavailable"
+    }
+
+    private var lidarrStatusDetail: String {
+        guard let status = lidarr.status else {
+            return lidarr.errorMessage ?? "Checking the server's optional music request service."
+        }
+        if status.healthy && status.canRequest {
+            return "Switch Search to Add Music to find albums, then follow their progress here."
+        }
+        return status.message ?? "Ask your Jellyfin administrator to configure music requests."
     }
 
     private var aureliaSyncSection: some View {
@@ -193,8 +264,7 @@ struct SettingsView: View {
                     Button("Install Aurelia Sync") {
                         Task { await installAureliaSync() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.appAccent)
+                    .buttonStyle(AppProminentButtonStyle())
                 } else if aureliaSyncState == .restartRequired {
                     Button("Check Again") { Task { await checkAureliaSync() } }
                         .buttonStyle(.bordered)

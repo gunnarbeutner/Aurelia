@@ -23,6 +23,7 @@ nonisolated struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     let artistId: String?        // For artist identification
     let artistIDs: [String]?
     let genreIDs: [String]?
+    let providerIDs: [String: String]?
     let playlistEntryID: String?
     let productionYear: Int?     // Album release year
 
@@ -39,7 +40,7 @@ nonisolated struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
 
     // Codable conformance - exclude computed properties
     enum CodingKeys: String, CodingKey {
-        case id, name, sortName, artistName, albumName, duration, artworkURL, isFavorite, indexNumber, parentIndexNumber, albumId, artistId, artistIDs, genreIDs, playlistEntryID, productionYear
+        case id, name, sortName, artistName, albumName, duration, artworkURL, isFavorite, indexNumber, parentIndexNumber, albumId, artistId, artistIDs, genreIDs, providerIDs, playlistEntryID, productionYear
     }
 
     // Initialize from Jellyfin BaseItemDto
@@ -58,12 +59,13 @@ nonisolated struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.artistId = item.ArtistItems?.first?.Id
         self.artistIDs = item.ArtistItems?.map(\.Id)
         self.genreIDs = item.GenreItems?.map(\.Id)
+        self.providerIDs = item.ProviderIds
         self.playlistEntryID = item.PlaylistItemId
         self.productionYear = item.ProductionYear
     }
 
     // Manual initializer for mock data
-    init(id: String, name: String, sortName: String? = nil, artistName: String, albumName: String, duration: TimeInterval, artworkURL: String?, isFavorite: Bool = false, indexNumber: Int? = nil, parentIndexNumber: Int? = nil, albumId: String? = nil, artistId: String? = nil, artistIDs: [String]? = nil, genreIDs: [String]? = nil, playlistEntryID: String? = nil, productionYear: Int? = nil) {
+    init(id: String, name: String, sortName: String? = nil, artistName: String, albumName: String, duration: TimeInterval, artworkURL: String?, isFavorite: Bool = false, indexNumber: Int? = nil, parentIndexNumber: Int? = nil, albumId: String? = nil, artistId: String? = nil, artistIDs: [String]? = nil, genreIDs: [String]? = nil, providerIDs: [String: String]? = nil, playlistEntryID: String? = nil, productionYear: Int? = nil) {
         self.id = id
         self.name = name
         self.sortName = sortName
@@ -78,6 +80,7 @@ nonisolated struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.artistId = artistId
         self.artistIDs = artistIDs
         self.genreIDs = genreIDs
+        self.providerIDs = providerIDs
         self.playlistEntryID = playlistEntryID
         self.productionYear = productionYear
     }
@@ -126,6 +129,7 @@ nonisolated struct Album: Identifiable, Codable, Hashable, Sendable {
     let trackCount: Int?
     let artworkURL: String?
     let genreIDs: [String]?
+    let providerIDs: [String: String]?
     var isFavorite: Bool
 
     var nameWithYear: String {
@@ -144,11 +148,12 @@ nonisolated struct Album: Identifiable, Codable, Hashable, Sendable {
         self.trackCount = item.ChildCount
         self.artworkURL = item.albumArtworkURL(baseURL: baseURL)?.absoluteString
         self.genreIDs = item.GenreItems?.map(\.Id)
+        self.providerIDs = item.ProviderIds
         self.isFavorite = item.UserData?.IsFavorite ?? false
     }
 
     // Manual initializer for mock data
-    init(id: String, name: String, sortName: String? = nil, artistName: String, artistId: String?, year: Int?, trackCount: Int? = nil, artworkURL: String?, genreIDs: [String]? = nil, isFavorite: Bool = false) {
+    init(id: String, name: String, sortName: String? = nil, artistName: String, artistId: String?, year: Int?, trackCount: Int? = nil, artworkURL: String?, genreIDs: [String]? = nil, providerIDs: [String: String]? = nil, isFavorite: Bool = false) {
         self.id = id
         self.name = name
         self.sortName = sortName
@@ -158,6 +163,7 @@ nonisolated struct Album: Identifiable, Codable, Hashable, Sendable {
         self.trackCount = trackCount
         self.artworkURL = artworkURL
         self.genreIDs = genreIDs
+        self.providerIDs = providerIDs
         self.isFavorite = isFavorite
     }
 }
@@ -183,6 +189,7 @@ nonisolated struct Artist: Identifiable, Codable, Hashable, Sendable {
     let bio: String?
     let albumCount: Int
     let artworkURL: String?
+    let providerIDs: [String: String]?
     var isFavorite: Bool
 
     // These will be fetched separately in views (not included in Codable)
@@ -191,7 +198,7 @@ nonisolated struct Artist: Identifiable, Codable, Hashable, Sendable {
 
     // Codable conformance - exclude albums and topTracks from encoding
     enum CodingKeys: String, CodingKey {
-        case id, name, sortName, bio, albumCount, artworkURL, isFavorite
+        case id, name, sortName, bio, albumCount, artworkURL, providerIDs, isFavorite
     }
     
     // Hashable conformance - exclude albums and topTracks from hashing
@@ -202,6 +209,7 @@ nonisolated struct Artist: Identifiable, Codable, Hashable, Sendable {
         hasher.combine(bio)
         hasher.combine(albumCount)
         hasher.combine(artworkURL)
+        hasher.combine(providerIDs)
         hasher.combine(isFavorite)
     }
     
@@ -212,6 +220,7 @@ nonisolated struct Artist: Identifiable, Codable, Hashable, Sendable {
                lhs.bio == rhs.bio &&
                lhs.albumCount == rhs.albumCount &&
                lhs.artworkURL == rhs.artworkURL &&
+               lhs.providerIDs == rhs.providerIDs &&
                lhs.isFavorite == rhs.isFavorite
     }
 
@@ -223,17 +232,19 @@ nonisolated struct Artist: Identifiable, Codable, Hashable, Sendable {
         self.bio = item.Overview
         self.albumCount = item.AlbumCount ?? 0
         self.artworkURL = item.artistImageURL(baseURL: baseURL)?.absoluteString
+        self.providerIDs = item.ProviderIds
         self.isFavorite = item.UserData?.IsFavorite ?? false
     }
 
     // Manual initializer for mock data
-    init(id: String, name: String, sortName: String? = nil, bio: String?, albumCount: Int, artworkURL: String?, isFavorite: Bool = false, albums: [Album] = [], topTracks: [Track] = []) {
+    init(id: String, name: String, sortName: String? = nil, bio: String?, albumCount: Int, artworkURL: String?, providerIDs: [String: String]? = nil, isFavorite: Bool = false, albums: [Album] = [], topTracks: [Track] = []) {
         self.id = id
         self.name = name
         self.sortName = sortName
         self.bio = bio
         self.albumCount = albumCount
         self.artworkURL = artworkURL
+        self.providerIDs = providerIDs
         self.isFavorite = isFavorite
         self.albums = albums
         self.topTracks = topTracks

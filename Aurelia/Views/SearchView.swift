@@ -12,6 +12,7 @@ struct SearchView: View {
     let searchFocusRequest: Int
     @ObservedObject var playerManager = PlayerManager.shared
     @ObservedObject private var keyboard = KeyboardObserver.shared
+    @ObservedObject private var lidarr = LidarrService.shared
     private let repository = LibraryRepository.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dismissSearch) private var dismissSearch
@@ -19,13 +20,27 @@ struct SearchView: View {
     @State private var searchText = ""
     @State private var searchResults: [LibrarySearchResult] = []
     @State private var isSearching = false
+    @State private var selectedSource: SearchSource = .library
     @State private var selectedFilter: SearchFilter = .all
     @State private var searchTask: Task<Void, Never>?
+    @State private var requestError: String?
     @FocusState private var isSearchFieldFocused: Bool
     // Navigation handled by NavigationStack
 
     init(searchFocusRequest: Int = 0) {
         self.searchFocusRequest = searchFocusRequest
+    }
+
+    enum SearchSource: String, CaseIterable {
+        case library = "Library"
+        case addMusic = "Add Music"
+
+        var icon: String {
+            switch self {
+            case .library: return "music.note.list"
+            case .addMusic: return "plus.circle.fill"
+            }
+        }
     }
 
     enum SearchFilter: String, CaseIterable {
@@ -61,6 +76,12 @@ struct SearchView: View {
                 // Results
                 if searchText.isEmpty {
                     emptySearchView
+                } else if selectedSource == .addMusic && lidarr.isSearching {
+                    loadingView
+                } else if selectedSource == .addMusic && lidarr.searchResults.isEmpty {
+                    noResultsView
+                } else if selectedSource == .addMusic {
+                    lidarrSearchResultsList
                 } else if isSearching {
                     loadingView
                 } else if searchResults.isEmpty {
@@ -71,7 +92,7 @@ struct SearchView: View {
             }
         }
         #if !targetEnvironment(macCatalyst)
-        .searchable(text: $searchText, prompt: "Search artists, albums, tracks...")
+        .searchable(text: $searchText, prompt: searchPrompt)
         .appSearchFocused($isSearchFieldFocused)
         #endif
         .onChange(of: searchText) { _, newValue in
@@ -83,6 +104,14 @@ struct SearchView: View {
         .onChange(of: selectedFilter) { _, _ in
             performSearch(query: searchText)
         }
+        .onChange(of: selectedSource) { _, _ in
+            performSearch(query: searchText)
+        }
+        .onChange(of: canAddMusic) { _, allowed in
+            if !allowed && selectedSource == .addMusic {
+                selectedSource = .library
+            }
+        }
         .navigationDestination(for: Album.self) { album in
             AlbumDetailView(album: album)
         }
@@ -93,6 +122,20 @@ struct SearchView: View {
             PlaylistDetailView(playlist: playlist)
         }
         .rootTabNavigationTitle("Search")
+        .task {
+            await lidarr.refreshStatus()
+            if lidarr.status?.configured == true && lidarr.status?.canRequest == true {
+                await lidarr.refreshRequests()
+            }
+        }
+        .alert("Request Failed", isPresented: Binding(
+            get: { requestError != nil },
+            set: { if !$0 { requestError = nil } }
+        )) {
+            Button("OK", role: .cancel) { requestError = nil }
+        } message: {
+            Text(requestError ?? "The album could not be requested.")
+        }
     }
 
     #if targetEnvironment(macCatalyst)
@@ -101,7 +144,7 @@ struct SearchView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.appTextSecondary)
 
-            TextField("Search artists, albums, tracks…", text: $searchText)
+            TextField(searchPrompt, text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .focused($isSearchFieldFocused)
@@ -144,34 +187,77 @@ struct SearchView: View {
         }
     }
 
+    private var canAddMusic: Bool {
+        lidarr.status?.configured == true && lidarr.status?.canRequest == true
+    }
+
+    private var searchPrompt: String {
+        selectedSource == .addMusic
+            ? "Search albums and artists to add…"
+            : "Search artists, albums, tracks…"
+    }
+
     // MARK: - Filter Tabs
     private var filterTabs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(SearchFilter.allCases, id: \.self) { filter in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            selectedFilter = filter
-                        }
-                    } label: {
-                        Text(filter.rawValue)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundColor(selectedFilter == filter ? .appAccentText : .appAccent)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background {
-                                if selectedFilter == filter {
-                                    Capsule().fill(Color.appAccent)
-                                } else {
-                                    Capsule().fill(.ultraThinMaterial)
-                                }
+        VStack(spacing: 12) {
+            if canAddMusic {
+                HStack(spacing: 8) {
+                    ForEach(SearchSource.allCases, id: \.self) { source in
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                selectedSource = source
                             }
+                        } label: {
+                            Label(source.rawValue, systemImage: source.icon)
+                                .font(.subheadline.weight(.bold))
+                                .foregroundColor(selectedSource == source ? .appAccentText : .appText)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background {
+                                    Capsule().fill(
+                                        selectedSource == source ? Color.appAccent : Color.appElevated
+                                    )
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier(
+                            "search-source-\(source == .library ? "library" : "add-music")"
+                        )
+                        .accessibilityAddTraits(selectedSource == source ? .isSelected : [])
                     }
-                    .accessibilityLabel("Filter: \(filter.rawValue)")
-                    .accessibilityAddTraits(selectedFilter == filter ? .isSelected : [])
+                }
+                .padding(.horizontal, 16)
+            }
+
+            if selectedSource == .library {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(SearchFilter.allCases, id: \.self) { filter in
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    selectedFilter = filter
+                                }
+                            } label: {
+                                Text(filter.rawValue)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundColor(selectedFilter == filter ? .appAccentText : .appAccent)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background {
+                                        if selectedFilter == filter {
+                                            Capsule().fill(Color.appAccent)
+                                        } else {
+                                            Capsule().fill(.ultraThinMaterial)
+                                        }
+                                    }
+                            }
+                            .accessibilityLabel("Filter: \(filter.rawValue)")
+                            .accessibilityAddTraits(selectedFilter == filter ? .isSelected : [])
+                        }
+                    }
+                    .padding(.horizontal, 16)
                 }
             }
-            .padding(.horizontal, 16)
         }
         .padding(.vertical, 16)
     }
@@ -255,12 +341,37 @@ struct SearchView: View {
         }
     }
 
+    private var lidarrSearchResultsList: some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(lidarr.searchResults) { album in
+                    LidarrAlbumResultRow(
+                        album: album,
+                        request: lidarr.request(for: album.foreignAlbumId),
+                        onRequest: { requestAlbum(album) }
+                    )
+                }
+                Color.clear.frame(height: 20)
+            }
+            .padding(.top, 8)
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .accessibilityIdentifier("lidarr-search-results-list")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerManager.currentTrack != nil, !keyboard.isVisible {
+                Color.clear
+                    .frame(height: MiniPlayerLayout.contentClearance)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
     // MARK: - Empty State
     private var emptySearchView: some View {
         ContentUnavailableView {
-            Label("Search Your Library", systemImage: "magnifyingglass")
+            Label(selectedSource == .addMusic ? "Find Music to Add" : "Search Your Library", systemImage: "magnifyingglass")
         } description: {
-            Text("Find artists, albums, and tracks")
+            Text(selectedSource == .addMusic ? "Search Lidarr's metadata sources for an album" : "Find artists, albums, and tracks")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -284,18 +395,31 @@ struct SearchView: View {
         ContentUnavailableView {
             Label("No Results", systemImage: "music.note.list")
         } description: {
-            Text("Try a different search term")
+            Text(selectedSource == .addMusic
+                 ? (lidarr.errorMessage ?? "Try a different album or artist")
+                 : "Try a different search term")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Actions
+    private func requestAlbum(_ album: LidarrAlbumResult) {
+        Task {
+            do {
+                try await lidarr.request(album)
+            } catch {
+                requestError = error.localizedDescription
+            }
+        }
+    }
+
     private func performSearch(query: String) {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searchTask?.cancel()
 
         guard !normalizedQuery.isEmpty else {
             searchResults = []
+            lidarr.clearSearch()
             isSearching = false
             searchTask = nil
             return
@@ -316,6 +440,12 @@ struct SearchView: View {
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
             guard !Task.isCancelled else { return }
+
+            if selectedSource == .addMusic {
+                await lidarr.search(normalizedQuery)
+                isSearching = false
+                return
+            }
 
             do {
                 guard let scope = JellyfinService.shared.libraryScope else {
@@ -379,6 +509,103 @@ private extension SearchView.SearchFilter {
         case .albums: return .albums
         case .tracks: return .tracks
         case .playlists: return .playlists
+        }
+    }
+}
+
+private struct LidarrAlbumResultRow: View {
+    let album: LidarrAlbumResult
+    let request: LidarrRequest?
+    let onRequest: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            CachedAsyncImage(url: album.imageUrl.flatMap(URL.init(string:))) { phase in
+                if case .success(let image) = phase {
+                    image.artworkRendering().aspectRatio(contentMode: .fill)
+                } else {
+                    ZStack {
+                        Color.appElevated
+                        Image(systemName: "square.stack.fill").foregroundColor(.appTextSecondary)
+                    }
+                }
+            }
+            .frame(width: 60, height: 60)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(album.title).font(.body.weight(.semibold)).foregroundColor(.appText).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text("ALBUM")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color.appAccent)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.appAccent.opacity(0.15), in: Capsule())
+                    Text([album.artistName, album.year.map(String.init)].compactMap { $0 }.joined(separator: " · "))
+                        .font(.subheadline)
+                        .foregroundColor(.appTextSecondary)
+                        .lineLimit(1)
+                }
+                if request?.state == .failed, let error = request?.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+
+            if let request, request.state == .failed {
+                Button(action: onRequest) {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.appAccentText)
+                }
+                    .buttonStyle(AppProminentButtonStyle())
+                    .accessibilityLabel("Retry adding \(album.title) album")
+            } else if let request {
+                Label(request.state.displayName, systemImage: request.state.icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(request.state == .failed ? .red : .appAccent)
+            } else {
+                Button(action: onRequest) {
+                    Text("Add Album")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.appAccentText)
+                }
+                    .buttonStyle(AppProminentButtonStyle())
+                    .accessibilityLabel("Add \(album.title) album")
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.appMidBackground.opacity(0.3)))
+        .padding(.horizontal, 16)
+    }
+}
+
+extension LidarrRequestState {
+    var displayName: String {
+        switch self {
+        case .requested: "Requested"
+        case .searching: "Searching"
+        case .queued: "Queued"
+        case .downloading: "Downloading"
+        case .waitingForJellyfin: "Importing"
+        case .available: "Available"
+        case .failed: "Failed"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .requested, .queued: "clock"
+        case .searching: "magnifyingglass"
+        case .downloading: "arrow.down.circle"
+        case .waitingForJellyfin: "arrow.triangle.2.circlepath"
+        case .available: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
         }
     }
 }

@@ -36,6 +36,7 @@ private struct ArtistDetailContent: View {
     let artist: Artist
     @ObservedObject var jellyfinService = JellyfinService.shared
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject private var lidarr = LidarrService.shared
     private let repository = LibraryRepository.shared
     @Environment(\.dismiss) var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -51,6 +52,9 @@ private struct ArtistDetailContent: View {
     @State private var isUploadingImage = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var uploadError: String?
+    @State private var lidarrAlbums: [LidarrAlbumResult] = []
+    @State private var requestConfirmation: LidarrAlbumResult?
+    @State private var requestError: String?
 
     private var effectiveArtworkURL: String? {
         artist.artworkURL ?? wikiImageURL
@@ -175,6 +179,10 @@ private struct ArtistDetailContent: View {
                             bioSection(bio: bio)
                         }
 
+                        if !missingLidarrAlbums.isEmpty {
+                            missingAlbumsSection
+                        }
+
                         // Albums Section
                         albumsSection
 
@@ -196,6 +204,7 @@ private struct ArtistDetailContent: View {
         }
         .task(id: artist.id) {
             await fetchArtistAlbums()
+            await fetchLidarrAlbums()
         }
         .task {
             if artist.artworkURL == nil {
@@ -244,6 +253,37 @@ private struct ArtistDetailContent: View {
         } message: {
             Text(uploadError ?? "")
         }
+        .confirmationDialog(
+            requestConfirmation.map { "Request \($0.title)?" } ?? "Request album?",
+            isPresented: Binding(
+                get: { requestConfirmation != nil },
+                set: { if !$0 { requestConfirmation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let album = requestConfirmation {
+                Button("Request Album") {
+                    requestConfirmation = nil
+                    Task {
+                        do { try await lidarr.request(album) }
+                        catch { requestError = error.localizedDescription }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { requestConfirmation = nil }
+        } message: {
+            if let album = requestConfirmation {
+                Text("AureliaSync will ask Lidarr to find \(album.title).")
+            }
+        }
+        .alert("Request Failed", isPresented: Binding(
+            get: { requestError != nil },
+            set: { if !$0 { requestError = nil } }
+        )) {
+            Button("OK", role: .cancel) { requestError = nil }
+        } message: {
+            Text(requestError ?? "The album could not be requested.")
+        }
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -274,6 +314,82 @@ private struct ArtistDetailContent: View {
             guard let scope = jellyfinService.libraryScope else { return }
             albums = (try? await repository.albums(forArtist: artist.id, in: scope)) ?? []
         }
+    }
+
+    private func fetchLidarrAlbums() async {
+        guard let musicBrainzArtistID else { return }
+        await lidarr.refreshStatus()
+        guard lidarr.status?.configured == true, lidarr.status?.canRequest == true else { return }
+        await lidarr.refreshRequests()
+        lidarrAlbums = (try? await lidarr.albums(forArtist: musicBrainzArtistID)) ?? []
+    }
+
+    private var musicBrainzArtistID: String? {
+        artist.providerIDs?.first {
+            $0.key.caseInsensitiveCompare("MusicBrainzArtist") == .orderedSame
+        }?.value
+    }
+
+    private var missingLidarrAlbums: [LidarrAlbumResult] {
+        let existing = Set(albums.compactMap { album in
+            album.providerIDs?.first {
+                $0.key.caseInsensitiveCompare("MusicBrainzReleaseGroup") == .orderedSame
+            }?.value.lowercased()
+        })
+        return lidarrAlbums.filter { !existing.contains($0.foreignAlbumId.lowercased()) }
+    }
+
+    private var missingAlbumsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Missing Albums")
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(.appText)
+                Spacer()
+                Text("via Lidarr")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
+            .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(missingLidarrAlbums) { album in
+                        VStack(alignment: .leading, spacing: 8) {
+                            CachedAsyncImage(url: album.imageUrl.flatMap(URL.init(string:))) { phase in
+                                if case .success(let image) = phase {
+                                    image.artworkRendering().aspectRatio(contentMode: .fill)
+                                } else {
+                                    ZStack {
+                                        Color.appElevated
+                                        Image(systemName: "square.stack.fill")
+                                            .foregroundColor(.appTextSecondary)
+                                    }
+                                }
+                            }
+                            .frame(width: 150, height: 150)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                            Text(album.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.appText)
+                                .lineLimit(1)
+                            if let request = lidarr.request(for: album.foreignAlbumId) {
+                                Label(request.state.displayName, systemImage: request.state.icon)
+                                    .font(.caption)
+                                    .foregroundColor(request.state == .failed ? .red : .appAccent)
+                            } else {
+                                Button("Request") { requestConfirmation = album }
+                                    .buttonStyle(AppProminentButtonStyle())
+                            }
+                        }
+                        .frame(width: 150, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .padding(.bottom, 24)
     }
 
     // MARK: - Toggle Favorite

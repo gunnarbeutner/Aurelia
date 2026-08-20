@@ -1426,6 +1426,31 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
         }
     }
 
+    /// Resolves a stable external identifier to the matching local Jellyfin item.
+    nonisolated func itemID(
+        provider: String,
+        value: String,
+        in scope: LibraryScope
+    ) async throws -> String? {
+        let database = database
+        return try await Task.detached(priority: .userInitiated) {
+            try database.read { db in
+                let safeProvider = provider.replacingOccurrences(of: "\"", with: "")
+                let path = "$." + safeProvider
+                return try String.fetchOne(
+                    db,
+                    sql: """
+                        SELECT itemID FROM libraryItem
+                        WHERE serverKey = ? AND userID = ?
+                          AND json_extract(providerIDsJSON, ?) = ?
+                        LIMIT 1
+                        """,
+                    arguments: [scope.serverKey, scope.userID, path, value]
+                )
+            }
+        }.value
+    }
+
     func appendArtists(_ artists: [Artist], in scope: LibraryScope) throws {
         try database.write { db in
             try Self.save(artists: artists, db: db, scope: scope)
@@ -2136,6 +2161,13 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                 table.primaryKey(["serverKey", "userID", "itemID"])
             }
         }
+        migrator.registerMigration("persistProviderIdentifiers") { db in
+            try db.alter(table: "libraryItem") { table in
+                table.add(column: "providerIDsJSON", .text)
+            }
+            try db.execute(sql: "DROP VIEW resolvedItem")
+            try db.execute(sql: Self.resolvedItemViewSQL)
+        }
         return migrator
     }
 
@@ -2189,7 +2221,7 @@ actor LibraryRepository: RecentTrackCaching, DiscoveryCandidateProviding {
                          AND tagged.itemType = 'album')
                END AS albumCount,
                item.biography, item.dateCreated, item.parentID,
-               item.imageTag, item.albumImageTag, item.updatedAt
+               item.imageTag, item.albumImageTag, item.providerIDsJSON, item.updatedAt
           FROM libraryItem AS item
           LEFT JOIN libraryItem AS album
             ON album.serverKey = item.serverKey
@@ -2542,6 +2574,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
     let parentID: String?
     let imageTag: String?
     let albumImageTag: String?
+    let providerIDsJSON: String?
     let updatedAt: Date
 
     init(track: Track, scope: LibraryScope) {
@@ -2570,6 +2603,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         parentID = track.albumId
         imageTag = nil
         albumImageTag = nil
+        providerIDsJSON = Self.encodeProviderIDs(track.providerIDs)
         updatedAt = Date()
     }
 
@@ -2596,6 +2630,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         parentID = nil
         imageTag = nil
         albumImageTag = nil
+        providerIDsJSON = Self.encodeProviderIDs(album.providerIDs)
         updatedAt = Date()
     }
 
@@ -2622,6 +2657,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         parentID = nil
         imageTag = nil
         albumImageTag = nil
+        providerIDsJSON = Self.encodeProviderIDs(artist.providerIDs)
         updatedAt = Date()
     }
 
@@ -2648,6 +2684,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         parentID = nil
         imageTag = nil
         albumImageTag = nil
+        providerIDsJSON = nil
         updatedAt = Date()
     }
 
@@ -2674,6 +2711,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
         parentID = nil
         imageTag = nil
         albumImageTag = nil
+        providerIDsJSON = nil
         updatedAt = Date()
     }
 
@@ -2693,6 +2731,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
             artistId: artistID,
             artistIDs: artistID.map { [$0] },
             genreIDs: genreIDs,
+            providerIDs: providerIDs,
             productionYear: productionYear
         )
     }
@@ -2707,6 +2746,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
             year: productionYear,
             trackCount: trackCount,
             artworkURL: artworkURL,
+            providerIDs: providerIDs,
             isFavorite: isFavorite
         )
     }
@@ -2719,6 +2759,7 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
             bio: biography,
             albumCount: albumCount ?? 0,
             artworkURL: artworkURL,
+            providerIDs: providerIDs,
             isFavorite: isFavorite
         )
     }
@@ -2737,5 +2778,18 @@ nonisolated private struct LibraryItemRecord: Codable, FetchableRecord, Persista
 
     func genre() -> Genre {
         Genre(id: itemID, name: name, albumCount: albumCount)
+    }
+
+    private var providerIDs: [String: String]? {
+        guard let providerIDsJSON,
+              let data = providerIDsJSON.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String: String].self, from: data)
+    }
+
+    private static func encodeProviderIDs(_ providerIDs: [String: String]?) -> String? {
+        guard let providerIDs,
+              !providerIDs.isEmpty,
+              let data = try? JSONEncoder().encode(providerIDs) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

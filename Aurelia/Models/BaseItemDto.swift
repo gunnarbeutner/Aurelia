@@ -42,6 +42,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
     let ProductionYear: Int?
     let Overview: String?
     let Genres: [String]?
+    let ProviderIds: [String: String]?
 
     // Date fields
     let DateCreated: String?
@@ -107,6 +108,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         ProductionYear = try? container.decode(Int.self, forKey: .ProductionYear)
         Overview = try? container.decode(String.self, forKey: .Overview)
         Genres = try? container.decode([String].self, forKey: .Genres)
+        ProviderIds = try? container.decode([String: String].self, forKey: .ProviderIds)
 
         DateCreated = try? container.decode(String.self, forKey: .DateCreated)
         CollectionType = try? container.decode(String.self, forKey: .CollectionType)
@@ -157,6 +159,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         try container.encodeIfPresent(ProductionYear, forKey: .ProductionYear)
         try container.encodeIfPresent(Overview, forKey: .Overview)
         try container.encodeIfPresent(Genres, forKey: .Genres)
+        try container.encodeIfPresent(ProviderIds, forKey: .ProviderIds)
 
         try container.encodeIfPresent(DateCreated, forKey: .DateCreated)
         try container.encodeIfPresent(CollectionType, forKey: .CollectionType)
@@ -181,7 +184,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         case ItemType = "Type"  // Renamed to avoid conflict with Swift's Type
         case RunTimeTicks, Album, AlbumArtist, Artists, AlbumId, AlbumPrimaryImageTag, ImageTags, ArtistItems, AlbumArtists, GenreItems, ParentId, PlaylistItemId
         case ChildCount, CumulativeRunTimeTicks
-        case IndexNumber, ParentIndexNumber, PremiereDate, ProductionYear, Overview, Genres
+        case IndexNumber, ParentIndexNumber, PremiereDate, ProductionYear, Overview, Genres, ProviderIds
         case DateCreated, CollectionType, Path, ChannelId, IsFolder
         case AlbumCount, SongCount, PlayCount
         case NormalizationGain, AlbumNormalizationGain
@@ -198,6 +201,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
          CumulativeRunTimeTicks: Int64? = nil, IndexNumber: Int? = nil,
          ParentIndexNumber: Int? = nil, PremiereDate: String? = nil,
          ProductionYear: Int? = nil, Overview: String? = nil, Genres: [String]? = nil,
+         ProviderIds: [String: String]? = nil,
          DateCreated: String? = nil,
          CollectionType: String? = nil,
          Path: String? = nil, ChannelId: String? = nil, IsFolder: Bool? = nil,
@@ -229,6 +233,7 @@ nonisolated struct BaseItemDto: Codable, Identifiable, Equatable, Sendable {
         self.ProductionYear = ProductionYear
         self.Overview = Overview
         self.Genres = Genres
+        self.ProviderIds = ProviderIds
         self.DateCreated = DateCreated
         self.CollectionType = CollectionType
         self.Path = Path

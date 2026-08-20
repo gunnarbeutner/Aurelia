@@ -121,6 +121,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
     let biography: String?
     let dateCreated: Date?
     let genreIDs: [String]?
+    let providerIDs: [String: String]?
     /// Identifiers a `catalog.manifest` record says still exist.
     let ids: [String]?
     let playlistEntryID: String?
@@ -143,7 +144,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
             isFavorite: isFavorite ?? false, indexNumber: indexNumber,
             parentIndexNumber: parentIndexNumber, albumId: albumId,
             artistId: artistId ?? artistIDs?.first, artistIDs: artistIDs,
-            genreIDs: genreIDs, playlistEntryID: playlistEntryID,
+            genreIDs: genreIDs, providerIDs: providerIDs, playlistEntryID: playlistEntryID,
             productionYear: productionYear
         )
     }
@@ -155,7 +156,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
             artistName: artistName ?? "Unknown Artist", artistId: artistId,
             year: productionYear, trackCount: nil,
             artworkURL: Self.artworkURL(itemID: id, imageTag: imageTag, baseURL: baseURL),
-            genreIDs: genreIDs, isFavorite: isFavorite ?? false
+            genreIDs: genreIDs, providerIDs: providerIDs, isFavorite: isFavorite ?? false
         )
     }
 
@@ -165,6 +166,7 @@ nonisolated struct AureliaSyncEntityPayload: Decodable, Sendable {
             id: id, name: name, sortName: sortName, bio: biography,
             albumCount: 0,
             artworkURL: Self.artworkURL(itemID: id, imageTag: imageTag, baseURL: baseURL),
+            providerIDs: providerIDs,
             isFavorite: isFavorite ?? false
         )
     }

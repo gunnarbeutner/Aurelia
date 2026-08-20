@@ -279,7 +279,7 @@ struct LibraryView: View {
                         Button("Try Again") {
                             Task { await syncLibrary() }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(AppProminentButtonStyle())
                     }
                 } else {
                     ScrollViewReader { proxy in

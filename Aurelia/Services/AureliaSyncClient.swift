@@ -5,7 +5,7 @@ final class AureliaSyncClient {
     static let shared = AureliaSyncClient(service: .shared)
 
     static let protocolRange = 1...1
-    static let schemaRange = 2...2
+    static let schemaRange = 2...3
     static let pluginGUID = "3fbf911d-ab0c-46dc-81d6-b3317bb8b176"
     static let repositoryURL = "https://gunnarbeutner.github.io/AureliaSync/manifest.json"
     /// Where the plugin comes from, for anyone who would rather see what they

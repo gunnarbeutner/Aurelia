@@ -156,6 +156,30 @@ struct CypherpunkButtonStyle: ButtonStyle {
     }
 }
 
+/// A prominent control whose label remains legible against the adaptive accent.
+///
+/// SwiftUI's built-in bordered-prominent style chooses its own foreground color.
+/// That produces white-on-mint controls when `appAccent` resolves in dark mode,
+/// even though the palette deliberately provides `appAccentText` for this case.
+struct AppProminentButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    var color: Color = .appAccent
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.appAccentText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(color.opacity(configuration.isPressed ? 0.78 : 1))
+            )
+            .opacity(isEnabled ? 1 : 0.5)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+    }
+}
+
 // MARK: - Preview
 #Preview {
     ZStack {
