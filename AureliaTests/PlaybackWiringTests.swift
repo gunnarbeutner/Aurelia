@@ -139,6 +139,11 @@ private final class FakeEngine: PlaybackEngine {
         current?.playedTime = seconds
         onEvent?(.timeObserved(seconds))
     }
+
+    func reportCurrentItemReady() {
+        guard let current else { return }
+        onEvent?(.itemReady(current))
+    }
 }
 
 /// A player wired to a fake engine, with the library and the network taken out
@@ -247,6 +252,7 @@ struct PlaybackWiringTests {
     @Test func aTrackEndingMovesTheQueueOnAndLoadsAnother() {
         let harness = Harness(streamsFrom: transcode)
         harness.player.play(tracks: songs(5))
+        let alreadyLoaded = harness.engine.items[1]
 
         harness.engine.finishCurrentItem(after: 240)
 
@@ -254,6 +260,9 @@ struct PlaybackWiringTests {
         #expect(harness.player.currentTrack?.id == "track-2")
         // The new song opens at its own beginning, not where the last one got to.
         #expect(harness.player.playbackProgress.currentTime == 0)
+        // AVQueuePlayer has already started this item by the time it reports
+        // the previous one's end. Seeking now would replay its opening frames.
+        #expect(alreadyLoaded.seeks.isEmpty)
         // Still three loaded, so the one after next is ready in time.
         #expect(harness.engine.items.count == 3)
         #expect(harness.engine.items.last?.url?.path == "/Audio/track-4/universal")
@@ -274,9 +283,20 @@ struct PlaybackWiringTests {
         #expect(harness.player.currentIndex == 1)
         #expect(harness.player.currentTrack?.id == "track-2")
         #expect(harness.player.isPlaying)
+        #expect(alreadyLoaded.seeks.isEmpty)
         // And the window is topped back up behind it.
         #expect(harness.engine.items.count == 3)
         #expect(harness.engine.items.last?.url?.path == "/Audio/track-4/universal")
+    }
+
+    @Test func aFreshItemBecomingReadyIsNotRewoundAfterPlaybackStarts() {
+        let harness = Harness(streamsFrom: transcode)
+        harness.player.play(tracks: songs(3))
+        let item = harness.engine.current
+
+        harness.engine.reportCurrentItemReady()
+
+        #expect(item?.seeks.isEmpty == true)
     }
 
     @Test func skippingForwardOpensTheTrackAtItsStart() {

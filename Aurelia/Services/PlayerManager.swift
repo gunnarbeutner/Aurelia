@@ -403,11 +403,6 @@ class PlayerManager: NSObject, ObservableObject {
     /// `.paused` status it reports on the way through says nothing about what
     /// the user actually wants.
     private var isReconfiguringPlayer = false
-    /// The current item should be taken back to 0:00 once it is ready to be
-    /// seeked. Seeking an item that is not `readyToPlay` does nothing, and the
-    /// item is routinely still `.unknown` a second after playback is asked for.
-    private var pendingStartAtZero = false
-
     /// Waiting this long to start is worth showing to the user.
     private let stallNoticeDelay: TimeInterval = 8
     /// Waiting this long means it is not going to start on its own.
@@ -1395,12 +1390,6 @@ class PlayerManager: NSObject, ObservableObject {
         // Clean up previous player
         cleanupPlayer()
 
-        // Streaming items can start mid-buffer if previously buffered, so a
-        // fresh track is taken back to the beginning once its item is ready to
-        // be seeked. Set before the observers attach: a local file can be ready
-        // the moment it is observed, and would otherwise miss this entirely.
-        pendingStartAtZero = true
-
         // Load the current track and the next two, for gapless playback.
         setupGaplessQueue(startingAt: currentIndex)
         loadNormalizationGains()
@@ -1766,10 +1755,6 @@ class PlayerManager: NSObject, ObservableObject {
         // This item is its own stream, playing from its own beginning.
         streamStartOffset = 0
 
-        // Take it back to that beginning — a preloaded item can start
-        // mid-buffer if the one before it was streamed.
-        engine?.currentItem?.seek(to: 0, tolerance: 0)
-
         // Set duration from track metadata (not from stream)
         duration = newTrack.duration
         logger.info("📏 Track changed: '\(previousTrack?.name ?? "nil")' → '\(newTrack.name)' (index: \(self.currentIndex), duration: \(newTrack.duration)s)")
@@ -1850,14 +1835,6 @@ class PlayerManager: NSObject, ObservableObject {
             }
             logger.info("✅ Player item ready to play (duration from track metadata: \(self.duration)s)")
             isBuffering = false
-            // Streaming items can start mid-buffer, so a fresh track is taken
-            // back to the beginning — but only now, because a seek before this
-            // point is dropped.
-            if pendingStartAtZero {
-                pendingStartAtZero = false
-                item.seek(to: 0, tolerance: 0)
-            }
-
         case .itemFailed(let item, let error):
             logger.error("❌ Player item failed: \(error.localizedDescription)")
             if item === engine?.currentItem {
@@ -1973,7 +1950,6 @@ class PlayerManager: NSObject, ObservableObject {
         cancelStallWatch()
         pausedReconcileWorkItem?.cancel()
         pausedReconcileWorkItem = nil
-        pendingStartAtZero = false
     }
 
     // MARK: - Playback Reporting
