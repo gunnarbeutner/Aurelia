@@ -138,7 +138,7 @@ class JellyfinService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
 
@@ -159,7 +159,7 @@ class JellyfinService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
 
@@ -177,7 +177,7 @@ class JellyfinService: ObservableObject {
             var authorizeRequest = URLRequest(url: authorizeURL)
             authorizeRequest.httpMethod = "POST"
             authorizeRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            authorizeRequest.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "X-Emby-Authorization")
+            authorizeRequest.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "Authorization")
 
             let body = ["Secret": status.Secret]
             authorizeRequest.httpBody = try JSONEncoder().encode(body)
@@ -217,7 +217,7 @@ class JellyfinService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "Authorization")
 
         let body: [String: String] = ["Username": username, "Pw": password]
         request.httpBody = try JSONEncoder().encode(body)
@@ -263,7 +263,7 @@ class JellyfinService: ObservableObject {
         guard let url = URL(string: "\(baseURL)/Users/Public") else { return [] }
 
         var request = URLRequest(url: url)
-        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: nil), forHTTPHeaderField: "Authorization")
 
         do {
             let (data, response) = try await session.data(for: request)
@@ -338,7 +338,7 @@ class JellyfinService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
 
@@ -395,7 +395,7 @@ class JellyfinService: ObservableObject {
         let url = try buildURL(from: components)
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
 
@@ -502,7 +502,7 @@ class JellyfinService: ObservableObject {
         guard let url = try? buildURL(from: components) else { return nil }
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         do {
             let (data, response) = try await session.data(for: request)
@@ -606,7 +606,7 @@ class JellyfinService: ObservableObject {
 
         // Add API key for authentication
         components.queryItems = [
-            URLQueryItem(name: "api_key", value: token)
+            URLQueryItem(name: "ApiKey", value: token)
         ]
 
         guard let url = components.url else {
@@ -653,7 +653,7 @@ class JellyfinService: ObservableObject {
         }
 
         var queryItems = [
-            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "ApiKey", value: token),
             URLQueryItem(name: "DeviceId", value: deviceId),
             URLQueryItem(name: "MaxStreamingBitrate", value: "\(quality.bitrate * 1000)"),
             // Containers this client can play back from a local file. The
@@ -708,7 +708,7 @@ class JellyfinService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
 
@@ -752,7 +752,7 @@ class JellyfinService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         logger.info("📋 Adding \(trackIds.count) tracks to playlist \(playlistId)")
         logger.info("📋 Request URL: \(url.absoluteString)")
@@ -796,7 +796,7 @@ class JellyfinService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         let (_, response) = try await session.data(for: request)
 
@@ -823,7 +823,7 @@ class JellyfinService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (_, response) = try await session.data(for: request)
@@ -847,7 +847,7 @@ class JellyfinService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
 
         let (_, response) = try await session.data(for: request)
 
@@ -948,7 +948,7 @@ class JellyfinService: ObservableObject {
     private func authenticatedRequest(from components: URLComponents, token: String) throws -> URLRequest {
         var request = URLRequest(url: try buildURL(from: components))
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
         return request
     }
 
@@ -1099,7 +1099,7 @@ class JellyfinService: ObservableObject {
         let url = URL(string: "\(baseURL)/Items/\(itemId)/Images/Primary")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = imageData
 
@@ -1164,7 +1164,7 @@ class JellyfinService: ObservableObject {
               let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
         do {
@@ -1201,7 +1201,7 @@ class JellyfinService: ObservableObject {
         guard !path.contains("..") else { throw JellyfinError.invalidURL }
         var request = URLRequest(url: try buildURL(from: buildURLComponents(path: path)))
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue(generateAuthorizationHeader(token: token), forHTTPHeaderField: "Authorization")
         return request
     }
 
@@ -1219,13 +1219,13 @@ class JellyfinService: ObservableObject {
         var components = try buildURLComponents(path: path)
         components.scheme = components.scheme == "https" ? "wss" : "ws"
         components.queryItems = [
-            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "ApiKey", value: token),
             URLQueryItem(name: "deviceId", value: deviceId)
         ]
         var request = URLRequest(url: try buildURL(from: components))
         request.setValue(
             generateAuthorizationHeader(token: token),
-            forHTTPHeaderField: "X-Emby-Authorization"
+            forHTTPHeaderField: "Authorization"
         )
         return request
     }
@@ -1537,7 +1537,7 @@ nonisolated enum StreamURL {
 
         components.queryItems = [
             URLQueryItem(name: "mediaSourceId", value: itemID),
-            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "ApiKey", value: token),
             URLQueryItem(name: "DeviceId", value: deviceID),
             // One session per stream, so the three the player keeps loaded are
             // not taken for one playback the server may cut back to a single

@@ -285,7 +285,7 @@ class WatchJellyfinService: ObservableObject {
         let params = [
             "static": "true",
             "mediaSourceId": trackId,
-            "api_key": token
+            "ApiKey": token
         ]
 
         return buildURL(endpoint: endpoint, params: params)
